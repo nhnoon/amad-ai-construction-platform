@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" fill="none">
+  <title>Amad</title>
+  <!-- Three Pillars mark on navy — matches brand/favicon.svg -->
+  <rect width="32" height="32" rx="6" fill="#0D1F3C"/>
+  <rect x="4" y="17" width="6" height="12" rx="1" fill="#C8953A"/>
+  <rect x="13" y="8" width="6" height="21" rx="1" fill="#C8953A"/>
+  <rect x="22" y="17" width="6" height="12" rx="1" fill="#C8953A"/>
+  <rect x="3" y="29" width="26" height="1.5" rx="0.75" fill="#C8953A"/>
+</svg>

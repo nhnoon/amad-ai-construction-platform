@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 48 48" fill="none" role="img" aria-label="Amad mark">
+  <title>Amad mark</title>
+  <!-- For use on light / white backgrounds — navy fill -->
+  <rect x="5" y="22" width="10" height="22" rx="1.5" fill="#0D1F3C"/>
+  <rect x="19" y="8" width="10" height="36" rx="1.5" fill="#0D1F3C"/>
+  <rect x="33" y="22" width="10" height="22" rx="1.5" fill="#0D1F3C"/>
+  <rect x="3" y="44" width="42" height="2" rx="1" fill="#0D1F3C"/>
+</svg>

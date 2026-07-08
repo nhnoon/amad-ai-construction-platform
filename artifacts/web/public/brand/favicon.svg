@@ -1,0 +1,14 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" fill="none">
+  <title>Amad</title>
+  <!-- Navy background square with rounded corners -->
+  <rect width="32" height="32" rx="6" fill="#0D1F3C"/>
+  <!-- Three Pillars mark in gold — scaled to 32×32 container -->
+  <!-- Left pillar -->
+  <rect x="4" y="17" width="6" height="12" rx="1" fill="#C8953A"/>
+  <!-- Centre pillar (tallest) -->
+  <rect x="13" y="8" width="6" height="21" rx="1" fill="#C8953A"/>
+  <!-- Right pillar -->
+  <rect x="22" y="17" width="6" height="12" rx="1" fill="#C8953A"/>
+  <!-- Foundation baseline -->
+  <rect x="3" y="29" width="26" height="1.5" rx="0.75" fill="#C8953A"/>
+</svg>

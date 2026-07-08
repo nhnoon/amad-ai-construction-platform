@@ -1,0 +1,14 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" fill="none">
+  <title>Amad</title>
+  <!-- Navy background, rounded for app icon -->
+  <rect width="512" height="512" rx="110" fill="#0D1F3C"/>
+  <!-- Three Pillars mark — gold, centred -->
+  <!-- Left pillar -->
+  <rect x="110" y="270" width="86" height="172" rx="10" fill="#C8953A"/>
+  <!-- Centre pillar -->
+  <rect x="213" y="124" width="86" height="318" rx="10" fill="#C8953A"/>
+  <!-- Right pillar -->
+  <rect x="316" y="270" width="86" height="172" rx="10" fill="#C8953A"/>
+  <!-- Foundation baseline -->
+  <rect x="88" y="462" width="336" height="18" rx="9" fill="#C8953A"/>
+</svg>

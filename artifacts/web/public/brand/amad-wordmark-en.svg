@@ -1,0 +1,12 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 108 32" fill="none" role="img" aria-label="Amad wordmark">
+  <title>Amad</title>
+  <!-- AMAD wordmark — tracked uppercase, Inter 700 weight -->
+  <!-- Geometric A -->
+  <path d="M0 28 L8 4 L16 28 M3 19 L13 19" stroke="currentColor" stroke-width="2.8" stroke-linecap="round" stroke-linejoin="round" fill="none"/>
+  <!-- M -->
+  <path d="M22 28 L22 4 L30 18 L38 4 L38 28" stroke="currentColor" stroke-width="2.8" stroke-linecap="round" stroke-linejoin="round" fill="none"/>
+  <!-- A -->
+  <path d="M44 28 L52 4 L60 28 M47 19 L57 19" stroke="currentColor" stroke-width="2.8" stroke-linecap="round" stroke-linejoin="round" fill="none"/>
+  <!-- D -->
+  <path d="M66 4 L66 28 M66 4 Q84 4 84 16 Q84 28 66 28" stroke="currentColor" stroke-width="2.8" stroke-linecap="round" stroke-linejoin="round" fill="none"/>
+</svg>

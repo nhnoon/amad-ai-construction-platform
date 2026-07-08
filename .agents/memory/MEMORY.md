@@ -1,0 +1,8 @@
+- [Construction AI Platform — Phase 1](construction-ai-phase1.md) — FastAPI/PostgreSQL backend, 27 tables, 13487 rows migrated; workflow runs Python uvicorn on port 8080
+- [Construction AI Platform — Phase 2.5 UI](construction-ai-phase25-ui.md) — Dark/light mode, Amad brand, 8 polished pages; see topic for critical decisions
+- [Construction AI Platform — Phase 4B](construction-ai-phase4b.md) — Smart Alerts: 10 alert types, 1089 live alerts, 2 endpoints, Alerts page, nav badge, dashboard widget; no DB schema changes
+- [Construction AI Platform — Phase 4B Alerts](construction-ai-phase4b-alerts.md) — Smart Alerts Center: deterministic, no DB migrations, 1089 real alerts from seeded data; 47 tests all green
+- [Copilot Phase 3C — Structured Render Blocks](copilot-phase3c-render-blocks.md) — Backend generates render_blocks[] deterministically; frontend renders directly; API endpoint manually constructs CopilotQueryResponse
+- [Construction AI Platform — Phase 3A](construction-ai-phase3a.md) — AI Copilot: 4 routes, 4 new tables (migration 0004), 234 tests; FK/keyword/model-field gotchas documented
+- [Construction AI Platform — Phase 3B](construction-ai-phase3b.md) — Multi-turn Copilot; domain-signal substring bug, rate limiter test fixture, Arabic tanwin matching
+- [Copilot Analytical Layer](copilot-analyst.md) — Deterministic pre-LLM analytical engine; original_question vs resolved_query; test fixture and provider test patching rules

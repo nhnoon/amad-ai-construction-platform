@@ -1,0 +1,18 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" fill="none">
+  <title>Amad maskable icon</title>
+  <!-- Full bleed navy background (no rounded corners — maskable icon fills entire canvas) -->
+  <rect width="512" height="512" fill="#0D1F3C"/>
+  <!--
+    Maskable safe zone: innermost 80% circle (radius ~205px from centre 256,256).
+    All significant visual content is within this circle.
+    The pillars are scaled in slightly to respect the safe zone.
+  -->
+  <!-- Left pillar -->
+  <rect x="128" y="288" width="74" height="152" rx="8" fill="#C8953A"/>
+  <!-- Centre pillar -->
+  <rect x="219" y="148" width="74" height="292" rx="8" fill="#C8953A"/>
+  <!-- Right pillar -->
+  <rect x="310" y="288" width="74" height="152" rx="8" fill="#C8953A"/>
+  <!-- Foundation baseline -->
+  <rect x="112" y="458" width="288" height="16" rx="8" fill="#C8953A"/>
+</svg>

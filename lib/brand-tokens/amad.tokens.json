@@ -1,0 +1,226 @@
+{
+  "$schema": "https://raw.githubusercontent.com/token-compat/token-compat/main/schemas/v1.json",
+  "$description": "Canonical Amad brand token source of truth. CSS custom properties in index.css derive from these values. React Native / Expo can consume this file directly.",
+
+  "brand": {
+    "navy": {
+      "50":  "#E8EDF5",
+      "100": "#C5D0E3",
+      "200": "#9FAFD0",
+      "300": "#7A8EBC",
+      "400": "#5A70A8",
+      "500": "#3D5492",
+      "600": "#2B3E7A",
+      "700": "#1E2E61",
+      "800": "#132048",
+      "900": "#0D1F3C",
+      "950": "#080E1C"
+    },
+    "gold": {
+      "50":  "#FDF8EC",
+      "100": "#F9EDD0",
+      "200": "#F3D89E",
+      "300": "#EBBD63",
+      "400": "#DFA035",
+      "500": "#C8953A",
+      "600": "#A8781E",
+      "700": "#865E15",
+      "800": "#634610",
+      "900": "#3E2B09"
+    },
+    "sand": {
+      "50":  "#FAFAF8",
+      "100": "#F4F3EE",
+      "200": "#E9E7DD",
+      "300": "#D9D5C8",
+      "400": "#C3BDA8",
+      "500": "#A89E84",
+      "600": "#8A7F66",
+      "700": "#6E644E",
+      "800": "#524B3A",
+      "900": "#363227"
+    }
+  },
+
+  "semantic": {
+    "light": {
+      "background":           "#F1F4F8",
+      "surface":              "#FFFFFF",
+      "surfaceElevated":      "#FFFFFF",
+      "sidebar":              "#0D1F3C",
+      "sidebarAccent":        "#132048",
+      "text":                 "#0D1F3C",
+      "textSecondary":        "#4A5A78",
+      "textDisabled":         "#9AA5BC",
+      "border":               "#DDE2EC",
+      "borderStrong":         "#B8C3D6",
+      "primary":              "#112040",
+      "primaryForeground":    "#FFFFFF",
+      "accent":               "#C8953A",
+      "accentForeground":     "#FFFFFF",
+      "focus":                "#112040",
+      "success":              "#1A7A4A",
+      "successSurface":       "#EAFAF1",
+      "warning":              "#B45309",
+      "warningSurface":       "#FFF8E8",
+      "danger":               "#C41C1C",
+      "dangerSurface":        "#FEF2F2",
+      "info":                 "#1E5FA8",
+      "infoSurface":          "#EFF6FF"
+    },
+    "dark": {
+      "background":           "#080E1C",
+      "surface":              "#0E1929",
+      "surfaceElevated":      "#132135",
+      "sidebar":              "#060C19",
+      "sidebarAccent":        "#0D1929",
+      "text":                 "#D5DBE8",
+      "textSecondary":        "#7A8EB0",
+      "textDisabled":         "#3E5070",
+      "border":               "#1C2B40",
+      "borderStrong":         "#2A3D5A",
+      "primary":              "#C8953A",
+      "primaryForeground":    "#080E1C",
+      "accent":               "#C8953A",
+      "accentForeground":     "#080E1C",
+      "focus":                "#C8953A",
+      "success":              "#2EB86A",
+      "successSurface":       "#0A2518",
+      "warning":              "#E09840",
+      "warningSurface":       "#1E1408",
+      "danger":               "#E55555",
+      "dangerSurface":        "#200A0A",
+      "info":                 "#5B9CF5",
+      "infoSurface":          "#081428"
+    }
+  },
+
+  "status": {
+    "project": {
+      "Active":    { "color": "#1A7A4A", "surface": "#EAFAF1" },
+      "Delayed":   { "color": "#C41C1C", "surface": "#FEF2F2" },
+      "OnHold":    { "color": "#B45309", "surface": "#FFF8E8" },
+      "Completed": { "color": "#1E5FA8", "surface": "#EFF6FF" },
+      "Planning":  { "color": "#6B3EC4", "surface": "#F5F0FF" },
+      "Suspended": { "color": "#4A5568", "surface": "#F7FAFC" }
+    },
+    "procurement": {
+      "Approved":           { "color": "#1A7A4A", "surface": "#EAFAF1" },
+      "ConvertedToPO":      { "color": "#1E5FA8", "surface": "#EFF6FF" },
+      "UnderReview":        { "color": "#B45309", "surface": "#FFF8E8" },
+      "PendingClarification":{ "color": "#B45309", "surface": "#FFF8E8" },
+      "NeedsRework":        { "color": "#C41C1C", "surface": "#FEF2F2" },
+      "ReturnedToRequester":{ "color": "#4A5568", "surface": "#F7FAFC" },
+      "Delivered":          { "color": "#1A7A4A", "surface": "#EAFAF1" }
+    },
+    "safety": {
+      "High":   { "color": "#C41C1C", "surface": "#FEF2F2" },
+      "Medium": { "color": "#B45309", "surface": "#FFF8E8" },
+      "Low":    { "color": "#1A7A4A", "surface": "#EAFAF1" }
+    },
+    "ncr": {
+      "Open":                    { "color": "#C41C1C", "surface": "#FEF2F2" },
+      "UnderCorrectiveAction":   { "color": "#B45309", "surface": "#FFF8E8" },
+      "Closed":                  { "color": "#1A7A4A", "surface": "#EAFAF1" }
+    }
+  },
+
+  "chart": {
+    "light": {
+      "1": "#C8953A",
+      "2": "#2B6CB0",
+      "3": "#1A7A4A",
+      "4": "#6B3EC4",
+      "5": "#C41C1C"
+    },
+    "dark": {
+      "1": "#DFA035",
+      "2": "#5B9CF5",
+      "3": "#2EB86A",
+      "4": "#A78BFA",
+      "5": "#E55555"
+    }
+  },
+
+  "radius": {
+    "none":  "0px",
+    "xs":    "2px",
+    "sm":    "4px",
+    "md":    "6px",
+    "lg":    "8px",
+    "xl":    "12px",
+    "2xl":   "16px",
+    "3xl":   "24px",
+    "full":  "9999px"
+  },
+
+  "spacing": {
+    "0":  "0px",
+    "1":  "4px",
+    "2":  "8px",
+    "3":  "12px",
+    "4":  "16px",
+    "5":  "20px",
+    "6":  "24px",
+    "8":  "32px",
+    "10": "40px",
+    "12": "48px",
+    "16": "64px",
+    "20": "80px",
+    "24": "96px"
+  },
+
+  "typography": {
+    "fontFamily": {
+      "sans":    "'Inter', 'Noto Sans Arabic', 'Segoe UI', system-ui, sans-serif",
+      "arabic":  "'Noto Sans Arabic', 'Geeza Pro', 'Arial Unicode MS', sans-serif",
+      "mono":    "'JetBrains Mono', 'Fira Code', Menlo, monospace"
+    },
+    "scale": {
+      "display": { "size": "36px", "weight": 700, "lineHeight": 1.15, "letterSpacing": "-0.02em" },
+      "h1":      { "size": "28px", "weight": 700, "lineHeight": 1.2,  "letterSpacing": "-0.015em" },
+      "h2":      { "size": "22px", "weight": 700, "lineHeight": 1.25, "letterSpacing": "-0.01em" },
+      "h3":      { "size": "18px", "weight": 600, "lineHeight": 1.3,  "letterSpacing": "-0.005em" },
+      "h4":      { "size": "15px", "weight": 600, "lineHeight": 1.4,  "letterSpacing": "0" },
+      "body":    { "size": "14px", "weight": 400, "lineHeight": 1.6,  "letterSpacing": "0" },
+      "bodyMd":  { "size": "14px", "weight": 500, "lineHeight": 1.6,  "letterSpacing": "0" },
+      "small":   { "size": "12px", "weight": 400, "lineHeight": 1.5,  "letterSpacing": "0" },
+      "caption": { "size": "11px", "weight": 400, "lineHeight": 1.4,  "letterSpacing": "0.01em" },
+      "label":   { "size": "11px", "weight": 600, "lineHeight": 1.4,  "letterSpacing": "0.06em" },
+      "kpi":     { "size": "36px", "weight": 700, "lineHeight": 1.0,  "letterSpacing": "-0.02em", "fontFeatures": "'tnum' on, 'lnum' on" },
+      "tableHeader": { "size": "11px", "weight": 600, "lineHeight": 1.4, "letterSpacing": "0.06em" },
+      "tableBody":   { "size": "13px", "weight": 400, "lineHeight": 1.5, "letterSpacing": "0" }
+    }
+  },
+
+  "shadow": {
+    "xs":  "0 1px 2px 0 rgba(13,31,60,0.05)",
+    "sm":  "0 1px 3px 0 rgba(13,31,60,0.10), 0 1px 2px -1px rgba(13,31,60,0.10)",
+    "md":  "0 4px 6px -1px rgba(13,31,60,0.10), 0 2px 4px -2px rgba(13,31,60,0.10)",
+    "lg":  "0 10px 15px -3px rgba(13,31,60,0.10), 0 4px 6px -4px rgba(13,31,60,0.10)",
+    "xl":  "0 20px 25px -5px rgba(13,31,60,0.10), 0 8px 10px -6px rgba(13,31,60,0.10)"
+  },
+
+  "mobile": {
+    "_note": "React Native / Expo usage guidance",
+    "fontFamily": {
+      "sans":    "Inter_400Regular (from expo-google-fonts) + NotoSansArabic_400Regular",
+      "semibold": "Inter_600SemiBold",
+      "bold":    "Inter_700Bold"
+    },
+    "colors": {
+      "_note": "Use brand.navy.900, brand.gold.500, semantic.light.*, semantic.dark.* directly",
+      "primaryLight":   "#112040",
+      "primaryDark":    "#C8953A",
+      "surfaceLight":   "#FFFFFF",
+      "surfaceDark":    "#0E1929",
+      "backgroundLight":"#F1F4F8",
+      "backgroundDark": "#080E1C"
+    },
+    "doNotUse": [
+      "CSS custom properties (--variable) — web only",
+      "@theme inline blocks — Tailwind v4 specific",
+      "bg-* / text-* Tailwind classes — web only"
+    ]
+  }
+}

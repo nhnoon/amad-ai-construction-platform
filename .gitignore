@@ -1,0 +1,99 @@
+# See https://docs.github.com/en/get-started/getting-started-with-git/ignoring-files for more about ignoring files.
+
+# compiled output
+dist
+tmp
+out-tsc
+*.tsbuildinfo
+.expo
+.expo-shared
+
+# dependencies
+node_modules
+
+# IDEs and editors
+/.idea
+.project
+.classpath
+.c9/
+*.launch
+.settings/
+*.sublime-workspace
+
+# IDE - VSCode
+.vscode/*
+!.vscode/settings.json
+!.vscode/tasks.json
+!.vscode/launch.json
+!.vscode/extensions.json
+
+# misc
+/.sass-cache
+/connect.lock
+/coverage
+/libpeerconnection.log
+npm-debug.log
+yarn-error.log
+testem.log
+/typings
+
+# System Files
+.DS_Store
+Thumbs.db
+
+.cursor/rules/nx-rules.mdc
+.github/instructions/nx.instructions.md
+
+# Replit
+.cache/
+.local/
+
+# Uploaded assets — kept in Replit workspace but excluded from Git
+# (includes capstone spec, SQL dumps, ZIP datasets, conversation prompts)
+attached_assets/
+
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+.pytest_cache/
+.pythonlibs/
+.venv/
+venv/
+
+# Environment files
+.env
+backend/.env
+!.env.example
+!backend/.env.example
+
+# Database files and backups
+*.sql
+*.dump
+*.tar
+backend/data/*.sql
+backend/data/*.dump
+backups/
+
+# Local database files
+*.db
+*.sqlite3
+*.postgres_dump
+
+# Logs
+*.log
+logs/
+
+# Test and debug files
+test_*.py
+*_test.py
+backend/test_*.py
+backend/*_test.py
+screenshots/
+
+# Generated API client files
+# These ARE intentionally tracked in git so the build works after a fresh clone
+# without requiring a `pnpm --filter @workspace/api-spec run codegen` step.
+# If you change openapi.yaml, run codegen and commit the updated generated files.
+# lib/api-client-react/src/generated/
+# lib/api-zod/src/generated/
