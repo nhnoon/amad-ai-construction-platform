@@ -5,6 +5,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { Input } from "@/components/ui/input";
 import { Link } from "wouter";
 import { Search, ChevronRight, AlertOctagon } from "lucide-react";
+import { PageContextHeader } from "@/components/page-context-header";
 
 const STATUS_BADGE: Record<string, string> = {
   Active:      "badge-success",
@@ -96,14 +97,17 @@ export default function Projects() {
 
   return (
     <div className="space-y-6">
-      <div className="page-header">
-        <div>
-          <h1 className="page-title">{t("Projects")}</h1>
-          <p className="page-subtitle">
-            {data?.length ?? 0} total · {filtered?.length ?? 0} shown
-          </p>
-        </div>
-      </div>
+      <PageContextHeader
+        title={t("Projects")}
+        subtitle={`${data?.length ?? 0} total · ${filtered?.length ?? 0} shown`}
+        backLabel="Back to Operations"
+        backHref="/operations"
+        breadcrumbs={[
+          { label: "Dashboard", href: "/" },
+          { label: "Operations", href: "/operations" },
+          { label: "Projects" },
+        ]}
+      />
 
       <div className="flex flex-wrap gap-3">
         <div className="relative flex-1 min-w-52 max-w-sm">

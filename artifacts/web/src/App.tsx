@@ -12,13 +12,19 @@ import { getToken } from "./lib/auth";
 
 import Login from "./pages/login";
 import Dashboard from "./pages/dashboard";
+import Operations from "./pages/operations";
+import Documents from "./pages/documents";
 import Projects from "./pages/projects";
 import ProjectDetail from "./pages/project-detail";
 import Procurement from "./pages/procurement";
 import Suppliers from "./pages/suppliers";
 import SiteReports from "./pages/site-reports";
+import SiteReportDetail from "./pages/site-report-detail";
 import Safety from "./pages/safety";
 import Meetings from "./pages/meetings";
+import RFIs from "./pages/rfis";
+import ChangeOrders from "./pages/change-orders";
+import Claims from "./pages/claims";
 import AdminUsers from "./pages/admin-users";
 import AdminOrganization from "./pages/admin-organization";
 import Copilot from "./pages/copilot";
@@ -98,15 +104,22 @@ function Router() {
     <Switch>
       <Route path="/login" component={Login} />
       <Route path="/" component={() => <ProtectedRoute component={Dashboard} />} />
+      <Route path="/operations" component={() => <ProtectedRoute component={Operations} />} />
+      <Route path="/documents" component={() => <ProtectedRoute component={Documents} />} />
       <Route path="/projects" component={() => <ProtectedRoute component={Projects} />} />
       <Route path="/projects/:id" component={() => <ProtectedRoute component={ProjectDetail} />} />
       <Route path="/procurement" component={() => <ProtectedRoute component={Procurement} />} />
       <Route path="/suppliers" component={() => <ProtectedRoute component={Suppliers} />} />
       <Route path="/site-reports" component={() => <ProtectedRoute component={SiteReports} />} />
+      <Route path="/projects/:projectId/site-reports/:reportId" component={() => <ProtectedRoute component={SiteReportDetail} />} />
       <Route path="/safety" component={() => <ProtectedRoute component={Safety} />} />
       <Route path="/meetings" component={() => <ProtectedRoute component={Meetings} />} />
+      <Route path="/rfis" component={() => <ProtectedRoute component={RFIs} />} />
+      <Route path="/change-orders" component={() => <ProtectedRoute component={ChangeOrders} />} />
+      <Route path="/claims" component={() => <ProtectedRoute component={Claims} />} />
       <Route path="/admin/users" component={() => <AdminRoute component={AdminUsers} />} />
       <Route path="/admin/organization" component={() => <AdminRoute component={AdminOrganization} />} />
+      <Route path="/admin" component={() => <AdminRoute component={AdminUsers} />} />
       <Route path="/copilot" component={() => <ProtectedRoute component={Copilot} />} />
       <Route path="/alerts" component={() => <ProtectedRoute component={Alerts} />} />
       <Route path="/reports" component={() => <ProtectedRoute component={Reports} />} />

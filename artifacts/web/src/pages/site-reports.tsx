@@ -1,8 +1,10 @@
 import { useState, useEffect } from "react";
-import { useListProjects, useListProjectSiteReports } from "@workspace/api-client-react";
+import { useListProjects } from "@workspace/api-client-react";
+import { Link } from "wouter";
 import { useTranslation } from "react-i18next";
-import { Skeleton } from "@/components/ui/skeleton";
 import { CloudSun, AlertOctagon } from "lucide-react";
+import { getToken } from "@/lib/auth";
+import { PageContextHeader } from "@/components/page-context-header";
 
 const WEATHER_BADGE: Record<string, string> = {
   Clear:        "badge-success",
@@ -16,6 +18,20 @@ const WEATHER_BADGE: Record<string, string> = {
 export default function SiteReports() {
   const { t } = useTranslation();
   const [selectedProjectId, setSelectedProjectId] = useState<number | null>(null);
+  const [cards, setCards] = useState<Array<{
+    report_id: number;
+    project_id: number;
+    project_name: string;
+    report_date: string;
+    engineer?: string | null;
+    weather: string;
+    work_progress: string;
+    risk_indicator: string;
+    safety_indicator: string;
+    quality_indicator: string;
+  }> | null>(null);
+  const [isLoading, setIsLoading] = useState(false);
+  const [isError, setIsError] = useState(false);
 
   const { data: projects } = useListProjects({ limit: 60 });
 
@@ -25,28 +41,66 @@ export default function SiteReports() {
     }
   }, [projects, selectedProjectId]);
 
-  const { data: reports, isLoading, isError } = useListProjectSiteReports(
-    selectedProjectId ?? 0,
-    { limit: 50 },
-    { query: { enabled: !!selectedProjectId, queryKey: ["site-reports", selectedProjectId] } }
-  );
+  useEffect(() => {
+    let mounted = true;
+    const loadCards = async () => {
+      if (!selectedProjectId) return;
+      setIsLoading(true);
+      setIsError(false);
+      try {
+        const token = getToken();
+        const response = await fetch(`/api/v1/projects/${selectedProjectId}/site-reports/cards?limit=50`, {
+          headers: {
+            "Content-Type": "application/json",
+            ...(token ? { Authorization: `Bearer ${token}` } : {}),
+          },
+        });
+        if (!response.ok) {
+          throw new Error("Failed to load report cards");
+        }
+        const data = await response.json();
+        if (mounted) {
+          setCards(data);
+        }
+      } catch {
+        if (mounted) {
+          setIsError(true);
+          setCards([]);
+        }
+      } finally {
+        if (mounted) {
+          setIsLoading(false);
+        }
+      }
+    };
+
+    loadCards();
+    return () => {
+      mounted = false;
+    };
+  }, [selectedProjectId]);
 
   const selectedProject = projects?.find((p) => p.id === selectedProjectId);
 
   return (
     <div className="space-y-6">
       {/* Header */}
-      <div className="page-header">
-        <div>
-          <h1 className="page-title">{t("Site Reports")}</h1>
-          <p className="page-subtitle">
-            {selectedProject
+      <div className="space-y-4">
+        <PageContextHeader
+          title={t("Site Reports")}
+          subtitle={`${
+            selectedProject
               ? `${selectedProject.project_code} — ${selectedProject.project_name}`
-              : "Select a project to begin"}
-            {reports ? ` · ${reports.length} reports` : ""}
-          </p>
-        </div>
-
+              : "Select a project to begin"
+          }${cards ? ` · ${cards.length} reports` : ""}`}
+          backLabel="Back to Operations"
+          backHref="/operations"
+          breadcrumbs={[
+            { label: "Dashboard", href: "/" },
+            { label: "Operations", href: "/operations" },
+            { label: "Site Reports" },
+          ]}
+        />
         <div className="flex items-center gap-2">
           <label className="text-sm font-medium text-muted-foreground whitespace-nowrap shrink-0">
             {t("Select Project")}
@@ -74,39 +128,46 @@ export default function SiteReports() {
         </div>
       ) : (
         <div className="panel overflow-hidden">
-          <div className="overflow-x-auto">
-            <table className="data-table" data-testid="site-reports-table">
-              <thead>
-                <tr>
-                  <th>{t("Report Date")}</th>
-                  <th>{t("Weather")}</th>
-                  <th className="min-w-[320px]">{t("Summary")}</th>
-                </tr>
-              </thead>
-              <tbody>
-                {isLoading ? (
-                  <tr><td colSpan={3} className="text-center py-10 text-muted-foreground">{t("Loading...")}</td></tr>
-                ) : isError ? (
-                  <tr><td colSpan={3} className="text-center py-10"><div className="flex flex-col items-center gap-1 text-muted-foreground"><AlertOctagon className="w-6 h-6 text-destructive opacity-60" /><span className="text-sm">Failed to load site reports</span></div></td></tr>
-                ) : !reports?.length ? (
-                  <tr><td colSpan={3} className="text-center py-10 text-muted-foreground">{t("No data")}</td></tr>
-                ) : (
-                  reports.map((r) => (
-                    <tr key={r.id}>
-                      <td className="font-semibold text-sm whitespace-nowrap">{r.report_date}</td>
-                      <td>
-                        <span className={`badge ${WEATHER_BADGE[r.weather] ?? "badge-neutral"}`}>
-                          {r.weather}
-                        </span>
-                      </td>
-                      <td className="text-muted-foreground text-sm max-w-md">
-                        {r.summary}
-                      </td>
-                    </tr>
-                  ))
-                )}
-              </tbody>
-            </table>
+          <div className="grid grid-cols-1 gap-4 p-4 md:grid-cols-2 xl:grid-cols-3" data-testid="site-reports-cards">
+            {isLoading ? (
+              <div className="col-span-full text-center py-10 text-muted-foreground">{t("Loading...")}</div>
+            ) : isError ? (
+              <div className="col-span-full text-center py-10">
+                <div className="flex flex-col items-center gap-1 text-muted-foreground">
+                  <AlertOctagon className="w-6 h-6 text-destructive opacity-60" />
+                  <span className="text-sm">Failed to load site reports</span>
+                </div>
+              </div>
+            ) : !cards?.length ? (
+              <div className="col-span-full text-center py-10 text-muted-foreground">{t("No data")}</div>
+            ) : (
+              cards.map((card) => (
+                <article key={card.report_id} className="rounded-xl border border-border/50 bg-card/70 p-4">
+                  <div className="mb-3 flex items-center justify-between gap-2">
+                    <p className="text-sm font-semibold text-foreground">{card.project_name}</p>
+                    <span className={`badge ${WEATHER_BADGE[card.weather] ?? "badge-neutral"}`}>{card.weather}</span>
+                  </div>
+
+                  <div className="space-y-2 text-xs text-muted-foreground">
+                    <p><span className="font-semibold text-foreground">Report Date:</span> {card.report_date}</p>
+                    <p><span className="font-semibold text-foreground">Engineer:</span> {card.engineer || "Not assigned"}</p>
+                    <p><span className="font-semibold text-foreground">Work Progress:</span> {card.work_progress}</p>
+                    <p><span className="font-semibold text-foreground">Risk Indicator:</span> {card.risk_indicator}</p>
+                    <p><span className="font-semibold text-foreground">Safety Indicator:</span> {card.safety_indicator}</p>
+                    <p><span className="font-semibold text-foreground">Quality Indicator:</span> {card.quality_indicator}</p>
+                  </div>
+
+                  <div className="mt-4">
+                    <Link
+                      href={`/projects/${card.project_id}/site-reports/${card.report_id}`}
+                      className="text-sm font-semibold text-primary hover:underline"
+                    >
+                      Open Report →
+                    </Link>
+                  </div>
+                </article>
+              ))
+            )}
           </div>
         </div>
       )}

@@ -1,8 +1,15 @@
 from fastapi import APIRouter, HTTPException, Query
 from typing import Optional
+from ...ai.site_report_intelligence import build_site_report_intelligence, list_site_report_cards
 from ...core.deps import DbSession
 from ...models.site import SiteReport, DailyActivity
-from ...schemas.site import SiteReportOut, DailyActivityOut
+from ...schemas.site import (
+    SiteReportOut,
+    SiteReportCardOut,
+    DailyActivityOut,
+    SiteReportIntelligenceOut,
+    SiteReportAnalysisOut,
+)
 
 router = APIRouter(tags=["site-reports"])
 
@@ -20,6 +27,16 @@ def list_site_reports(
         .order_by(SiteReport.report_date.desc())
         .offset(skip).limit(limit).all()
     )
+
+
+@router.get("/projects/{project_id}/site-reports/cards", response_model=list[SiteReportCardOut])
+def list_site_report_cards_route(
+    project_id: int,
+    db: DbSession,
+    skip: int = Query(0, ge=0),
+    limit: int = Query(20, ge=1, le=100),
+):
+    return list_site_report_cards(db=db, project_id=project_id, skip=skip, limit=limit)
 
 
 @router.get("/projects/{project_id}/site-reports/{report_id}", response_model=SiteReportOut)
@@ -58,3 +75,27 @@ def list_daily_activities(
     if subcontractor_id:
         q = q.filter(DailyActivity.subcontractor_id == subcontractor_id)
     return q.offset(skip).limit(limit).all()
+
+
+@router.get(
+    "/projects/{project_id}/site-reports/{report_id}/intelligence",
+    response_model=SiteReportIntelligenceOut,
+)
+def get_site_report_intelligence(project_id: int, report_id: int, db: DbSession):
+    try:
+        result = build_site_report_intelligence(db=db, project_id=project_id, report_id=report_id)
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail=str(exc))
+    return result.report
+
+
+@router.post(
+    "/projects/{project_id}/site-reports/{report_id}/analyze",
+    response_model=SiteReportAnalysisOut,
+)
+def analyze_site_report(project_id: int, report_id: int, db: DbSession):
+    try:
+        result = build_site_report_intelligence(db=db, project_id=project_id, report_id=report_id)
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail=str(exc))
+    return result.analysis

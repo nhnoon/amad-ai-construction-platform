@@ -3,6 +3,7 @@ import { useAuth } from "../context/AuthContext";
 import { useTheme } from "../context/ThemeContext";
 import { Link, useLocation } from "wouter";
 import { LogoMark } from "./LogoMark";
+import { FloatingAIButton } from "./FloatingAIButton";
 import {
   LayoutDashboard,
   Briefcase,
@@ -11,7 +12,6 @@ import {
   ClipboardCheck,
   ShieldAlert,
   CalendarDays,
-  Bot,
   LogOut,
   Globe,
   Sun,
@@ -22,27 +22,24 @@ import {
   Building2,
   Bell,
   FileText,
+  Folder,
+  BarChart3,
+  Settings,
 } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { useQuery } from "@tanstack/react-query";
 import { getToken } from "../lib/auth";
 
+// Main sidebar navigation - Professional Enterprise Layout
 const NAV_ITEMS = [
-  { key: "Dashboard", href: "/", icon: LayoutDashboard },
-  { key: "Projects", href: "/projects", icon: Briefcase },
-  { key: "Procurement", href: "/procurement", icon: ShoppingCart },
-  { key: "Suppliers", href: "/suppliers", icon: Users },
-  { key: "Site Reports", href: "/site-reports", icon: ClipboardCheck },
-  { key: "Safety & NCR", href: "/safety", icon: ShieldAlert },
-  { key: "Meetings", href: "/meetings", icon: CalendarDays },
-  { key: "Copilot", href: "/copilot", icon: Bot },
-  { key: "Alerts", href: "/alerts", icon: Bell },
-  { key: "Reports", href: "/reports", icon: FileText },
+  { key: "Dashboard", href: "/", icon: LayoutDashboard, label: "Dashboard" },
+  { key: "Operations", href: "/operations", icon: Briefcase, label: "Operations" },
+  { key: "Documents", href: "/documents", icon: Folder, label: "Documents" },
+  { key: "Reports", href: "/reports", icon: BarChart3, label: "Reports" },
 ];
 
 const ADMIN_NAV_ITEMS = [
-  { key: "User Management", href: "/admin/users", icon: UserCog },
-  { key: "Organizations", href: "/admin/organization", icon: Building2 },
+  { key: "Administration", href: "/admin", icon: Settings, label: "Administration" },
 ];
 
 const ROLE_LABELS: Record<string, string> = {
@@ -181,8 +178,9 @@ export function Layout({ children }: { children: ReactNode }) {
           </div>
         </div>
 
-        {/* Nav */}
-        <nav className="flex-1 py-3 px-3 space-y-0.5 overflow-y-auto">
+        {/* Nav — Professional Enterprise Layout */}
+        <nav className="flex-1 py-4 px-3 space-y-1 overflow-y-auto">
+          {/* Main navigation items */}
           {NAV_ITEMS.map((item) => {
             const isActive =
               location === item.href ||
@@ -193,23 +191,18 @@ export function Layout({ children }: { children: ReactNode }) {
               <Link
                 key={item.href}
                 href={item.href}
-                className={`flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-all duration-150 group
+                className={`flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-all duration-200 group
                   ${
                     isActive
                       ? "bg-sidebar-primary/15 text-sidebar-primary border-s-2 border-sidebar-primary ps-[10px]"
-                      : "text-sidebar-foreground/70 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground border-s-2 border-transparent ps-[10px]"
+                      : "text-sidebar-foreground/70 hover:bg-sidebar-accent/50 hover:text-sidebar-accent-foreground border-s-2 border-transparent ps-[10px]"
                   }`}
                 data-testid={`nav-${item.key.toLowerCase().replace(/[^a-z0-9]/g, "-")}`}
               >
                 <Icon
-                  className={`w-4 h-4 shrink-0 transition-colors ${isActive ? "text-sidebar-primary" : "text-sidebar-foreground/50 group-hover:text-sidebar-accent-foreground"}`}
+                  className={`w-5 h-5 shrink-0 transition-colors ${isActive ? "text-sidebar-primary" : "text-sidebar-foreground/50 group-hover:text-sidebar-accent-foreground"}`}
                 />
-                <span>{t(item.key)}</span>
-                {item.href === "/alerts" && alertBadgeCount > 0 && (
-                  <span className="ms-auto min-w-[20px] h-5 rounded-full bg-destructive text-destructive-foreground text-[10px] font-bold flex items-center justify-center px-1.5">
-                    {alertBadgeCount > 99 ? "99+" : alertBadgeCount}
-                  </span>
-                )}
+                <span className="flex-1">{t(item.key)}</span>
               </Link>
             );
           })}
@@ -217,9 +210,9 @@ export function Layout({ children }: { children: ReactNode }) {
           {/* Admin section — visible to admin role only */}
           {isAdmin && (
             <>
-              <div className="pt-4 pb-1 px-3">
-                <p className="text-[10px] font-semibold uppercase tracking-[0.15em] text-sidebar-foreground/35">
-                  {t("Administration")}
+              <div className="pt-3 pb-2 px-3 mt-2 border-t border-sidebar-border/50">
+                <p className="text-[11px] font-semibold uppercase tracking-wider text-sidebar-foreground/40">
+                  {t("Settings")}
                 </p>
               </div>
               {ADMIN_NAV_ITEMS.map((item) => {
@@ -229,18 +222,18 @@ export function Layout({ children }: { children: ReactNode }) {
                   <Link
                     key={item.href}
                     href={item.href}
-                    className={`flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-all duration-150 group
+                    className={`flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-all duration-200 group
                       ${
                         isActive
                           ? "bg-sidebar-primary/15 text-sidebar-primary border-s-2 border-sidebar-primary ps-[10px]"
-                          : "text-sidebar-foreground/70 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground border-s-2 border-transparent ps-[10px]"
+                          : "text-sidebar-foreground/70 hover:bg-sidebar-accent/50 hover:text-sidebar-accent-foreground border-s-2 border-transparent ps-[10px]"
                       }`}
                     data-testid={`nav-${item.key.toLowerCase().replace(/[^a-z0-9]/g, "-")}`}
                   >
                     <Icon
-                      className={`w-4 h-4 shrink-0 transition-colors ${isActive ? "text-sidebar-primary" : "text-sidebar-foreground/50 group-hover:text-sidebar-accent-foreground"}`}
+                      className={`w-5 h-5 shrink-0 transition-colors ${isActive ? "text-sidebar-primary" : "text-sidebar-foreground/50 group-hover:text-sidebar-accent-foreground"}`}
                     />
-                    <span>{t(item.key)}</span>
+                    <span className="flex-1">{t(item.key)}</span>
                   </Link>
                 );
               })}
@@ -354,6 +347,9 @@ export function Layout({ children }: { children: ReactNode }) {
           </div>
         </main>
       </div>
+
+      {/* Floating AI Button — appears on all authenticated pages */}
+      <FloatingAIButton />
     </div>
   );
 }
