@@ -1,0 +1,18 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(netstat -ano)",
+      "Bash(pnpm exec *)",
+      "Skill(run)",
+      "Skill(run:*)",
+      "Bash(timeout 15 npx --no-install playwright --version)",
+      "Read(//c/Users/ASUS/AppData/Local/Temp/claude/c--Users-ASUS-Downloads-amad-construction-ai-platform-main-amad-construction-ai-platform-main/08dd7d0b-f24d-46ea-8049-72144e39fbf8/scratchpad/verify/**)",
+      "Bash(node shot.js new-dashboard.png)",
+      "Bash(node diag.js new-dashboard-diag.png)",
+      "Bash(git stash *)",
+      "Bash(node shot2.js new-dashboard-final.png)",
+      "Bash(python -c \"import json; json.load\\(open\\('.claude/settings.local.json'\\)\\); print\\('VALID JSON'\\)\")",
+      "Bash(node -e \"JSON.parse\\(require\\('fs'\\).readFileSync\\(0,'utf8'\\)\\); console.log\\('VALID JSON'\\)\")"
+    ]
+  }
+}
