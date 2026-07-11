@@ -353,32 +353,26 @@ class CopilotPipeline:
             or routed.project_id
         )
 
-        if intent == "unknown":
-            follow_ups = generate_follow_up_suggestions(
-                intent="unknown",
-                evidence=[],
-                scope=scope,
-                question=question,
-                status="unsupported_intent",
-            )
-            answer = (
-                "يمكنني المساعدة في المشاريع، المشتريات، السلامة، التقارير والاجتماعات."
-                if is_arabic
-                else (
-                    "I can help with: project status, procurement, safety events, "
-                    "NCRs, site reports, meetings, and supplier information."
-                )
-            )
-            return self._build_response(
-                db=db, conv=conv, user_msg=user_msg,
-                answer=answer, status="unsupported_intent", evidence=[],
-                llm_response=None, pipeline_start=pipeline_start,
-                intent=intent, scope=scope, project_id=project_id,
-                resolved_ctx=resolved_ctx, state=state,
-                domains_used=[], tools_used=[],
-                is_multi_domain=False, is_executive=False,
-                follow_up_suggestions=follow_ups,
-            )
+        # NOTE: intent == "unknown" means the deterministic keyword router
+        # (app/ai/intent.py) found no domain keyword in the question — it is
+        # NOT a judgement that the question is out of scope. Previously this
+        # branch returned a canned "I can help with..." string immediately,
+        # before evidence retrieval or the LLM were ever invoked, so every
+        # legitimately-phrased question that didn't hit a hardcoded keyword
+        # (e.g. Arabic dialect, "portfolio health") silently never reached
+        # OpenRouter. Instead, route unknown-intent questions through the
+        # same broad multi-domain retrieval used for executive summaries and
+        # let the real LLM + existing grounding validator decide whether it
+        # can answer — RBAC (below) and grounding still apply unchanged.
+        is_open_domain = intent == "unknown"
+
+        # TEMPORARY instrumentation — provider_error investigation.
+        logger.info(
+            "DEBUG_TRACE step=intent_routed intent=%s is_open_domain=%s "
+            "is_multi_domain=%s secondary_intents=%s confidence=%.3f",
+            intent, is_open_domain, routed.is_multi_domain,
+            routed.secondary_intents, routed.confidence,
+        )
 
         if scope.accessible_project_ids == () and not scope.has_global_read:
             answer = (
@@ -409,6 +403,25 @@ class CopilotPipeline:
             domains_used = plan.domains_used
             tools_used = plan.retrieval_tools_used
             is_multi = True
+        elif is_open_domain:
+            # No domain keyword matched — pull evidence from every retrieval
+            # domain so the LLM (not a keyword list) decides if it can
+            # ground an answer. Reuses the existing retrieval catalog only;
+            # no new retrieval logic, keywords, or templates.
+            plan = execute_multi_domain_plan(
+                domains=[
+                    "project_overview", "health", "procurement", "suppliers",
+                    "safety", "ncr", "site_reports", "meetings", "decisions",
+                    "risks",
+                ],
+                db=db,
+                scope=scope,
+                project_id=effective_project_id,
+            )
+            all_evidence = plan.evidence
+            domains_used = plan.domains_used
+            tools_used = plan.retrieval_tools_used
+            is_multi = True
         elif routed.is_multi_domain and routed.secondary_intents:
             all_domains = [intent] + routed.secondary_intents
             plan = execute_multi_domain_plan(
@@ -432,6 +445,13 @@ class CopilotPipeline:
             all_evidence = retrieval_result.evidence
             domains_used = [intent]
             tools_used = [intent]
+
+        # TEMPORARY instrumentation — provider_error investigation.
+        logger.info(
+            "DEBUG_TRACE step=retrieval_done domains_used=%s tools_used=%s "
+            "evidence_count=%d is_multi_domain=%s",
+            domains_used, tools_used, len(all_evidence), is_multi,
+        )
 
         # ── 6.5 Comparison evidence expansion ──────────────────────────────
         # If the question asks for a comparison but the current evidence
@@ -511,6 +531,13 @@ class CopilotPipeline:
         # ── 8. Provider + LLM generation ───────────────────────────────────
         provider = get_llm_provider()
 
+        # TEMPORARY instrumentation — provider_error investigation.
+        logger.info(
+            "DEBUG_TRACE step=provider_selected provider=%s model=%s "
+            "is_available=%s",
+            provider.provider_name, provider.model_name, provider.is_available(),
+        )
+
         if not provider.is_available():
             answer = (
                 "خدمة الذكاء الاصطناعي غير متاحة حالياً."
@@ -540,6 +567,12 @@ class CopilotPipeline:
         )
 
         llm_response: Optional[LLMResponse] = None
+        # TEMPORARY instrumentation — provider_error investigation.
+        _gen_start = time.monotonic()
+        logger.info(
+            "DEBUG_TRACE step=generate_start provider=%s model=%s",
+            provider.provider_name, provider.model_name,
+        )
         try:
             llm_response = provider.generate(
                 LLMRequest(
@@ -548,12 +581,39 @@ class CopilotPipeline:
                 )
             )
             raw_answer = llm_response.content
-        except ProviderUnavailableError:
+            logger.info(
+                "DEBUG_TRACE step=generate_success provider=%s model=%s "
+                "elapsed_ms=%.1f content_len=%d",
+                llm_response.provider, llm_response.model,
+                (time.monotonic() - _gen_start) * 1000, len(raw_answer),
+            )
+        except ProviderUnavailableError as e:
+            # TEMPORARY instrumentation — captures the full exception chain.
+            # openai_compat.py does `raise ProviderUnavailableError(...) from exc`,
+            # so the original httpx exception (if any) is on __cause__.
+            cause = e.__cause__
+            cause_response = getattr(cause, "response", None)
+            elapsed_ms = (time.monotonic() - _gen_start) * 1000
+            logger.error(
+                "DEBUG_TRACE step=generate_failure provider=%s model=%s "
+                "elapsed_ms=%.1f wrapper_exc_type=%s wrapper_exc_msg=%r "
+                "cause_exc_type=%s cause_exc_msg=%r "
+                "response_received=%s http_status=%s response_body=%r",
+                provider.provider_name, provider.model_name, elapsed_ms,
+                type(e).__name__, str(e),
+                type(cause).__name__ if cause is not None else None,
+                str(cause) if cause is not None else None,
+                cause_response is not None,
+                getattr(cause_response, "status_code", None),
+                (cause_response.text[:1000] if cause_response is not None else None),
+                exc_info=True,
+            )
             answer = (
                 "خدمة الذكاء الاصطناعي غير متاحة مؤقتاً."
                 if is_arabic
                 else "AI service is temporarily unavailable."
             )
+            logger.info("DEBUG_TRACE step=final_status status=provider_error")
             return self._build_response(
                 db=db, conv=conv, user_msg=user_msg,
                 answer=answer, status="provider_error",
@@ -708,6 +768,21 @@ class CopilotPipeline:
         render_blocks: Optional[list[dict[str, Any]]] = None,
     ) -> dict[str, Any]:
         total_latency = (time.monotonic() - pipeline_start) * 1000
+
+        # TEMPORARY instrumentation for the OpenRouter-bypass investigation —
+        # remove once the fix is confirmed stable in production logs.
+        logger.info(
+            "pipeline_instrumentation intent=%s provider=%s model=%s "
+            "pipeline_status=%s raw_provider_len=%s final_answer_len=%d "
+            "used_deterministic_fallback=%s",
+            intent,
+            llm_response.provider if llm_response else None,
+            llm_response.model if llm_response else None,
+            status,
+            len(llm_response.content) if llm_response else "n/a (provider not called)",
+            len(answer),
+            status != "completed",
+        )
 
         assistant_msg = AIMessage(
             conversation_id=conv.id,

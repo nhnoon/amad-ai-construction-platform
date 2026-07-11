@@ -119,11 +119,17 @@ class OpenAICompatProvider:
                 last_error = ProviderTimeoutError(str(exc))
                 if attempt == _MAX_RETRIES:
                     raise ProviderTimeoutError("LLM request timed out") from exc
+                time.sleep(2 ** attempt)
             except httpx.HTTPError as exc:
+                # Connection-level failures (ConnectError, RemoteProtocolError,
+                # etc.) get no response at all, unlike the status-code branch
+                # above — retrying instantly against the same transient
+                # condition just fails 3x back-to-back. Back off the same way.
                 last_error = ProviderUnavailableError(str(exc))
                 if attempt == _MAX_RETRIES:
                     raise ProviderUnavailableError(
                         f"LLM request failed: {exc}"
                     ) from exc
+                time.sleep(2 ** attempt)
 
         raise last_error or ProviderUnavailableError("Provider unavailable")

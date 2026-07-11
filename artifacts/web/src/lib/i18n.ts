@@ -165,6 +165,149 @@ const en: Record<string, string> = {
   "No documents yet": "No documents yet",
   "Upload project documents and deliverables": "Upload project documents and deliverables",
   "Upload First Document": "Upload First Document",
+
+  /* AMAD Copilot — chrome */
+  "AMAD AI Copilot": "AMAD AI Copilot",
+  Online: "Online",
+  Context: "Context",
+  "New chat": "New chat",
+  "Welcome to AMAD AI": "Welcome to AMAD AI",
+  "I can help you understand projects, risks, procurement, safety, reports and portfolio performance.":
+    "I can help you understand projects, risks, procurement, safety, reports and portfolio performance.",
+  "Show critical projects": "Show critical projects",
+  "Portfolio summary": "Portfolio summary",
+  "Procurement risks": "Procurement risks",
+  "Safety overview": "Safety overview",
+  "Summarize this page": "Summarize this page",
+  "Back to home": "Back to home",
+  "Ask AMAD AI anything…": "Ask AMAD AI anything…",
+  "Attach file (coming soon)": "Attach file (coming soon)",
+  "Voice input (coming soon)": "Voice input (coming soon)",
+  Send: "Send",
+
+  /* AMAD Copilot — loading / error / retry */
+  "Thinking…": "Thinking…",
+  Retry: "Retry",
+  "Deterministic data — AI is currently unavailable": "Deterministic data — AI is currently unavailable",
+  "Loading live {{topic}} data…": "Loading live {{topic}} data…",
+  "Live AMAD data is taking longer than expected. Please try again.":
+    "Live AMAD data is taking longer than expected. Please try again.",
+  "The AI service is taking longer than expected. Please try again.":
+    "The AI service is taking longer than expected. Please try again.",
+  "Too many requests — please wait a moment and try again.": "Too many requests — please wait a moment and try again.",
+  "The AI service is currently unavailable.": "The AI service is currently unavailable.",
+  'Please include a project code or name to check its {{topic}} — for example: "{{topic}} for PRJ-0057".':
+    'Please include a project code or name to check its {{topic}} — for example: "{{topic}} for PRJ-0057".',
+
+  /* AMAD Copilot — card sections */
+  Overview: "Overview",
+  "Executive Summary": "Executive Summary",
+  "Key Findings": "Key Findings",
+  "Primary Risks": "Primary Risks",
+  "Business Impact": "Business Impact",
+  "Executive Recommendation": "Executive Recommendation",
+  Records: "Records",
+  "Live AMAD Analysis": "Live AMAD Analysis",
+
+  /* AMAD Copilot — metric labels */
+  Delayed: "Delayed",
+  "On Hold": "On Hold",
+  Excellent: "Excellent",
+  Good: "Good",
+  "At Risk": "At Risk",
+  Critical: "Critical",
+  Suspended: "Suspended",
+  Planning: "Planning",
+  Unknown: "Unknown",
+  "Late POs": "Late POs",
+  "Open PRs": "Open PRs",
+  "Total POs": "Total POs",
+  "Total PRs": "Total PRs",
+  "High Severity": "High Severity",
+  "Total Events": "Total Events",
+  "Open NCRs": "Open NCRs",
+  "Total NCRs": "Total NCRs",
+  Score: "Score",
+  Level: "Level",
+  "Total Claims": "Total Claims",
+  "Total Value": "Total Value",
+  "Highest Claim": "Highest Claim",
+  "Total Reports": "Total Reports",
+  "Critical Alerts": "Critical Alerts",
+  "Procurement Blockers": "Procurement Blockers",
+  Priority: "Priority",
+  Escalation: "Escalation",
+  Confidence: "Confidence",
+  "High-Sev Safety": "High-Sev Safety",
+  Required: "Required",
+  "Not Required": "Not Required",
+
+  /* AMAD Copilot — loading topics */
+  portfolio: "portfolio",
+  meetings: "meetings",
+  claims: "claims",
+  "change orders": "change orders",
+  rfis: "RFIs",
+  documents: "documents",
+  page: "page",
+  status: "status",
+  "Site Report": "Site Report",
+
+  /* AMAD Copilot — fixed fallback strings */
+  "Unavailable from current database.": "Unavailable from current database.",
+  "Live data for this analysis is currently unavailable.": "Live data for this analysis is currently unavailable.",
+  "Insufficient live data is available for this page.": "Insufficient live data is available for this page.",
+  "No material findings beyond standard performance indicators.": "No material findings beyond standard performance indicators.",
+  "No dominant risk category identified.": "No dominant risk category identified.",
+  "No dominant schedule risk identified.": "No dominant schedule risk identified.",
+  "No dominant procurement risk identified.": "No dominant procurement risk identified.",
+  "No dominant safety risk identified.": "No dominant safety risk identified.",
+  "No material claims exposure identified.": "No material claims exposure identified.",
+  "No material business impact identified at this time.": "No material business impact identified at this time.",
+  "No high-risk claims identified.": "No high-risk claims identified.",
+  "No specific action recommended.": "No specific action recommended.",
+  "No significant risks identified in this report.": "No significant risks identified in this report.",
+  "No significant risk indicators identified for this project.": "No significant risk indicators identified for this project.",
+  "Continue standard monitoring; no immediate action required.": "Continue standard monitoring; no immediate action required.",
+  "Continue standard portfolio monitoring.": "Continue standard portfolio monitoring.",
+  "Continue standard schedule monitoring.": "Continue standard schedule monitoring.",
+  "Continue routine safety monitoring; no escalation required.": "Continue routine safety monitoring; no escalation required.",
+  "Continue routine procurement monitoring; no escalation required.": "Continue routine procurement monitoring; no escalation required.",
+  "Monitor open safety events closely and verify corrective actions are on track.":
+    "Monitor open safety events closely and verify corrective actions are on track.",
+  "Monitor late purchase orders closely and escalate if the trend continues.":
+    "Monitor late purchase orders closely and escalate if the trend continues.",
+  "No open claims currently require action.": "No open claims currently require action.",
+  "Review open claims with legal and commercial teams, prioritizing the highest-value exposures.":
+    "Review open claims with legal and commercial teams, prioritizing the highest-value exposures.",
+  "Findings are within normal operating parameters and do not currently require escalation.":
+    "Findings are within normal operating parameters and do not currently require escalation.",
+  "This report requires escalation — unresolved items may affect schedule, safety compliance, or client relations if not addressed promptly.":
+    "This report requires escalation — unresolved items may affect schedule, safety compliance, or client relations if not addressed promptly.",
+  "Continue routine site inspection cadence; no escalation required.": "Continue routine site inspection cadence; no escalation required.",
+
+  /* AMAD Copilot — deterministic recommendation phrases (RISK_ACTION_MAP, capitalized + period) */
+  "Prioritize procurement recovery and executive review for critical projects.":
+    "Prioritize procurement recovery and executive review for critical projects.",
+  "Commission an immediate safety audit and executive review for critical projects.":
+    "Commission an immediate safety audit and executive review for critical projects.",
+  "Prioritize NCR closure and executive review for critical projects.": "Prioritize NCR closure and executive review for critical projects.",
+  "Convene a schedule recovery review and executive review for critical projects.":
+    "Convene a schedule recovery review and executive review for critical projects.",
+  "Schedule an emergency portfolio health review for critical projects.":
+    "Schedule an emergency portfolio health review for critical projects.",
+
+  /* AMAD Copilot — business impact phrases */
+  "Continued procurement delays increase the risk of schedule slippage and cost escalation from expedited sourcing or alternate suppliers.":
+    "Continued procurement delays increase the risk of schedule slippage and cost escalation from expedited sourcing or alternate suppliers.",
+  "Unresolved high-severity safety events carry regulatory, legal, and reputational exposure, and may trigger corrective-action mandates.":
+    "Unresolved high-severity safety events carry regulatory, legal, and reputational exposure, and may trigger corrective-action mandates.",
+  "Open non-conformances typically drive rework costs and can cascade into schedule delays if not closed before dependent activities begin.":
+    "Open non-conformances typically drive rework costs and can cascade into schedule delays if not closed before dependent activities begin.",
+  "Extended delays commonly translate into liquidated-damages exposure, client dissatisfaction, and compounding procurement and labor costs.":
+    "Extended delays commonly translate into liquidated-damages exposure, client dissatisfaction, and compounding procurement and labor costs.",
+  "A concentration of critical and at-risk projects strains executive attention and increases the likelihood of missed portfolio-level commitments.":
+    "A concentration of critical and at-risk projects strains executive attention and increases the likelihood of missed portfolio-level commitments.",
 };
 
 const ar: Record<string, string> = {
@@ -323,6 +466,149 @@ const ar: Record<string, string> = {
   "No documents yet": "لا توجد مستندات بعد",
   "Upload project documents and deliverables": "تحميل مستندات المشروع والمسلمات",
   "Upload First Document": "تحميل أول مستند",
+
+  /* AMAD Copilot — chrome */
+  "AMAD AI Copilot": "مساعد آماد الذكي",
+  Online: "متصل",
+  Context: "السياق",
+  "New chat": "محادثة جديدة",
+  "Welcome to AMAD AI": "مرحباً بك في آماد الذكي",
+  "I can help you understand projects, risks, procurement, safety, reports and portfolio performance.":
+    "يمكنني مساعدتك في فهم المشاريع والمخاطر والمشتريات والسلامة والتقارير وأداء المحفظة.",
+  "Show critical projects": "عرض المشاريع الحرجة",
+  "Portfolio summary": "ملخص المحفظة",
+  "Procurement risks": "مخاطر المشتريات",
+  "Safety overview": "نظرة عامة على السلامة",
+  "Summarize this page": "لخّص هذه الصفحة",
+  "Back to home": "العودة للرئيسية",
+  "Ask AMAD AI anything…": "اسأل آماد الذكي عن أي شيء…",
+  "Attach file (coming soon)": "إرفاق ملف (قريباً)",
+  "Voice input (coming soon)": "الإدخال الصوتي (قريباً)",
+  Send: "إرسال",
+
+  /* AMAD Copilot — loading / error / retry */
+  "Thinking…": "جارٍ التفكير…",
+  Retry: "إعادة المحاولة",
+  "Deterministic data — AI is currently unavailable": "بيانات مباشرة بديلة — الذكاء الاصطناعي غير متاح حالياً",
+  "Loading live {{topic}} data…": "جارٍ تحميل بيانات {{topic}} المباشرة…",
+  "Live AMAD data is taking longer than expected. Please try again.":
+    "استغرقت بيانات آماد المباشرة وقتاً أطول من المتوقع. يرجى المحاولة مرة أخرى.",
+  "The AI service is taking longer than expected. Please try again.":
+    "استغرقت خدمة الذكاء الاصطناعي وقتاً أطول من المتوقع. يرجى المحاولة مرة أخرى.",
+  "Too many requests — please wait a moment and try again.": "عدد الطلبات كبير حالياً — يرجى الانتظار قليلاً ثم المحاولة مرة أخرى.",
+  "The AI service is currently unavailable.": "خدمة الذكاء الاصطناعي غير متاحة حالياً.",
+  'Please include a project code or name to check its {{topic}} — for example: "{{topic}} for PRJ-0057".':
+    "يرجى إضافة رمز المشروع أو اسمه للاطلاع على {{topic}} الخاصة به — على سبيل المثال: \"{{topic}} لمشروع PRJ-0057\".",
+
+  /* AMAD Copilot — card sections */
+  Overview: "نظرة عامة",
+  "Executive Summary": "الملخص التنفيذي",
+  "Key Findings": "أبرز النتائج",
+  "Primary Risks": "المخاطر الرئيسية",
+  "Business Impact": "الأثر على الأعمال",
+  "Executive Recommendation": "التوصية التنفيذية",
+  Records: "السجلات",
+  "Live AMAD Analysis": "تحليل آماد المباشر",
+
+  /* AMAD Copilot — metric labels */
+  Delayed: "متأخر",
+  "On Hold": "متوقف",
+  Excellent: "ممتاز",
+  Good: "جيد",
+  "At Risk": "في خطر",
+  Critical: "حرجة",
+  Suspended: "معلّق",
+  Planning: "قيد التخطيط",
+  Unknown: "غير معروف",
+  "Late POs": "أوامر شراء متأخرة",
+  "Open PRs": "طلبات شراء مفتوحة",
+  "Total POs": "إجمالي أوامر الشراء",
+  "Total PRs": "إجمالي طلبات الشراء",
+  "High Severity": "شدة عالية",
+  "Total Events": "إجمالي الأحداث",
+  "Open NCRs": "تقارير عدم مطابقة مفتوحة",
+  "Total NCRs": "إجمالي تقارير عدم المطابقة",
+  Score: "الدرجة",
+  Level: "المستوى",
+  "Total Claims": "إجمالي المطالبات",
+  "Total Value": "القيمة الإجمالية",
+  "Highest Claim": "أعلى مطالبة",
+  "Total Reports": "إجمالي التقارير",
+  "Critical Alerts": "تنبيهات حرجة",
+  "Procurement Blockers": "عوائق المشتريات",
+  Priority: "الأولوية",
+  Escalation: "التصعيد",
+  Confidence: "مستوى الثقة",
+  "High-Sev Safety": "سلامة عالية الخطورة",
+  Required: "مطلوب",
+  "Not Required": "غير مطلوب",
+
+  /* AMAD Copilot — loading topics */
+  portfolio: "المحفظة",
+  meetings: "الاجتماعات",
+  claims: "المطالبات",
+  "change orders": "أوامر التغيير",
+  rfis: "طلبات الاستيضاح",
+  documents: "المستندات",
+  page: "الصفحة",
+  status: "الحالة",
+  "Site Report": "تقرير الموقع",
+
+  /* AMAD Copilot — fixed fallback strings */
+  "Unavailable from current database.": "غير متاح في قاعدة البيانات الحالية.",
+  "Live data for this analysis is currently unavailable.": "البيانات المباشرة اللازمة لهذا التحليل غير متاحة حالياً.",
+  "Insufficient live data is available for this page.": "لا تتوفر بيانات مباشرة كافية لهذه الصفحة.",
+  "No material findings beyond standard performance indicators.": "لا توجد نتائج جوهرية تتجاوز مؤشرات الأداء المعتادة.",
+  "No dominant risk category identified.": "لا توجد فئة مخاطر رئيسية بارزة حالياً.",
+  "No dominant schedule risk identified.": "لا توجد مخاطر جدولة رئيسية بارزة حالياً.",
+  "No dominant procurement risk identified.": "لا توجد مخاطر مشتريات رئيسية بارزة حالياً.",
+  "No dominant safety risk identified.": "لا توجد مخاطر سلامة رئيسية بارزة حالياً.",
+  "No material claims exposure identified.": "لا يوجد تعرض مالي جوهري للمطالبات حالياً.",
+  "No material business impact identified at this time.": "لا يوجد أثر جوهري على الأعمال في الوقت الحالي.",
+  "No high-risk claims identified.": "لا توجد مطالبات عالية المخاطر حالياً.",
+  "No specific action recommended.": "لا توجد توصية محددة حالياً.",
+  "No significant risks identified in this report.": "لا توجد مخاطر جوهرية في هذا التقرير.",
+  "No significant risk indicators identified for this project.": "لا توجد مؤشرات مخاطر جوهرية لهذا المشروع.",
+  "Continue standard monitoring; no immediate action required.": "استمرار المتابعة المعتادة دون الحاجة لإجراء فوري.",
+  "Continue standard portfolio monitoring.": "استمرار متابعة المحفظة بالوتيرة المعتادة.",
+  "Continue standard schedule monitoring.": "استمرار متابعة الجدول الزمني بالوتيرة المعتادة.",
+  "Continue routine safety monitoring; no escalation required.": "استمرار متابعة السلامة الدورية دون الحاجة للتصعيد.",
+  "Continue routine procurement monitoring; no escalation required.": "استمرار متابعة المشتريات الدورية دون الحاجة للتصعيد.",
+  "Monitor open safety events closely and verify corrective actions are on track.":
+    "متابعة حوادث السلامة المفتوحة عن قرب والتأكد من سير الإجراءات التصحيحية كما هو مخطط.",
+  "Monitor late purchase orders closely and escalate if the trend continues.":
+    "متابعة أوامر الشراء المتأخرة عن قرب وتصعيدها إذا استمر التأخر.",
+  "No open claims currently require action.": "لا توجد مطالبات مفتوحة تستدعي إجراءً حالياً.",
+  "Review open claims with legal and commercial teams, prioritizing the highest-value exposures.":
+    "مراجعة المطالبات المفتوحة مع الفريق القانوني والتجاري، مع إعطاء الأولوية لأعلى المطالبات قيمةً.",
+  "Findings are within normal operating parameters and do not currently require escalation.":
+    "تقع النتائج ضمن الحدود التشغيلية الطبيعية ولا تستدعي التصعيد حالياً.",
+  "This report requires escalation — unresolved items may affect schedule, safety compliance, or client relations if not addressed promptly.":
+    "يتطلب هذا التقرير تصعيداً — فقد تؤثر البنود غير المعالجة على الجدول الزمني أو الامتثال للسلامة أو العلاقة مع العميل إن لم تُعالَج سريعاً.",
+  "Continue routine site inspection cadence; no escalation required.": "استمرار وتيرة التفتيش الميداني المعتادة دون الحاجة للتصعيد.",
+
+  /* AMAD Copilot — deterministic recommendation phrases (RISK_ACTION_MAP, capitalized + period) */
+  "Prioritize procurement recovery and executive review for critical projects.":
+    "تُعطى الأولوية لمعالجة تعثر المشتريات مع مراجعة تنفيذية للمشاريع الحرجة.",
+  "Commission an immediate safety audit and executive review for critical projects.":
+    "يُوصى بتكليف تدقيق سلامة فوري ومراجعة تنفيذية للمشاريع الحرجة.",
+  "Prioritize NCR closure and executive review for critical projects.": "تُعطى الأولوية لإغلاق تقارير عدم المطابقة مع مراجعة تنفيذية للمشاريع الحرجة.",
+  "Convene a schedule recovery review and executive review for critical projects.":
+    "يُوصى بعقد مراجعة لاستعادة الجدول الزمني ومراجعة تنفيذية للمشاريع الحرجة.",
+  "Schedule an emergency portfolio health review for critical projects.":
+    "يُوصى بجدولة مراجعة طارئة لصحة المحفظة للمشاريع الحرجة.",
+
+  /* AMAD Copilot — business impact phrases */
+  "Continued procurement delays increase the risk of schedule slippage and cost escalation from expedited sourcing or alternate suppliers.":
+    "استمرار تعثر المشتريات يرفع احتمالية تأخر الجدول الزمني وارتفاع التكاليف نتيجة التوريد المستعجل أو اللجوء لموردين بدلاء.",
+  "Unresolved high-severity safety events carry regulatory, legal, and reputational exposure, and may trigger corrective-action mandates.":
+    "حوادث السلامة عالية الخطورة غير المعالجة تحمل تبعات نظامية وقانونية وسمعية، وقد تستوجب إجراءات تصحيحية إلزامية.",
+  "Open non-conformances typically drive rework costs and can cascade into schedule delays if not closed before dependent activities begin.":
+    "حالات عدم المطابقة المفتوحة عادةً ما ترفع تكاليف إعادة التنفيذ، وقد تتسبب في تأخير الجدول الزمني إن لم تُغلق قبل بدء الأنشطة المرتبطة بها.",
+  "Extended delays commonly translate into liquidated-damages exposure, client dissatisfaction, and compounding procurement and labor costs.":
+    "التأخير الممتد غالباً ما يترجم إلى تعرض للغرامات التعاقدية، وتراجع رضا العميل، وتصاعد تكاليف المشتريات والعمالة.",
+  "A concentration of critical and at-risk projects strains executive attention and increases the likelihood of missed portfolio-level commitments.":
+    "تركّز المشاريع الحرجة والمعرّضة للخطر يستنزف الاهتمام التنفيذي ويرفع احتمالية الإخلال بالتزامات المحفظة.",
 };
 
 i18n.use(initReactI18next).init({
