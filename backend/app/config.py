@@ -81,6 +81,12 @@ class Settings(BaseSettings):
     # requires no authentication (Hermes's own config.yaml uses the Ollama
     # convention of a dummy placeholder key).
 
+    # ── Copilot Memory Layer (bounded, per-user; not yet read/written by
+    # the pipeline — see app/ai/memory.py) ─────────────────────────────
+    # Mirrors Hermes's own memory.user_char_limit / memory.memory_char_limit.
+    AI_USER_PROFILE_CHAR_LIMIT: int = 1375
+    AI_MEMORY_NOTE_CHAR_LIMIT: int = 2200
+
     DEFAULT_PAGE_SIZE: int = 20
     MAX_PAGE_SIZE: int = 100
 

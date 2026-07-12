@@ -11,6 +11,7 @@ from .safety import SafetyEvent, NCR
 from .subcontractors import Subcontractor, SubcontractorEvaluation
 from .ai import AIMemory, AIAuditLog, ApprovalRequest
 from .ai_copilot import AIConversation, AIMessage, AICitation, CopilotAuditLog
+from .copilot_memory import AIUserProfileMemory, AIMemoryNote
 
 __all__ = [
     "Base",
@@ -26,4 +27,5 @@ __all__ = [
     "Subcontractor", "SubcontractorEvaluation",
     "AIMemory", "AIAuditLog", "ApprovalRequest",
     "AIConversation", "AIMessage", "AICitation", "CopilotAuditLog",
+    "AIUserProfileMemory", "AIMemoryNote",
 ]
