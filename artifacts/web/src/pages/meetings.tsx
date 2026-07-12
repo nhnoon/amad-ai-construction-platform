@@ -6,6 +6,7 @@ import {
 } from "@workspace/api-client-react";
 import { useTranslation } from "react-i18next";
 import { CalendarDays, AlertOctagon } from "lucide-react";
+import { BackToOperations } from "@/components/back-to-operations";
 
 type Tab = "meetings" | "decisions";
 
@@ -48,6 +49,8 @@ export default function Meetings() {
 
   return (
     <div className="space-y-6">
+      <BackToOperations />
+
       {/* Header */}
       <div className="page-header">
         <div>

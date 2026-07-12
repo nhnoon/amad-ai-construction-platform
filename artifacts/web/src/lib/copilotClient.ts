@@ -88,6 +88,81 @@ export async function postCopilotQuery(
   return resp.json() as Promise<CopilotQueryResponse>;
 }
 
+// Calls the EXISTING backend endpoint POST /api/v1/ai/agents/procurement —
+// same response shape as postCopilotQuery (same RBAC-scoped retrieval, LLM
+// provider, grounding, and citations). Retrieval is always procurement-scoped
+// regardless of `question` (see execute_procurement_agent) — an optional
+// question only changes what the LLM is asked to focus on in its answer.
+export async function postProcurementAgent(
+  payload: { project_id?: number; conversation_id?: number; language: "en" | "ar"; question?: string },
+  signal?: AbortSignal
+): Promise<CopilotQueryResponse> {
+  const token = getToken();
+  const resp = await fetch("/api/v1/ai/agents/procurement", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
+    },
+    body: JSON.stringify(payload),
+    signal,
+  });
+
+  if (!resp.ok) {
+    let detail = `Request failed: ${resp.status}`;
+    try {
+      const body = await resp.json();
+      if (body?.detail) detail = String(body.detail);
+    } catch {
+      // response body wasn't JSON — keep the generic detail
+    }
+    throw new CopilotApiError(detail, resp.status);
+  }
+
+  return resp.json() as Promise<CopilotQueryResponse>;
+}
+
+// Calls the EXISTING backend endpoint POST /api/v1/ai/agents/meeting — same
+// response shape as postCopilotQuery. meeting_id omitted runs the
+// portfolio-wide meetings status summary (execute_meeting_agent's
+// no-meeting_id branch); meeting_id given runs the single-meeting detail
+// analysis. Same RBAC-scoped retrieval, LLM provider, grounding, and
+// citations as every other agent endpoint.
+export async function postMeetingAgent(
+  payload: {
+    meeting_id?: number;
+    project_id?: number;
+    conversation_id?: number;
+    language: "en" | "ar";
+    question?: string;
+  },
+  signal?: AbortSignal
+): Promise<CopilotQueryResponse> {
+  const token = getToken();
+  const resp = await fetch("/api/v1/ai/agents/meeting", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
+    },
+    body: JSON.stringify(payload),
+    signal,
+  });
+
+  if (!resp.ok) {
+    let detail = `Request failed: ${resp.status}`;
+    try {
+      const body = await resp.json();
+      if (body?.detail) detail = String(body.detail);
+    } catch {
+      // response body wasn't JSON — keep the generic detail
+    }
+    throw new CopilotApiError(detail, resp.status);
+  }
+
+  return resp.json() as Promise<CopilotQueryResponse>;
+}
+
 // Mirrors the backend's own Arabic-detection heuristic (pipeline.py
 // `_detect_arabic`) so the frontend can pick RTL layout and bilingual UI
 // labels per message, matching whatever language the backend replied in.

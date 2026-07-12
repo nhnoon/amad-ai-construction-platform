@@ -104,6 +104,18 @@ class OpenAICompatProvider:
                 data = resp.json()
                 choice = data["choices"][0]
                 content = choice["message"]["content"]
+                if not content:
+                    # Some auto-routed models (esp. reasoning models under a
+                    # tight max_tokens budget) return HTTP 200 with
+                    # content=null/"" — the whole token budget went to a
+                    # hidden reasoning trace, nothing left for the answer.
+                    # Treat it as a provider fault so callers get the
+                    # existing "temporarily unavailable" handling instead of
+                    # crashing on None downstream.
+                    raise ProviderUnavailableError(
+                        "Provider returned empty content "
+                        f"(model={data.get('model', self._model)})"
+                    )
                 usage = data.get("usage", {})
                 return LLMResponse(
                     content=content,

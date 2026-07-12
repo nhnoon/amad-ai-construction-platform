@@ -12,6 +12,28 @@ class CopilotQueryRequest(BaseModel):
     project_id: Optional[int] = None
 
 
+class ProcurementAgentRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    project_id: Optional[int] = None
+    conversation_id: Optional[int] = None
+    language: str = Field(default="en", pattern="^(en|ar)$")
+    question: Optional[str] = Field(default=None, max_length=2000)
+
+
+class MeetingAgentRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    # meeting_id given: single-meeting detail. meeting_id omitted: a
+    # portfolio-wide (or project_id-scoped) meetings status summary — see
+    # CopilotPipeline.execute_meeting_agent.
+    meeting_id: Optional[int] = None
+    project_id: Optional[int] = None
+    conversation_id: Optional[int] = None
+    language: str = Field(default="en", pattern="^(en|ar)$")
+    question: Optional[str] = Field(default=None, max_length=2000)
+
+
 class CitationOut(BaseModel):
     id: int
     source_type: str

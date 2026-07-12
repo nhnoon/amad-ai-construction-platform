@@ -27,7 +27,7 @@ import { cn } from "@/lib/utils";
 import { useExecutive, type ExecutiveIntelligence } from "../lib/useExecutive";
 import { useExecutiveWeeklyReport } from "../lib/useReports";
 import { detectIntent, findProjectMatch } from "../lib/copilotIntent";
-import { postCopilotQuery, CopilotApiError, isArabicText, type CopilotQueryResponse, type CopilotRenderBlock } from "../lib/copilotClient";
+import { postCopilotQuery, postProcurementAgent, postMeetingAgent, CopilotApiError, isArabicText, type CopilotQueryResponse, type CopilotRenderBlock } from "../lib/copilotClient";
 import {
   useCopilotClaims,
   useCopilotChangeOrders,
@@ -85,6 +85,7 @@ interface CopilotMessage {
   projectLabel?: string; // for assistant-record
   pageContext?: PageContext; // for assistant-context — frozen at creation time
   aiQuestion?: string; // for assistant-ai — original question, needed for Retry
+  agentKind?: "procurement" | "meeting"; // for assistant-ai — set when this came from a dedicated agent endpoint, not the free-text pipeline; tells Retry which agent endpoint to call
   aiResponse?: CopilotQueryResponse; // for assistant-ai — set once the real pipeline answers
   aiError?: string; // for assistant-ai — set if the real pipeline call failed
   isFallback?: boolean; // marks a deterministic message shown because the AI call failed
@@ -1783,6 +1784,15 @@ export function AIDrawer({ isOpen, onClose }: AIDrawerProps) {
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   // Ref, not state — read/written across async calls only, never rendered.
   const conversationIdRef = useRef<number | null>(null);
+  // Which backend path typed messages go through. "procurement" pins EVERY
+  // message (not just the initial click) to POST /ai/agents/procurement, and
+  // "meeting" pins every message to POST /ai/agents/meeting — never the
+  // general /copilot/query — so a question can never fall through the
+  // keyword router into execute_multi_domain_plan() and pull in unrelated
+  // domain evidence. Switching agents always starts a fresh conversation
+  // (see startNewChat / handleProcurementAgentClick / handleMeetingAgentClick)
+  // so citations from one agent's chat never leak into another's.
+  const [activeAgent, setActiveAgent] = useState<"general" | "procurement" | "meeting">("general");
 
   const pageContext = resolvePageContext(location);
 
@@ -1858,6 +1868,7 @@ export function AIDrawer({ isOpen, onClose }: AIDrawerProps) {
     setMessages([]);
     setInput("");
     conversationIdRef.current = null;
+    setActiveAgent("general");
     textareaRef.current?.focus();
   };
 
@@ -1957,9 +1968,126 @@ export function AIDrawer({ isOpen, onClose }: AIDrawerProps) {
     }
   };
 
-  const handleRetry = (messageId: string, question: string) => {
+  // Procurement Intelligence Agent — a fixed-scope specialist call (no
+  // free-text question), hitting the existing backend AI pipeline's own
+  // agent endpoint (RBAC-scoped retrieval, grounding, citations, bilingual
+  // EN/AR — see backend/app/ai/pipeline.py:execute_procurement_agent). Same
+  // response shape as the regular Copilot query, so it renders through the
+  // same AiAnswerCard below.
+  const runProcurementAgent = async (assistantId: string, question?: string) => {
+    const controller = new AbortController();
+    const timeoutId = window.setTimeout(() => controller.abort(), COPILOT_TIMEOUT_MS);
+    const projectIdHint =
+      pageContext.kind === "project-detail" || pageContext.kind === "site-report-detail" ? pageContext.projectId : undefined;
+
+    try {
+      const res = await postProcurementAgent(
+        {
+          conversation_id: conversationIdRef.current ?? undefined,
+          project_id: projectIdHint,
+          language: isRTL ? "ar" : "en",
+          ...(question ? { question } : {}),
+        },
+        controller.signal
+      );
+      window.clearTimeout(timeoutId);
+      conversationIdRef.current = res.conversation_id;
+      setMessages((prev) => prev.map((m) => (m.id === assistantId ? { ...m, aiResponse: res, aiError: undefined } : m)));
+    } catch (err) {
+      window.clearTimeout(timeoutId);
+      const isAbort = err instanceof DOMException && err.name === "AbortError";
+      const message = isAbort
+        ? "The AI service is taking longer than expected. Please try again."
+        : err instanceof CopilotApiError
+          ? err.status === 429
+            ? "Too many requests — please wait a moment and try again."
+            : err.message
+          : "The AI service is currently unavailable.";
+      setMessages((prev) => prev.map((m) => (m.id === assistantId ? { ...m, aiError: message } : m)));
+    }
+  };
+
+  // Meeting Intelligence Agent — portfolio-wide meetings/decisions status
+  // summary by default (no meeting_id), hitting the existing backend AI
+  // pipeline's own agent endpoint (RBAC-scoped retrieval, grounding,
+  // citations, bilingual EN/AR, deterministic fallback on provider failure —
+  // see backend/app/ai/pipeline.py:execute_meeting_agent). Same response
+  // shape as the regular Copilot query, so it renders through the same
+  // AiAnswerCard below.
+  const runMeetingAgent = async (assistantId: string, question?: string) => {
+    const controller = new AbortController();
+    const timeoutId = window.setTimeout(() => controller.abort(), COPILOT_TIMEOUT_MS);
+    const projectIdHint =
+      pageContext.kind === "project-detail" || pageContext.kind === "site-report-detail" ? pageContext.projectId : undefined;
+
+    try {
+      const res = await postMeetingAgent(
+        {
+          conversation_id: conversationIdRef.current ?? undefined,
+          project_id: projectIdHint,
+          language: isRTL ? "ar" : "en",
+          ...(question ? { question } : {}),
+        },
+        controller.signal
+      );
+      window.clearTimeout(timeoutId);
+      conversationIdRef.current = res.conversation_id;
+      setMessages((prev) => prev.map((m) => (m.id === assistantId ? { ...m, aiResponse: res, aiError: undefined } : m)));
+    } catch (err) {
+      window.clearTimeout(timeoutId);
+      const isAbort = err instanceof DOMException && err.name === "AbortError";
+      const message = isAbort
+        ? "The AI service is taking longer than expected. Please try again."
+        : err instanceof CopilotApiError
+          ? err.status === 429
+            ? "Too many requests — please wait a moment and try again."
+            : err.message
+          : "The AI service is currently unavailable.";
+      setMessages((prev) => prev.map((m) => (m.id === assistantId ? { ...m, aiError: message } : m)));
+    }
+  };
+
+  const handleProcurementAgentClick = () => {
+    // Isolate the conversation: an agent chat must never inherit
+    // messages/citations from a general Copilot conversation, and vice versa.
+    const now = Date.now();
+    const assistantMsgId = `a-${now}`;
+    const label = t("Run Procurement Agent");
+    conversationIdRef.current = null;
+    setActiveAgent("procurement");
+    setMessages([
+      { id: `u-${now}`, role: "user", text: label, createdAt: now },
+      { id: assistantMsgId, role: "assistant-ai", aiQuestion: label, agentKind: "procurement", createdAt: now },
+    ]);
+    void runProcurementAgent(assistantMsgId);
+  };
+
+  const handleMeetingAgentClick = () => {
+    // Isolate the conversation: an agent chat must never inherit
+    // messages/citations from a general Copilot or Procurement Agent conversation.
+    const now = Date.now();
+    const assistantMsgId = `a-${now}`;
+    const label = t("Run Meeting Agent");
+    conversationIdRef.current = null;
+    setActiveAgent("meeting");
+    setMessages([
+      { id: `u-${now}`, role: "user", text: label, createdAt: now },
+      { id: assistantMsgId, role: "assistant-ai", aiQuestion: label, agentKind: "meeting", createdAt: now },
+    ]);
+    void runMeetingAgent(assistantMsgId);
+  };
+
+  const handleRetry = (messageId: string, question: string, agentKind?: "procurement" | "meeting") => {
     setMessages((prev) => prev.map((m) => (m.id === messageId ? { ...m, aiError: undefined, aiResponse: undefined } : m)));
-    void runCopilotQuery(question, messageId);
+    if (agentKind === "procurement") {
+      // question is the fixed label on the initial click, or the user's own
+      // typed text for later turns — only pass it through in the latter case.
+      void runProcurementAgent(messageId, question === t("Run Procurement Agent") ? undefined : question);
+    } else if (agentKind === "meeting") {
+      void runMeetingAgent(messageId, question === t("Run Meeting Agent") ? undefined : question);
+    } else {
+      void runCopilotQuery(question, messageId);
+    }
   };
 
   // Every user message (typed or a suggestion chip) goes through the same
@@ -1976,6 +2104,31 @@ export function AIDrawer({ isOpen, onClose }: AIDrawerProps) {
     if (!content) return;
     const now = Date.now();
     const assistantMsgId = `a-${now}`;
+
+    // While Procurement Agent or Meeting Agent is active, EVERY message —
+    // typed or chip — goes to that agent's dedicated endpoint, never
+    // /copilot/query. This is the fix for the routing bug: a typed question
+    // that missed the general pipeline's keyword router used to fall into
+    // intent="unknown" → execute_multi_domain_plan(), pulling in unrelated
+    // domain evidence. The dedicated agent endpoints never run intent
+    // routing or that multi-domain fallback, so it can't happen here
+    // regardless of wording.
+    if (activeAgent === "procurement" || activeAgent === "meeting") {
+      const agentKind = activeAgent;
+      setMessages((prev) => [
+        ...prev,
+        { id: `u-${now}`, role: "user", text: content, createdAt: now },
+        { id: assistantMsgId, role: "assistant-ai", aiQuestion: content, agentKind, createdAt: now },
+      ]);
+      setInput("");
+      textareaRef.current?.focus();
+      if (agentKind === "procurement") {
+        void runProcurementAgent(assistantMsgId, content);
+      } else {
+        void runMeetingAgent(assistantMsgId, content);
+      }
+      return;
+    }
 
     if (isPageAwareQuery(content)) {
       setMessages((prev) => [
@@ -2058,15 +2211,42 @@ export function AIDrawer({ isOpen, onClose }: AIDrawerProps) {
                   <span className="relative inline-flex h-1.5 w-1.5 rounded-full bg-emerald-500" />
                 </span>
                 <span className="text-[11px] font-medium text-emerald-400/90">{t("Online")}</span>
-                {contextLabel && (
+                {activeAgent === "procurement" || activeAgent === "meeting" ? (
                   <span className="text-[11px] text-white/35 truncate">
-                    · {t("Context")}: <span className="text-white/60">{contextLabel}</span>
+                    · {t("Agent")}:{" "}
+                    <span className="text-white/60">
+                      {t(activeAgent === "procurement" ? "Procurement Agent" : "Meeting Agent")}
+                    </span>
                   </span>
+                ) : (
+                  contextLabel && (
+                    <span className="text-[11px] text-white/35 truncate">
+                      · {t("Context")}: <span className="text-white/60">{contextLabel}</span>
+                    </span>
+                  )
                 )}
               </div>
             </div>
           </div>
           <div className="flex items-center gap-1 shrink-0">
+            <button
+              onClick={handleProcurementAgentClick}
+              className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-medium text-white/70 hover:text-white hover:bg-white/10 transition-colors"
+              aria-label={t("Run Procurement Agent")}
+              title={t("Run Procurement Agent")}
+            >
+              <Package className="w-3.5 h-3.5" />
+              <span className="hidden sm:inline">{t("Procurement Agent")}</span>
+            </button>
+            <button
+              onClick={handleMeetingAgentClick}
+              className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-medium text-white/70 hover:text-white hover:bg-white/10 transition-colors"
+              aria-label={t("Run Meeting Agent")}
+              title={t("Run Meeting Agent")}
+            >
+              <Calendar className="w-3.5 h-3.5" />
+              <span className="hidden sm:inline">{t("Meeting Agent")}</span>
+            </button>
             <button
               onClick={startNewChat}
               className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-medium text-white/70 hover:text-white hover:bg-white/10 transition-colors"
@@ -2144,7 +2324,7 @@ export function AIDrawer({ isOpen, onClose }: AIDrawerProps) {
                       <IconChip icon={Sparkles} />
                       <div className="flex flex-col items-start min-w-0">
                         {isPending && <AiPendingBubble />}
-                        {m.aiError && <AiErrorBubble message={m.aiError} onRetry={() => handleRetry(m.id, m.aiQuestion ?? "")} />}
+                        {m.aiError && <AiErrorBubble message={m.aiError} onRetry={() => handleRetry(m.id, m.aiQuestion ?? "", m.agentKind)} />}
                         {m.aiResponse && (
                           <AiAnswerCard response={m.aiResponse} question={m.aiQuestion} onFollowUp={handleUserMessage} />
                         )}

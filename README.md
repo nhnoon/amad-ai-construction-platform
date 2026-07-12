@@ -1,361 +1,288 @@
-# AMAD Construction AI Platform
-
-A comprehensive AI-powered construction operations intelligence platform featuring real-time project monitoring, safety management, procurement optimization, and executive intelligence dashboards.
-
-## Features
-
-- **Project Management**: Track 60+ construction projects with real-time health scoring
-- **Executive Dashboard**: Portfolio-level insights, risk summaries, and KPI monitoring
-- **Health Scoring Engine**: Deterministic project health calculations based on schedule, safety, procurement, and quality metrics
-- **Smart Alerts**: 1,000+ rule-based operational alerts with severity classification
-- **Safety Management**: Safety event tracking, NCR management, and risk assessment
-- **Procurement**: Purchase order tracking, supplier management, and delivery status monitoring
-- **Site Reports**: Daily activity logs, meeting minutes, and decision tracking
-- **Role-Based Access Control**: Admin, Executive, Project Manager, Site Engineer, Safety Officer roles
-- **Cross-Platform Support**: Fully functional on Windows, macOS, and Linux
-
-## Technology Stack
-
-### Backend
-- **Framework**: FastAPI 0.115.7
-- **Server**: Uvicorn 0.34.0
-- **ORM**: SQLAlchemy 2.0.36
-- **Database**: PostgreSQL 15.x
-- **Migrations**: Alembic
-- **Authentication**: JWT (python-jose) + bcrypt password hashing
-- **Language**: Python 3.12.2
-
-### Frontend
-- **Framework**: React 19.1.0
-- **Build Tool**: Vite 7.3.5
-- **Language**: TypeScript
-- **Package Manager**: pnpm 11.10.0
-- **UI Library**: Modern CSS-in-JS (styled with design tokens)
-
-### Database
-- **Primary**: PostgreSQL 15.x (15,000+ rows of production data)
-- **Cache**: Redis (optional)
-- **Migrations**: Alembic for schema management
-
-## Local Setup (Windows 11)
-
-### Prerequisites
-- Python 3.12+ (https://www.python.org/downloads/)
-- Node.js 24.x+ (https://nodejs.org/)
-- PostgreSQL 15+ (https://www.postgresql.org/download/windows/)
-- pnpm 11.x+ (`npm install -g pnpm`)
-- Git
-
-### Step 1: Clone the Repository
-
-```bash
-git clone <repository-url>
-cd amad-construction-ai-platform-main
-```
-
-### Step 2: Set Up PostgreSQL Database
-
-```bash
-# Start PostgreSQL service (Windows)
-# Or use: net start postgresql-x64-15
-
-# Create database
-createdb -U postgres -E UTF8 amad_construction_ai
-
-# Create user (if needed)
-# psql -U postgres -c "CREATE USER construction_user WITH PASSWORD 'your_password';"
-```
-
-### Step 3: Backend Setup
-
-```bash
-# Navigate to backend
-cd backend
-
-# Create .env from template
-copy .env.example .env
-
-# Edit .env and set:
-# - DATABASE_URL=postgresql://postgres:YOUR_PASSWORD@localhost:5432/amad_construction_ai
-# - SESSION_SECRET=<generate with: python -c "import secrets; print(secrets.token_hex(32))">
-
-# Create virtual environment
-python -m venv .venv
-
-# Activate (Windows)
-.venv\Scripts\activate
-
-# Install dependencies
-pip install -r requirements.txt
-
-# Run migrations
-alembic upgrade head
-
-# Seed initial user data (optional)
-python -m scripts.seed_users
-```
-
-### Step 4: Restore Production Dataset (Optional)
-
-See [DATA_SETUP.md](DATA_SETUP.md) for detailed instructions on restoring the production dataset.
-
-```bash
-# After database is set up, restore data:
-python migrate_from_local_data.py
-```
-
-### Step 5: Start Backend
-
-```bash
-# From backend directory (with .venv activated)
-python run_server.py
-
-# Server will run on http://127.0.0.1:8000
-# API docs: http://127.0.0.1:8000/api/docs
-```
-
-### Step 6: Frontend Setup
-
-```bash
-# In new terminal, from project root
-cd artifacts/web
-
-# Create .env (if needed)
-copy .env.example .env
-
-# Install dependencies
-pnpm install
-
-# Start development server
-pnpm dev
-
-# Frontend will run on http://localhost:5174
-```
-
-## Default Login Credentials
-
-After setup and seeding, use:
-
-**Email**: `admin@construction.ai`  
-**Password**: `Admin123!`
-
-> ⚠️ **Security Note**: Change these credentials before production deployment!
-
-## Project Structure
-
-```
-.
-├── backend/                    # FastAPI backend application
-│   ├── app/
-│   │   ├── main.py            # FastAPI app entrypoint
-│   │   ├── config.py          # Settings and configuration
-│   │   ├── database.py        # Database connection
-│   │   ├── models/            # SQLAlchemy models (33 models, 27 tables)
-│   │   ├── api/v1/            # REST API endpoints
-│   │   ├── ai/                # Health scoring and analytics
-│   │   ├── core/              # Auth, security, dependencies
-│   │   └── schemas/           # Pydantic validation schemas
-│   ├── alembic/               # Database migrations
-│   ├── data/                  # Data files (SQL dumps for restoration)
-│   ├── .env.example           # Environment template
-│   ├── requirements.txt       # Python dependencies
-│   └── run_server.py          # Server launcher
-│
-├── artifacts/web/             # React/Vite frontend application
-│   ├── src/
-│   │   ├── App.tsx            # Main React component
-│   │   ├── pages/             # Page components
-│   │   ├── components/        # Reusable components
-│   │   ├── services/          # API client
-│   │   └── hooks/             # React hooks
-│   ├── vite.config.ts         # Vite configuration
-│   ├── tsconfig.json          # TypeScript config
-│   └── package.json
-│
-├── lib/                       # Shared libraries
-│   ├── api-client-react/      # React API client
-│   ├── api-spec/              # OpenAPI specification
-│   ├── api-zod/               # Zod validation schemas
-│   ├── brand-tokens/          # Design tokens
-│   └── db/                    # Database utilities
-│
-├── docs/                      # Documentation
-├── scripts/                   # Monorepo scripts
-└── README.md                  # This file
-```
-
-## Database Schema
-
-The application uses 27 PostgreSQL tables across 12 data models:
-
-**Core**: Projects, Organizations, Users, ProjectMemberships  
-**Operations**: Meetings, Documents, MeetingActionItems  
-**Safety**: SafetyEvents, NCRs  
-**Procurement**: PurchaseRequests, PurchaseOrders, Suppliers, Subcontractors  
-**Finance**: Claims, ChangeOrders  
-**Analytics**: ProjectRisks, HealthScores, AIConversations
-
-See `backend/app/models/` for detailed schema definitions.
-
-## API Endpoints
-
-### Authentication
-- `POST /api/v1/auth/login` - User login
-- `GET /api/v1/auth/me` - Current user info
-
-### Dashboard & Reports
-- `GET /api/v1/dashboard/summary` - Dashboard metrics
-- `GET /api/v1/reports/executive-weekly` - Executive weekly report
-- `GET /api/v1/alerts` - List operational alerts
-- `GET /api/v1/alerts/summary` - Alert statistics
-- `GET /api/v1/executive` - Executive intelligence
-
-### Projects
-- `GET /api/v1/projects` - List all projects
-- `GET /api/v1/projects/{id}` - Project details
-- `GET /api/v1/projects/health-scores` - Project health metrics
-
-### Operations
-- `GET /api/v1/safety-events` - Safety incidents
-- `GET /api/v1/ncrs` - Non-conformance reports
-- `GET /api/v1/purchase-orders` - Procurement orders
-- `GET /api/v1/suppliers` - Supplier directory
-
-See `http://127.0.0.1:8000/api/docs` for full API documentation.
-
-## Health Scoring Algorithm
-
-Projects are scored 0-100 based on weighted penalties:
-
-| Factor | Max Penalty | Details |
-|--------|------------|---------|
-| Schedule | 35 | Delayed status, overdue days |
-| Safety | 25 | High/critical events, counts |
-| Quality (NCR) | 20 | Open non-conformances |
-| Procurement | 15 | Late purchase orders |
-| Risk | 10 | Project risk assessments |
-
-**Score Levels**:
-- 80-100: Excellent
-- 60-79: Good
-- 40-59: At Risk
-- 0-39: Critical
-
-## Development
-
-### Running Tests
-
-```bash
-# Backend tests
-cd backend
-pytest
-
-# Frontend tests
-cd artifacts/web
-pnpm test
-```
-
-### Code Formatting
-
-```bash
-# Backend
-cd backend
-black app/ tests/
-isort app/ tests/
-
-# Frontend
-cd artifacts/web
-pnpm format
-```
-
-### Database Migrations
-
-```bash
-# Backend directory
-# Create new migration
-alembic revision --autogenerate -m "description"
-
-# Apply migration
-alembic upgrade head
-
-# Rollback
-alembic downgrade -1
-```
-
-## Troubleshooting
-
-### Backend Won't Start
-```bash
-# Check PostgreSQL is running
-psql -U postgres -c "SELECT version();"
-
-# Verify .env configuration
-cat backend/.env
-
-# Check database exists
-psql -U postgres -l | grep amad_construction_ai
-
-# Run migrations
-cd backend && alembic upgrade head
-```
-
-### Frontend Won't Start
-```bash
-# Clear node_modules and reinstall
-rm -r artifacts/web/node_modules
-pnpm install --force
-
-# Check port 5174 is available
-netstat -ano | findstr :5174
-
-# Clear pnpm cache
-pnpm store prune
-```
-
-### Login Issues
-```bash
-# Reset admin password
-cd backend
-python -c "from app.models.auth import UserAccount; from app.database import SessionLocal; from app.core.security import hash_password; db=SessionLocal(); u=db.query(UserAccount).filter(UserAccount.email=='admin@construction.ai').first(); u.password_hash=hash_password('Admin123!'); db.commit(); print('Password reset')"
-```
-
-## Performance Notes
-
-- Health score calculation: ~5s for 60 projects
-- Alert generation: ~2s for 1,089 alerts
-- Database queries optimized with joinedload() for relationships
-- Pagination supported on all list endpoints (default: 100 items, max: 500)
-
-## Security Considerations
-
-- ⚠️ Change default credentials before production
-- ⚠️ Use strong SESSION_SECRET and SECRET_KEY values
-- ⚠️ Configure ALLOWED_ORIGINS for CORS in production
-- ⚠️ Use environment-specific .env files (never commit .env)
-- ⚠️ Database credentials should use least-privilege user
-- ⚠️ Enable HTTPS in production
-- ⚠️ Implement rate limiting
-- ⚠️ Regular security updates for dependencies
-
-## Contributing
-
-1. Create a feature branch: `git checkout -b feature/your-feature`
-2. Make your changes and commit: `git commit -am 'Add new feature'`
-3. Push to branch: `git push origin feature/your-feature`
-4. Submit a pull request
-
-## License
-
-Proprietary - All rights reserved
-
-## Support
-
-For issues, questions, or contributions, please contact the development team.
+# AMAD — AI-Powered Construction Operations Intelligence Platform
+
+![Status](https://img.shields.io/badge/status-active--development-blue)
+![Backend](https://img.shields.io/badge/backend-FastAPI%20%2B%20PostgreSQL-009688)
+![Frontend](https://img.shields.io/badge/frontend-React%20%2B%20TypeScript-3178C6)
+![Language](https://img.shields.io/badge/i18n-Arabic%20%2F%20English-informational)
+![License](https://img.shields.io/badge/license-proprietary-lightgrey)
 
 ---
 
-**Version**: 1.0.0  
-**Last Updated**: 2026-07-08  
-**Platform**: Windows 11, macOS, Linux  
-**Python**: 3.12+  
-**Node**: 24.x+
+## 1. Executive Overview
+
+AMAD centralizes construction operations data — projects, procurement, safety, quality, meetings, and site activity — into a single, RBAC-scoped intelligence layer. Instead of leaving that data siloed across spreadsheets, inboxes, and disconnected systems, AMAD turns it into executive insights, project risk signals, actionable recommendations, and searchable organizational memory through a governed AI Copilot and a set of purpose-built AI agents.
+
+The platform is built for construction executives, project managers, procurement leads, and site engineers who need a fast, trustworthy answer to "what's happening across my portfolio right now" — grounded in real operational data, not guesswork.
+
+## 2. Problem Statement
+
+Construction organizations generate enormous amounts of operational data, but rarely have a coherent way to reason over it:
+
+- **Fragmented data** — projects, procurement, safety, and meetings live in disconnected tools and spreadsheets.
+- **Weak organizational memory** — decisions made in meetings are rarely traceable weeks later; institutional knowledge lives in people's inboxes, not systems.
+- **Manual reporting** — executive summaries and weekly reports are assembled by hand from multiple sources.
+- **Procurement delays** — late purchase orders and at-risk deliveries are discovered too late to act on.
+- **Meeting follow-up gaps** — decisions and action items go undocumented or unowned after the meeting ends.
+- **Safety and quality risk** — safety events and non-conformance reports (NCRs) are tracked, but rarely surfaced proactively to the people who need to act.
+- **Claims and change-order complexity** — financial exposure from claims and change orders is hard to see at a portfolio level until it becomes a problem.
+
+AMAD addresses this by combining structured operational data with a governed AI layer that retrieves, grounds, and cites real records — turning raw data into decisions.
+
+## 3. Core Capabilities
+
+- **Executive Dashboard** — portfolio-level KPIs, health scores, and risk summaries
+- **Operations Workspace** — a unified operational view across active projects
+- **Project Intelligence** — per-project status, health scoring, and risk drivers
+- **Procurement Intelligence Agent** — purchase orders, purchase requests, supplier risk, and delivery delay analysis
+- **Meeting Intelligence Agent** — meeting and decision status, single-meeting detail, and follow-up visibility
+- **Site Report Intelligence** — daily activity and site report summarization
+- **AI Copilot** — a general-purpose, RBAC-scoped conversational assistant over the full operational dataset
+- **Claims** — claim exposure tracking and status
+- **RFIs** — request-for-information tracking
+- **Change Orders** — change order value and status tracking
+- **Documents** — project document register
+- **Safety & NCR Monitoring** — safety event and non-conformance tracking
+- **Audit and Governance** — audit logging of AI interactions and access
+- **Arabic and English Support** — full bilingual UI
+- **RTL Support** — right-to-left layout for Arabic
+- **Role-Based Access Control (RBAC)** — Admin, Executive, Project Manager, Site Engineer, and Safety Officer roles, each scoped to authorized projects and data
+
+## 4. AI Architecture
+
+AMAD's AI layer is deterministic-first and LLM-assisted, not LLM-only. Every response is built on top of a controlled retrieval and grounding pipeline:
+
+- **Intent Detection** — deterministic keyword-based routing (with Arabic and English synonyms) identifies the operational domain of a question before any LLM call is made.
+- **Context Detection** — conversation state and page context (e.g. viewing a specific project or report) are resolved to disambiguate follow-up questions.
+- **RBAC-Scoped Retrieval** — every data lookup is filtered by the caller's organization and accessible project set before it ever reaches the model; a user can never retrieve data outside their authorization.
+- **Grounding** — generated answers are validated against the retrieved evidence; ungrounded or unsupported answers are rejected rather than shown.
+- **Citations** — every completed answer is backed by structured citations pointing to the specific source records (purchase orders, meetings, decisions, projects, etc.) used to produce it.
+- **OpenRouter LLM Provider** — model access is abstracted behind a provider interface, currently backed by OpenRouter, with provider/model selection controlled entirely through configuration.
+- **Deterministic Fallback** — if the LLM provider is unavailable, rate-limited, or returns an ungrounded response, agents fall back to a deterministic, evidence-derived summary rather than surfacing a raw provider error or leaving the UI in a loading state.
+- **Specialized Agents** — beyond the general Copilot, fixed-scope agents run their own bounded retrieval (never the general multi-domain fallback), which keeps their evidence — and their citations — scoped strictly to their domain.
+
+## 5. Current AI Agents
+
+### Executive / General Copilot
+- **Purpose** — general-purpose, conversational answers across the full operational dataset (projects, health, procurement, suppliers, safety, NCRs, site reports, meetings, decisions, risks).
+- **Inputs** — free-text question (English or Arabic), optional project context, conversation history.
+- **Outputs** — grounded natural-language answer, citations, confidence level, follow-up suggestions, and structured render blocks for the UI.
+- **Maturity** — working, in active refinement (intent coverage, multi-domain retrieval quality).
+
+### Procurement Intelligence Agent
+- **Purpose** — fixed-scope specialist over procurement data: purchase requests, purchase orders, supplier risk, and delivery delays.
+- **Inputs** — free-text question (English or Arabic), optional project context.
+- **Outputs** — structured answer (executive summary, highest-risk procurement issues, affected projects, supplier risk, recommended actions, sources) with citations limited to purchase orders, purchase requests, suppliers, and directly affected projects.
+- **Maturity** — working; retrieval and evidence enrichment recently hardened.
+
+### Meeting Intelligence Agent
+- **Purpose** — meeting and decision status. Supports both a single-meeting deep dive (decisions, action items, owners, due dates) and a portfolio-wide meetings/decisions status summary.
+- **Inputs** — optional `meeting_id` for single-meeting detail; otherwise a free-text status question (English or Arabic).
+- **Outputs** — structured answer with total meetings, decisions, key concerns, one recommendation, and sources; falls back to a deterministic summary within seconds if the LLM provider is slow or unavailable.
+- **Maturity** — working MVP for the portfolio-wide summary path; single-meeting detail is more mature.
+
+## 6. Technology Stack
+
+**Frontend**
+- React
+- Vite
+- TypeScript
+- Tailwind CSS
+- TanStack Query
+- Radix UI / shadcn-style components
+- i18next (Arabic / English, RTL)
+
+**Backend**
+- FastAPI
+- Python
+- PostgreSQL
+- SQLAlchemy
+- Alembic
+- JWT-based authentication
+- OpenRouter (LLM provider)
+
+## 7. System Architecture
+
+```
+Frontend (React / Vite / TypeScript)
+        │
+        ▼
+FastAPI API Layer
+        │
+        ▼
+Authentication / RBAC
+        │
+        ▼
+AI Pipeline (Intent → Context → Planning)
+        │
+        ▼
+Retrieval / Grounding / Citations
+        │
+        ▼
+PostgreSQL  +  OpenRouter (LLM Provider)
+```
+
+## 8. Database Scope
+
+The platform runs against a live, populated PostgreSQL dataset. Verified core operational record counts:
+
+| Entity | Records |
+|---|---|
+| Projects | 60 |
+| Suppliers | 80 |
+| Purchase Requests | 3,000 |
+| Purchase Orders | 2,550 |
+| Site Reports | 1,200 |
+| Meetings | 260 |
+| NCRs | 739 |
+| Safety Events | 449 |
+| Claims | 120 |
+| **Total records (all tables)** | **13,487** |
+
+*The total spans additional supporting tables (decisions, action items, risks, change orders, RFIs, documents, users, etc.) not itemized individually above.*
+
+## 9. Key Screens
+
+> Screenshots to be added — placeholders below.
+
+![Dashboard](docs/screenshots/dashboard.png)
+![Operations](docs/screenshots/operations.png)
+![Procurement Agent](docs/screenshots/procurement-agent.png)
+![Meeting Agent](docs/screenshots/meeting-agent.png)
+![Site Report Intelligence](docs/screenshots/site-report-intelligence.png)
+![Copilot](docs/screenshots/copilot.png)
+
+## 10. Installation
+
+### Prerequisites
+- Python 3.12+
+- Node.js 24.x+
+- PostgreSQL 15+
+- pnpm 11.x+ (`npm install -g pnpm`)
+- Git
+
+### Windows Setup
+
+```powershell
+# 1. Clone the repository
+git clone <repository-url>
+cd amad-construction-ai-platform-main
+
+# 2. Create the database
+createdb -U postgres -E UTF8 amad_construction_ai
+
+# 3. Backend — virtual environment
+cd backend
+python -m venv .venv
+.venv\Scripts\activate
+pip install -r requirements.txt
+
+# 4. Backend — configure environment
+copy .env.example .env
+# edit .env: set DATABASE_URL and SESSION_SECRET (see Environment Variables below)
+
+# 5. Backend — apply migrations
+alembic upgrade head
+
+# 6. Frontend — install dependencies
+cd ..\artifacts\web
+pnpm install
+```
+
+## 11. Environment Variables
+
+Set these in `backend/.env`. Values below are placeholders — never commit real secrets.
+
+```env
+DATABASE_URL=postgresql://user:password@localhost:5432/amad_construction_ai
+SESSION_SECRET=change-me-to-a-long-random-value
+LLM_PROVIDER=openrouter
+LLM_MODEL=change-me
+LLM_API_KEY=change-me
+LLM_BASE_URL=https://openrouter.ai/api/v1
+```
+
+## 12. Running the Project
+
+**Backend**
+
+```bash
+python backend/run_server.py
+# → http://127.0.0.1:8000
+```
+
+**Frontend**
+
+```bash
+cd artifacts/web
+pnpm install
+pnpm dev
+# → http://localhost:5174
+```
+
+## 13. Demo Credentials
+
+For local/demo environments only — never use in production:
+
+```
+Email:    demo@example.com
+Password: change-me
+```
+
+## 14. API Documentation
+
+When the backend is running, interactive API documentation is available at:
+
+- Swagger UI — `http://127.0.0.1:8000/api/docs`
+- ReDoc — `http://127.0.0.1:8000/api/redoc`
+- OpenAPI schema — `http://127.0.0.1:8000/api/openapi.json`
+
+## 15. Project Structure
+
+```
+backend/            FastAPI application, models, AI pipeline, migrations
+artifacts/web/       React + TypeScript frontend
+docs/                Documentation and design assets
+deployment/          Deployment configuration (in progress)
+README.md            This file
+```
+
+## 16. Security and Governance
+
+- **Role-Based Access Control (RBAC)** — every user is scoped to an organization role and an explicit set of accessible projects.
+- **Tenant-aware access** — all retrieval, AI and otherwise, is filtered by organization and project authorization before data leaves the database layer.
+- **Grounded responses** — AI answers are validated against retrieved evidence; ungrounded answers are rejected, not shown.
+- **Citations** — every completed AI answer references the specific source records used.
+- **Audit logs** — AI queries, retrieval domains, and outcomes are logged for review.
+- **No secret exposure** — provider credentials and internal identifiers are never surfaced in AI responses or logs.
+- **Human review** — sensitive or high-impact actions are designed for human review rather than autonomous execution.
+
+## 17. Current Status
+
+- Working MVP with live PostgreSQL database integration
+- Three AI capabilities implemented: General Copilot, Procurement Intelligence Agent, Meeting Intelligence Agent
+- Full Arabic and English support, including RTL layout
+- Actively under development — some modules and agent behaviors are still evolving
+- Not yet hardened for production deployment (see Disclaimer)
+
+## 18. Roadmap
+
+- Stronger LLM reliability (timeout handling, provider redundancy)
+- Meeting-level selection in the Meeting Agent UI
+- Long-term memory layer across conversations
+- Document intelligence (parsing and reasoning over uploaded documents)
+- Mobile application
+- Advanced analytics and portfolio-level forecasting
+- Production deployment pipeline
+- Multi-agent orchestration across specialized agents
+
+## 19. Future Mobile App
+
+A mobile application is planned, built on the same backend APIs and design system as the web platform, to extend field-level access to project status, safety reporting, and the AI Copilot for site teams.
+
+## 20. Disclaimer
+
+AMAD is a capstone / prototype platform. It demonstrates a working architecture for AI-assisted construction operations intelligence but has not yet undergone the security, performance, and operational hardening required for production deployment. Validate thoroughly — including credential rotation, environment isolation, and load testing — before any production use.
+
+---
+
+**Platform**: Windows, macOS, Linux · **Backend**: Python 3.12+ · **Frontend**: Node 24.x+

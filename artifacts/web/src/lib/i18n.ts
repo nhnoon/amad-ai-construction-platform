@@ -71,6 +71,7 @@ const en: Record<string, string> = {
   Client: "Client",
   "Project Type": "Project Type",
   "Back to Projects": "Back to Projects",
+  "Back to Operations": "Back to Operations",
   "Project Details": "Project Details",
   Code: "Code",
   "Specification": "Specification",
@@ -253,6 +254,15 @@ const en: Record<string, string> = {
   status: "status",
   "Site Report": "Site Report",
 
+  /* AMAD Copilot — Procurement Intelligence Agent */
+  "Agent": "Agent",
+  "Procurement Agent": "Procurement Agent",
+  "Run Procurement Agent": "Run Procurement Agent",
+
+  /* AMAD Copilot — Meeting Intelligence Agent */
+  "Meeting Agent": "Meeting Agent",
+  "Run Meeting Agent": "Run Meeting Agent",
+
   /* AMAD Copilot — fixed fallback strings */
   "Unavailable from current database.": "Unavailable from current database.",
   "Live data for this analysis is currently unavailable.": "Live data for this analysis is currently unavailable.",
@@ -373,6 +383,7 @@ const ar: Record<string, string> = {
   Client: "العميل",
   "Project Type": "نوع المشروع",
   "Back to Projects": "العودة إلى المشاريع",
+  "Back to Operations": "العودة إلى العمليات",
   "Project Details": "تفاصيل المشروع",
   Code: "الرمز",
   "Specification": "المواصفات",
@@ -553,6 +564,15 @@ const ar: Record<string, string> = {
   page: "الصفحة",
   status: "الحالة",
   "Site Report": "تقرير الموقع",
+
+  /* AMAD Copilot — Procurement Intelligence Agent */
+  "Agent": "الوكيل",
+  "Procurement Agent": "وكيل المشتريات",
+  "Run Procurement Agent": "تشغيل وكيل المشتريات",
+
+  /* AMAD Copilot — Meeting Intelligence Agent */
+  "Meeting Agent": "وكيل الاجتماعات",
+  "Run Meeting Agent": "تشغيل وكيل الاجتماعات",
 
   /* AMAD Copilot — fixed fallback strings */
   "Unavailable from current database.": "غير متاح في قاعدة البيانات الحالية.",

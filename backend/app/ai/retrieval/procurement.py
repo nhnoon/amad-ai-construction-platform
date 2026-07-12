@@ -3,11 +3,28 @@ from __future__ import annotations
 
 from typing import Optional
 
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, joinedload
 
 from app.ai.scope import AIAuthScope
 from app.models.procurement import PurchaseRequest, PurchaseOrder, Supplier
 from .base import Evidence, RetrievalResult
+
+
+def _po_snippet(po: PurchaseOrder) -> str:
+    """Build a self-contained PO snippet: every field an LLM needs to answer
+    a late-PO question (project, supplier, dates, root cause) must be in the
+    snippet text itself — the LLM only ever sees Evidence.snippet, never the
+    ORM object or Evidence.project_id, so anything omitted here is
+    unanswerable (and any attempt to answer it would be an ungrounded guess).
+    """
+    project_code = po.project.project_code if po.project is not None else "unknown project"
+    supplier_name = po.supplier.supplier_name if po.supplier is not None else "unknown supplier"
+    root_cause = f", root_cause={po.delay_root_cause}" if po.delay_root_cause else ""
+    return (
+        f"PO {po.po_number}: project={project_code}, supplier={supplier_name}, "
+        f"status={po.status}, promised_delivery={po.promised_delivery}, "
+        f"late={po.is_late}, delay_days={po.delay_days}{root_cause}"
+    )
 
 
 def get_procurement_summary(
@@ -17,7 +34,9 @@ def get_procurement_summary(
     limit: int = 20,
 ) -> RetrievalResult:
     q_pr = db.query(PurchaseRequest)
-    q_po = db.query(PurchaseOrder)
+    q_po = db.query(PurchaseOrder).options(
+        joinedload(PurchaseOrder.project), joinedload(PurchaseOrder.supplier)
+    )
 
     if project_id is not None:
         scope.enforce_project_access(project_id)
@@ -74,10 +93,7 @@ def get_procurement_summary(
             source_type="purchase_order",
             source_id=po.po_number,
             label=f"Purchase Order {po.po_number}",
-            snippet=(
-                f"PO {po.po_number}: status={po.status}, "
-                f"delivery={po.promised_delivery}, late={po.is_late}, delay={po.delay_days}d"
-            ),
+            snippet=_po_snippet(po),
             project_id=po.project_id,
             ui_metadata={"href": "/procurement", "icon": "package"},
         ))
@@ -99,7 +115,17 @@ def get_late_purchase_orders(
     project_id: Optional[int] = None,
     limit: int = 20,
 ) -> RetrievalResult:
-    q = db.query(PurchaseOrder).filter(PurchaseOrder.status.in_(["Overdue", "Delayed", "Late"]))
+    # NOTE: lateness is tracked via the is_late boolean (+ delay_days), not
+    # via `status` — every PO in this dataset carries status="Delivered"
+    # regardless of whether it arrived late, so a status-based filter (the
+    # previous implementation) matched zero rows in practice. is_late is the
+    # same field every other late-PO query in the codebase filters on
+    # (dashboard.py, alerts.py, executive.py, reports.py, procurement.py).
+    q = (
+        db.query(PurchaseOrder)
+        .options(joinedload(PurchaseOrder.project), joinedload(PurchaseOrder.supplier))
+        .filter(PurchaseOrder.is_late.is_(True))
+    )
 
     if project_id is not None:
         scope.enforce_project_access(project_id)
@@ -110,7 +136,7 @@ def get_late_purchase_orders(
             return RetrievalResult(data={"late_orders": [], "total": 0}, evidence=[])
         q = q.filter(PurchaseOrder.project_id.in_(ids))
 
-    pos = q.order_by(PurchaseOrder.id.desc()).limit(limit).all()
+    pos = q.order_by(PurchaseOrder.delay_days.desc()).limit(limit).all()
     if not pos:
         return RetrievalResult(data={"late_orders": [], "total": 0}, evidence=[])
 
@@ -128,10 +154,7 @@ def get_late_purchase_orders(
             source_type="purchase_order",
             source_id=po.po_number,
             label=f"Late PO {po.po_number}",
-            snippet=(
-                f"Late PO {po.po_number}: status={po.status}, "
-                f"delivery={po.promised_delivery}, delay={po.delay_days}d"
-            ),
+            snippet=_po_snippet(po),
             project_id=po.project_id,
             ui_metadata={"href": "/procurement", "icon": "alert-circle"},
         ))

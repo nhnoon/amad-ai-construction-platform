@@ -4,6 +4,7 @@ import { useTranslation } from "react-i18next";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Input } from "@/components/ui/input";
 import { Search, AlertOctagon, Info } from "lucide-react";
+import { BackToOperations } from "@/components/back-to-operations";
 
 type Tab = "requests" | "orders";
 
@@ -59,6 +60,8 @@ export default function Procurement() {
 
   return (
     <div className="space-y-6">
+      <BackToOperations />
+
       {/* Header */}
       <div className="page-header">
         <div>

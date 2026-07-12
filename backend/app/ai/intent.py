@@ -22,7 +22,9 @@ _INTENT_KEYWORDS: dict[str, list[str]] = {
     ],
     "procurement": [
         "procurement", "purchase order", "purchase request",
-        "delivery", "material", "مشتريات", "طلب شراء", "أمر شراء",
+        "delivery", "material", "مشتريات", "المشتريات", "طلب شراء", "أمر شراء",
+        "أوامر الشراء", "طلبات الشراء", "أوامر متأخرة", "الشراء المتأخر",
+        "مورد", "موردين",
     ],
     "suppliers": [
         "supplier", "suppliers", "vendor", "vendors", "مورد", "موردين",

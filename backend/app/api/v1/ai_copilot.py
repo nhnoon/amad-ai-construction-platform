@@ -26,7 +26,9 @@ from app.schemas.ai_copilot import (
     ConversationOut,
     CopilotQueryRequest,
     CopilotQueryResponse,
+    MeetingAgentRequest,
     MessageOut,
+    ProcurementAgentRequest,
 )
 
 logger = logging.getLogger(__name__)
@@ -115,6 +117,165 @@ def copilot_query(
         domains_used=result.get("domains_used") or [],
         is_multi_domain=result.get("is_multi_domain", False),
         # Phase 3C: structured render blocks
+        render_blocks=result.get("render_blocks") or [],
+    )
+
+
+@router.post("/agents/procurement", response_model=CopilotQueryResponse, status_code=200)
+def procurement_agent(
+    body: ProcurementAgentRequest,
+    current_user: CurrentUser,
+    db: DbSession,
+) -> CopilotQueryResponse:
+    """Procurement Intelligence Agent — fixed-scope specialist over the same
+    RBAC-scoped retrieval, LLM provider, grounding, and citation pipeline as
+    /copilot/query (see app/ai/pipeline.py:execute_procurement_agent)."""
+    limiter = get_ai_rate_limiter()
+    if not limiter.is_allowed(current_user.id):
+        raise HTTPException(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            detail="Rate limit exceeded. Please wait before sending more AI requests.",
+        )
+
+    scope = build_ai_scope(current_user, db)
+    logger.info(
+        "procurement_agent_query user_id=%s org_id=%s project_id=%s language=%s",
+        scope.user_id, scope.organization_id, body.project_id, body.language,
+    )
+
+    try:
+        result = _pipeline.execute_procurement_agent(
+            scope=scope,
+            db=db,
+            project_id=body.project_id,
+            conversation_id=body.conversation_id,
+            language=body.language,
+            question=body.question,
+        )
+    except HTTPException:
+        raise
+    except Exception:
+        logger.error(
+            "procurement_agent_error user_id=%s\n%s",
+            scope.user_id,
+            traceback.format_exc(),
+        )
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="AI pipeline error. Please try again.",
+        )
+
+    logger.info(
+        "procurement_agent_result user_id=%s status=%s evidence=%d latency_ms=%.1f",
+        scope.user_id,
+        result.get("status"),
+        result.get("evidence_count", 0),
+        result.get("latency_ms", 0),
+    )
+
+    return CopilotQueryResponse(
+        conversation_id=result["conversation_id"],
+        message_id=result["message_id"],
+        answer=result["answer"],
+        status=result["status"],
+        intent=result["intent"],
+        citations=result["citations"],
+        confidence=result["confidence"],
+        model=result.get("model"),
+        provider=result.get("provider"),
+        latency_ms=result["latency_ms"],
+        evidence_count=result["evidence_count"],
+        short_summary=result.get("short_summary"),
+        key_findings=result.get("key_findings"),
+        comparison_data=result.get("comparison_data"),
+        follow_up_suggestions=result.get("follow_up_suggestions") or [],
+        clarification_required=result.get("clarification_required", False),
+        clarification_question=result.get("clarification_question"),
+        clarification_options=result.get("clarification_options") or [],
+        resolved_query=result.get("resolved_query"),
+        domains_used=result.get("domains_used") or [],
+        is_multi_domain=result.get("is_multi_domain", False),
+        render_blocks=result.get("render_blocks") or [],
+    )
+
+
+@router.post("/agents/meeting", response_model=CopilotQueryResponse, status_code=200)
+def meeting_agent(
+    body: MeetingAgentRequest,
+    current_user: CurrentUser,
+    db: DbSession,
+) -> CopilotQueryResponse:
+    """Meeting Intelligence Agent — reuses the same RBAC-scoped retrieval,
+    LLM provider, grounding, and citation pipeline as /copilot/query (see
+    app/ai/pipeline.py:execute_meeting_agent). meeting_id given: fixed-scope
+    specialist over ONE specific meeting. meeting_id omitted: a
+    portfolio-wide meetings status summary."""
+    limiter = get_ai_rate_limiter()
+    if not limiter.is_allowed(current_user.id):
+        raise HTTPException(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            detail="Rate limit exceeded. Please wait before sending more AI requests.",
+        )
+
+    scope = build_ai_scope(current_user, db)
+    logger.info(
+        "meeting_agent_query user_id=%s org_id=%s meeting_id=%s language=%s",
+        scope.user_id, scope.organization_id, body.meeting_id, body.language,
+    )
+
+    try:
+        result = _pipeline.execute_meeting_agent(
+            scope=scope,
+            db=db,
+            meeting_id=body.meeting_id,
+            conversation_id=body.conversation_id,
+            language=body.language,
+            project_id=body.project_id,
+            question=body.question,
+        )
+    except HTTPException:
+        raise
+    except Exception:
+        logger.error(
+            "meeting_agent_error user_id=%s\n%s",
+            scope.user_id,
+            traceback.format_exc(),
+        )
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="AI pipeline error. Please try again.",
+        )
+
+    logger.info(
+        "meeting_agent_result user_id=%s status=%s evidence=%d latency_ms=%.1f",
+        scope.user_id,
+        result.get("status"),
+        result.get("evidence_count", 0),
+        result.get("latency_ms", 0),
+    )
+
+    return CopilotQueryResponse(
+        conversation_id=result["conversation_id"],
+        message_id=result["message_id"],
+        answer=result["answer"],
+        status=result["status"],
+        intent=result["intent"],
+        citations=result["citations"],
+        confidence=result["confidence"],
+        model=result.get("model"),
+        provider=result.get("provider"),
+        latency_ms=result["latency_ms"],
+        evidence_count=result["evidence_count"],
+        short_summary=result.get("short_summary"),
+        key_findings=result.get("key_findings"),
+        comparison_data=result.get("comparison_data"),
+        follow_up_suggestions=result.get("follow_up_suggestions") or [],
+        clarification_required=result.get("clarification_required", False),
+        clarification_question=result.get("clarification_question"),
+        clarification_options=result.get("clarification_options") or [],
+        resolved_query=result.get("resolved_query"),
+        domains_used=result.get("domains_used") or [],
+        is_multi_domain=result.get("is_multi_domain", False),
         render_blocks=result.get("render_blocks") or [],
     )
 
