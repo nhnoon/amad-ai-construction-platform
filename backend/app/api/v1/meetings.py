@@ -1,8 +1,10 @@
 from fastapi import APIRouter, HTTPException, Query
 from typing import Optional
 from ...core.deps import DbSession
-from ...models.meetings import Meeting, ProjectDecision, MeetingActionItem
-from ...schemas.meetings import MeetingOut, ProjectDecisionOut, MeetingActionItemOut, MeetingActionItemCreate
+from ...models.meetings import Meeting, ProjectDecision, MeetingActionItem, MeetingAttendee
+from ...schemas.meetings import (
+    MeetingOut, MeetingCreate, ProjectDecisionOut, MeetingActionItemOut, MeetingActionItemCreate,
+)
 
 router = APIRouter(tags=["meetings"])
 
@@ -19,6 +21,25 @@ def list_meetings(
     if meeting_type:
         q = q.filter(Meeting.meeting_type == meeting_type)
     return q.offset(skip).limit(limit).all()
+
+
+@router.post("/projects/{project_id}/meetings", response_model=MeetingOut, status_code=201)
+def create_meeting(project_id: int, body: MeetingCreate, db: DbSession):
+    meeting = Meeting(
+        project_id=project_id,
+        title=body.title,
+        meeting_date=body.meeting_date,
+        meeting_type=body.meeting_type,
+    )
+    db.add(meeting)
+    db.flush()
+    for name in body.attendees or []:
+        name = name.strip()
+        if name:
+            db.add(MeetingAttendee(meeting_id=meeting.id, name=name))
+    db.commit()
+    db.refresh(meeting)
+    return meeting
 
 
 @router.get("/projects/{project_id}/meetings/{meeting_id}", response_model=MeetingOut)
@@ -63,11 +84,14 @@ def list_meeting_decisions(project_id: int, meeting_id: int, db: DbSession):
 def list_action_items(
     project_id: int,
     db: DbSession,
+    meeting_id: Optional[int] = None,
     status: Optional[str] = None,
     skip: int = Query(0, ge=0),
     limit: int = Query(50, ge=1, le=200),
 ):
     q = db.query(MeetingActionItem).filter(MeetingActionItem.project_id == project_id)
+    if meeting_id is not None:
+        q = q.filter(MeetingActionItem.meeting_id == meeting_id)
     if status:
         q = q.filter(MeetingActionItem.status == status)
     return q.offset(skip).limit(limit).all()

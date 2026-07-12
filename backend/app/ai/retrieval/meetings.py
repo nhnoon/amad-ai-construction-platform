@@ -99,6 +99,95 @@ def get_project_decisions(
     return RetrievalResult(data={"decisions": rows, "total": len(rows)}, evidence=evidence)
 
 
+def get_open_action_items(
+    db: Session,
+    scope: AIAuthScope,
+    project_id: Optional[int] = None,
+    limit: int = 20,
+) -> RetrievalResult:
+    """Open (status="open") action items across accessible projects — the
+    portfolio-wide counterpart to get_meeting_detail()'s single-meeting
+    action items. Used by the Meeting Agent's portfolio summary to surface
+    real follow-up risk (overdue items, items missing an owner or due date)
+    instead of the "not available at the portfolio level" placeholder.
+    """
+    q = db.query(MeetingActionItem).filter(MeetingActionItem.status == "open")
+    if project_id is not None:
+        scope.enforce_project_access(project_id)
+        q = q.filter(MeetingActionItem.project_id == project_id)
+    elif not scope.has_global_read:
+        ids = list(scope.accessible_project_ids)
+        if not ids:
+            return RetrievalResult(data={"action_items": [], "total": 0}, evidence=[])
+        q = q.filter(MeetingActionItem.project_id.in_(ids))
+
+    items = q.order_by(MeetingActionItem.id.desc()).limit(limit).all()
+    if not items:
+        return RetrievalResult(data={"action_items": [], "total": 0}, evidence=[])
+
+    rows = []
+    evidence = []
+    for a in items:
+        rows.append({
+            "id": a.id,
+            "meeting_id": a.meeting_id,
+            "project_id": a.project_id,
+            "description": a.description,
+            "owner": a.owner,
+            "due_date": a.due_date,
+            "status": a.status,
+            "priority": a.priority,
+        })
+        evidence.append(Evidence(
+            source_type="meeting_action_item",
+            source_id=str(a.id),
+            label=f"Action Item ACT-{a.id}",
+            snippet=(
+                f"ACT-{a.id}: {a.description[:200]}, owner={a.owner or 'not recorded'}, "
+                f"due_date={a.due_date or 'not recorded'}, status={a.status}, priority={a.priority}"
+            ),
+            project_id=a.project_id,
+            ui_metadata={"href": "/meetings", "icon": "list-checks"},
+        ))
+
+    return RetrievalResult(data={"action_items": rows, "total": len(rows)}, evidence=evidence)
+
+
+def get_meeting_counts(
+    db: Session,
+    scope: AIAuthScope,
+    project_id: Optional[int] = None,
+) -> dict[str, int]:
+    """True portfolio-wide (or project-scoped) COUNT(*) totals — unlike
+    get_recent_meetings()/get_project_decisions(), whose row lists are
+    bounded by `limit` and are NOT a total count. Used by the Meeting
+    Agent's deterministic fallback so "total meetings"/"total decisions"
+    are always a real number, never the sample size.
+    """
+    q_m = db.query(Meeting)
+    q_d = db.query(ProjectDecision)
+    q_a = db.query(MeetingActionItem).filter(MeetingActionItem.status == "open")
+
+    if project_id is not None:
+        scope.enforce_project_access(project_id)
+        q_m = q_m.filter(Meeting.project_id == project_id)
+        q_d = q_d.filter(ProjectDecision.project_id == project_id)
+        q_a = q_a.filter(MeetingActionItem.project_id == project_id)
+    elif not scope.has_global_read:
+        ids = list(scope.accessible_project_ids)
+        if not ids:
+            return {"total_meetings": 0, "total_decisions": 0, "total_open_action_items": 0}
+        q_m = q_m.filter(Meeting.project_id.in_(ids))
+        q_d = q_d.filter(ProjectDecision.project_id.in_(ids))
+        q_a = q_a.filter(MeetingActionItem.project_id.in_(ids))
+
+    return {
+        "total_meetings": q_m.count(),
+        "total_decisions": q_d.count(),
+        "total_open_action_items": q_a.count(),
+    }
+
+
 def get_meeting_detail(
     db: Session,
     scope: AIAuthScope,
@@ -195,9 +284,34 @@ def get_meeting_detail(
         data={
             "meeting_id": meeting.id,
             "project_id": meeting.project_id,
+            "meeting_title": meeting.title,
+            "meeting_date": meeting.meeting_date,
             "decision_count": len(decisions),
             "action_item_count": len(action_items),
             "attendee_count": len(attendees),
+            # Structured rows (not just counts) so callers — e.g. the
+            # deterministic no-LLM fallback in pipeline.py — can build a
+            # real answer without re-parsing evidence snippet text.
+            "decisions": [
+                {
+                    "id": d.id,
+                    "decision_text": d.decision_text,
+                    "owner": d.owner,
+                    "decision_date": d.decision_date,
+                }
+                for d in decisions
+            ],
+            "action_items": [
+                {
+                    "id": a.id,
+                    "description": a.description,
+                    "owner": a.owner,
+                    "due_date": a.due_date,
+                    "status": a.status,
+                    "priority": a.priority,
+                }
+                for a in action_items
+            ],
         },
         evidence=evidence,
     )

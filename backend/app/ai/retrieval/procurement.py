@@ -83,11 +83,14 @@ def get_procurement_summary(
             "id": po.id,
             "po_number": po.po_number,
             "project_id": po.project_id,
+            "project_code": po.project.project_code if po.project is not None else None,
             "supplier_id": po.supplier_id,
+            "supplier_name": po.supplier.supplier_name if po.supplier is not None else None,
             "status": po.status,
             "promised_delivery": po.promised_delivery,
             "is_late": po.is_late,
             "delay_days": po.delay_days,
+            "delay_root_cause": po.delay_root_cause,
         })
         evidence.append(Evidence(
             source_type="purchase_order",
@@ -146,9 +149,12 @@ def get_late_purchase_orders(
         rows.append({
             "po_number": po.po_number,
             "project_id": po.project_id,
+            "project_code": po.project.project_code if po.project is not None else None,
+            "supplier_name": po.supplier.supplier_name if po.supplier is not None else None,
             "status": po.status,
             "promised_delivery": po.promised_delivery,
             "delay_days": po.delay_days,
+            "delay_root_cause": po.delay_root_cause,
         })
         evidence.append(Evidence(
             source_type="purchase_order",
@@ -201,3 +207,50 @@ def get_supplier_information(
         ))
 
     return RetrievalResult(data={"suppliers": rows, "total": len(rows)}, evidence=evidence)
+
+
+def get_procurement_counts(
+    db: Session,
+    scope: AIAuthScope,
+    project_id: Optional[int] = None,
+) -> dict[str, int]:
+    """True portfolio-wide (or project-scoped) COUNT(*) totals — unlike
+    get_procurement_summary()/get_late_purchase_orders(), whose row lists are
+    bounded by `limit` and are NOT a total count. Used by the Procurement
+    Agent's deterministic fallback (see pipeline.py:_build_procurement_fallback)
+    so "total POs" etc. are always a real number, never the sample size.
+    """
+    q_po = db.query(PurchaseOrder)
+    q_pr = db.query(PurchaseRequest)
+
+    if project_id is not None:
+        scope.enforce_project_access(project_id)
+        q_po = q_po.filter(PurchaseOrder.project_id == project_id)
+        q_pr = q_pr.filter(PurchaseRequest.project_id == project_id)
+    elif not scope.has_global_read:
+        ids = list(scope.accessible_project_ids)
+        if not ids:
+            return {"total_po": 0, "late_po": 0, "total_pr": 0, "open_pr": 0}
+        q_po = q_po.filter(PurchaseOrder.project_id.in_(ids))
+        q_pr = q_pr.filter(PurchaseRequest.project_id.in_(ids))
+
+    total_po = q_po.count()
+    late_po = q_po.filter(PurchaseOrder.is_late.is_(True)).count()
+    total_pr = q_pr.count()
+    # "Open/pending" = not yet converted to a PO and not returned/rejected —
+    # i.e. still actively in-flight (Approved, Under Review, Pending
+    # Clarification, Needs Rework).
+    open_pr = q_pr.filter(
+        ~PurchaseRequest.status.in_(["Converted to PO", "Returned to Requester"])
+    ).count()
+    # Suppliers are a global registry, not project-scoped — same convention
+    # as get_supplier_information(). "High risk" is read directly off the
+    # supplier's real name in the vendor registry (this dataset seeds
+    # suppliers literally named "Risk Supplier N"); this is not a computed
+    # judgment call, just a count of an existing, real data value.
+    high_risk_suppliers = db.query(Supplier).filter(Supplier.supplier_name.ilike("%risk%")).count()
+
+    return {
+        "total_po": total_po, "late_po": late_po, "total_pr": total_pr, "open_pr": open_pr,
+        "high_risk_suppliers": high_risk_suppliers,
+    }

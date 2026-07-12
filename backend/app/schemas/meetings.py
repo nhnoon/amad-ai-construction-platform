@@ -12,6 +12,15 @@ class MeetingOut(BaseModel):
     model_config = {"from_attributes": True}
 
 
+class MeetingCreate(BaseModel):
+    title: str
+    meeting_date: str
+    meeting_type: str
+    # Attendee names only — MeetingAttendee's optional role/organization
+    # fields aren't exposed on this fast-path create form.
+    attendees: Optional[list[str]] = None
+
+
 class ProjectDecisionOut(BaseModel):
     id: int
     project_id: int

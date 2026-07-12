@@ -64,6 +64,37 @@ def get_project_overview(
     return RetrievalResult(data={"projects": rows, "total": len(rows)}, evidence=evidence)
 
 
+def get_project_status_counts(
+    db: Session,
+    scope: AIAuthScope,
+    project_id: Optional[int] = None,
+) -> dict[str, int]:
+    """Cheap COUNT(*)-by-status query — deliberately NOT get_health_overview()
+    (which computes the full weighted health-score engine, including
+    safety/NCR/PO/risk relationship loads, per project — ~50ms/project,
+    too slow for a sub-second response). Real status values in this schema:
+    Active, Completed, Delayed, On Hold, Suspended, Planning.
+    """
+    from sqlalchemy import func
+
+    q = db.query(Project.status, func.count(Project.id)).group_by(Project.status)
+    if project_id is not None:
+        scope.enforce_project_access(project_id)
+        q = q.filter(Project.id == project_id)
+    elif not scope.has_global_read:
+        ids = list(scope.accessible_project_ids)
+        if not ids:
+            return {"total": 0, "active": 0, "delayed": 0}
+        q = q.filter(Project.id.in_(ids))
+
+    counts = dict(q.all())
+    return {
+        "total": sum(counts.values()),
+        "active": counts.get("Active", 0),
+        "delayed": counts.get("Delayed", 0),
+    }
+
+
 def get_additional_project_for_comparison(
     db: Session,
     scope: AIAuthScope,

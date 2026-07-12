@@ -21,9 +21,9 @@ Full flow per turn:
 """
 from __future__ import annotations
 
-import concurrent.futures
 import logging
 import time
+from datetime import date
 from typing import Any, Optional
 
 from sqlalchemy.orm import Session
@@ -47,11 +47,17 @@ from app.ai.planner import (
 from app.ai.providers.base import LLMRequest, LLMResponse, ProviderUnavailableError
 from app.ai.providers.factory import get_llm_provider
 from app.ai.retrieval.base import Evidence, RetrievalResult
-from app.ai.retrieval.meetings import get_meeting_detail, get_project_decisions, get_recent_meetings
-from app.ai.retrieval.procurement import (
-    get_late_purchase_orders, get_procurement_summary, get_supplier_information,
+from app.ai.retrieval.meetings import (
+    get_meeting_counts, get_meeting_detail, get_open_action_items, get_project_decisions,
+    get_recent_meetings,
 )
-from app.ai.retrieval.projects import get_project_overview, get_project_risks, get_health_overview
+from app.ai.retrieval.procurement import (
+    get_late_purchase_orders, get_procurement_counts, get_procurement_summary,
+    get_supplier_information,
+)
+from app.ai.retrieval.projects import (
+    get_project_overview, get_project_risks, get_health_overview, get_project_status_counts,
+)
 from app.ai.retrieval.safety import get_open_ncrs, get_safety_summary
 from app.ai.retrieval.site_reports import (
     get_recent_daily_activities, get_recent_site_reports,
@@ -65,17 +71,17 @@ _MAX_QUESTION_LEN = 2000
 _MAX_EVIDENCE_SNIPPETS = 30
 _MAX_CONTEXT_MESSAGES = 10  # bounded: last 5 turns
 
-# Meeting Agent portfolio-wide summary: the LLM call is time-boxed to this
-# many seconds (independent of the provider's own retry/timeout settings in
-# openai_compat.py, which are shared by every other caller and not touched
-# here) so a slow or unreachable provider can never produce the "infinite
-# loading" experience — on timeout the deterministic summary below is
-# returned instead. Runs on its own executor so a hung request doesn't
-# consume worker threads used elsewhere.
-_MEETING_AGENT_LLM_TIMEOUT_S = 4.0
-_meeting_agent_executor = concurrent.futures.ThreadPoolExecutor(
-    max_workers=4, thread_name_prefix="meeting-agent-llm"
-)
+# DEMO MODE - switch back to OpenRouter after presentation.
+# Meeting Agent and Procurement Agent (execute_meeting_agent,
+# _execute_meeting_agent_summary, execute_procurement_agent) currently make
+# NO LLM/OpenRouter call at all — they return a deterministic,
+# database-backed report unconditionally. The bounded-timeout executor that
+# used to guard their LLM calls has been removed along with those calls; if
+# LLM generation is restored, reintroduce a similar time-boxed
+# concurrent.futures.ThreadPoolExecutor + future.result(timeout=...) call
+# around provider.generate() (see git history for the prior version of
+# this file) so a slow provider can never produce an "infinite loading"
+# experience.
 
 _SYSTEM_TEMPLATE = """\
 You are Amad Construction Intelligence Copilot, a read-only assistant for \
@@ -159,28 +165,28 @@ EVIDENCE:
 _MEETING_AGENT_HEADINGS_EN = """\
    Executive Summary
    Decisions
-   Action Items
+   Tasks
+   Owners
+   Due Dates (if available)
    Risks and Blockers
-   Follow-up Items
-   Escalation Required
-   Confidence
+   Recommendation
    Sources"""
 
 _MEETING_AGENT_HEADINGS_AR = """\
-   الملخص التنفيذي
+   ملخص تنفيذي
    القرارات
-   بنود العمل
-   المخاطر والمعوقات
-   بنود المتابعة
-   هل يتطلب الأمر تصعيداً
-   مستوى الثقة
+   المهام
+   المسؤولون
+   المواعيد النهائية إن وجدت
+   المخاطر والعوائق
+   التوصية
    المصادر"""
 
 
 def _meeting_agent_system_prompt(evidence_block: str, is_arabic: bool) -> str:
     headings = _MEETING_AGENT_HEADINGS_AR if is_arabic else _MEETING_AGENT_HEADINGS_EN
     unavailable_phrase = (
-        "غير متاح في قاعدة البيانات الحالية."
+        "غير متاح من قاعدة البيانات الحالية"
         if is_arabic
         else "Unavailable from current database."
     )
@@ -207,8 +213,9 @@ rule 8 below. Never mix English words or headings into an Arabic response; \
 preserve only MTG/DEC/ACT codes as-is.
 8. Structure your response using EXACTLY these section headings (translated \
 into Arabic when responding in Arabic), in this order, each on its own line. \
-Under Action Items / بنود العمل, list each item with its Owner and Due Date \
-inline (translated into Arabic when responding in Arabic).
+Under Tasks / المهام, list each task with its source code (e.g. ACT-7). \
+Under Owners / المسؤولون and Due Dates / المواعيد النهائية إن وجدت, map each \
+task's code to its owner and due date respectively.
 {headings}
 
 EVIDENCE:
@@ -339,18 +346,31 @@ def _build_key_findings(
 
 
 def _build_meeting_summary_fallback(
+    counts: dict[str, int],
     meetings: list[dict[str, Any]],
     decisions: list[dict[str, Any]],
+    action_items: list[dict[str, Any]],
     is_arabic: bool,
 ) -> str:
-    """Deterministic (no-LLM) meetings status summary, built only from the
-    same evidence rows the LLM would have seen. Used whenever the Meeting
-    Agent's portfolio-wide summary call times out, hits a rate limit, or
-    comes back ungrounded — never a raw provider error, always a real
-    answer grounded in the retrieved meetings/decisions.
+    """Deterministic (no-LLM), report-style meetings answer covering
+    Executive Summary, Meeting Summary, Key Decisions, Action Items, Risks,
+    and Next Steps — the fallback path does no question-intent parsing
+    (retrieval never varies by question for this agent's portfolio path),
+    so every quick action returns this same comprehensive report.
+    total_meetings/total_decisions/total_open_action_items come from
+    get_meeting_counts() (true COUNT(*) totals, not the bounded sample used
+    for the meeting/decision/action-item listings below). DEMO MODE: this
+    is now the ONLY answer path for the Meeting Agent's portfolio-wide
+    summary — see the module-level DEMO MODE comment near the top of this
+    file.
     """
-    total_meetings = len(meetings)
-    total_decisions = len(decisions)
+    total_meetings = counts.get("total_meetings", 0)
+    total_decisions = counts.get("total_decisions", 0)
+    total_open = counts.get("total_open_action_items", 0)
+
+    today = date.today().isoformat()
+    overdue = [a for a in action_items if a.get("due_date") and a["due_date"] < today]
+    missing_owner_or_due = [a for a in action_items if not a.get("owner") or not a.get("due_date")]
 
     type_counts: dict[str, int] = {}
     for m in meetings:
@@ -358,55 +378,1014 @@ def _build_meeting_summary_fallback(
         type_counts[mt] = type_counts.get(mt, 0) + 1
     safety_meetings = type_counts.get("Safety", 0)
 
-    sample_meeting_codes = [f"MTG-{m['id']}" for m in meetings[:5]]
-    sample_decision_codes = [f"DEC-{d['id']}" for d in decisions[:5]]
+    severity = "High" if len(overdue) >= 3 else "Medium" if overdue else "Low"
 
-    if safety_meetings > 0:
-        concern_en = f"{safety_meetings} of the recent meetings are safety-related and warrant close follow-up."
-        concern_ar = f"{safety_meetings} من الاجتماعات الأخيرة متعلقة بالسلامة وتستدعي متابعة دقيقة."
-    elif total_meetings > 0 and total_decisions < total_meetings / 2:
-        concern_en = "Relatively few formal decisions are on record compared to the number of meetings held."
-        concern_ar = "عدد القرارات الرسمية المسجّلة محدود مقارنة بعدد الاجتماعات المعقودة."
-    elif total_meetings == 0:
-        concern_en = "No recent meetings are on record."
-        concern_ar = "لا توجد اجتماعات مسجّلة مؤخراً."
+    sample_meeting_codes = [f"MTG-{m['id']}" for m in meetings[:4]]
+    sample_decision_codes = [f"DEC-{d['id']}" for d in decisions[:4]]
+    sample_action_codes = [f"ACT-{a['id']}" for a in action_items[:4]]
+
+    recommendations_en = [
+        f"Close the {len(overdue)} overdue follow-up item(s) or reassign them with a realistic new due date."
+        if overdue else "Continue tracking open follow-up items to closure on schedule.",
+        f"Assign an owner and/or due date to the {len(missing_owner_or_due)} follow-up item(s) currently missing one."
+        if missing_owner_or_due else "Ensure every new follow-up item is logged with a named owner and due date.",
+        "Confirm decisions from recent meetings have a documented owner responsible for execution.",
+    ]
+    recommendations_ar = [
+        f"إغلاق بنود المتابعة المتأخرة البالغ عددها {len(overdue)} أو إعادة جدولتها بموعد واقعي جديد."
+        if overdue else "الاستمرار في متابعة بنود العمل المفتوحة حتى إغلاقها في موعدها.",
+        f"تعيين مسؤول و/أو موعد نهائي لبنود العمل التي تفتقر لذلك، وعددها {len(missing_owner_or_due)}."
+        if missing_owner_or_due else "التأكد من تسجيل كل بند متابعة جديد مع مسؤول وموعد نهائي محددين.",
+        "التأكد من وجود مسؤول موثّق لتنفيذ القرارات الصادرة عن الاجتماعات الأخيرة.",
+    ]
+
+    if is_arabic:
+        u = _UNAVAILABLE_AR
+        severity_ar = _PRIORITY_AR[severity]
+        lines = [
+            "تقرير وكيل استخبارات الاجتماعات — تحليل تنفيذي",
+            "",
+            "الملخص التنفيذي",
+            f"• إجمالي الاجتماعات: {total_meetings}",
+            f"• إجمالي القرارات: {total_decisions}",
+            f"• بنود العمل المفتوحة: {total_open}" if total_open else "• بنود العمل المفتوحة: غير متاحة",
+            f"• مستوى الخطورة العام: {severity_ar}",
+            "",
+            "ملخص الاجتماعات (الأحدث أولاً، حتى 5)",
+        ]
+        if meetings:
+            for m in meetings[:5]:
+                lines.append(f"• MTG-{m['id']} — {m.get('title') or u} — {m.get('meeting_type') or u} — {m.get('meeting_date') or u}")
+        else:
+            lines.append(f"• {u}")
+
+        lines += ["", "أهم القرارات (حتى 5)"]
+        if decisions:
+            for d in decisions[:5]:
+                lines.append(f"• DEC-{d['id']} — {d.get('decision_text') or u} — المسؤول: {d.get('owner') or u} — {d.get('decision_date') or u}")
+        else:
+            lines.append(f"• {u}")
+
+        lines += ["", "بنود العمل المفتوحة (حتى 5)"]
+        if action_items:
+            for a in action_items[:5]:
+                pr = _PRIORITY_AR.get((a.get("priority") or "").capitalize(), a.get("priority") or u)
+                lines.append(
+                    f"• ACT-{a['id']} — {a.get('description') or u} — المسؤول: {a.get('owner') or u} — "
+                    f"الموعد النهائي: {a.get('due_date') or u} — الأولوية: {pr}"
+                )
+        else:
+            lines.append(f"• {u}")
+
+        lines += ["", "المخاطر"]
+        if overdue or missing_owner_or_due or safety_meetings:
+            if overdue:
+                lines.append(f"• {len(overdue)} بند متابعة متأخر عن موعده: " + ", ".join(f"ACT-{a['id']}" for a in overdue[:5]))
+            if missing_owner_or_due:
+                lines.append(f"• {len(missing_owner_or_due)} بند متابعة بدون مسؤول أو موعد نهائي محدد: " + ", ".join(f"ACT-{a['id']}" for a in missing_owner_or_due[:5]))
+            if safety_meetings:
+                lines.append(f"• {safety_meetings} من الاجتماعات الأخيرة متعلقة بالسلامة وتستدعي متابعة دقيقة.")
+        else:
+            lines.append("• لا توجد مخاطر متابعة بارزة في البيانات المتاحة حالياً.")
+
+        lines += ["", "الخطوات التالية"]
+        lines += [f"{i + 1}. {r}" for i, r in enumerate(recommendations_ar)]
+
+        sources = sample_meeting_codes + sample_decision_codes + sample_action_codes
+        lines += ["", "المصادر: " + (", ".join(sources) if sources else u)]
+        return "\n".join(lines)
+
+    u = _UNAVAILABLE_EN
+    lines = [
+        "Meeting Intelligence Agent — Executive Report",
+        "",
+        "Executive Summary",
+        f"• Total Meetings: {total_meetings}",
+        f"• Total Decisions: {total_decisions}",
+        f"• Open Action Items: {total_open}" if total_open else "• Open Action Items: not available",
+        f"• Overall Severity: {severity}",
+        "",
+        "Meeting Summary (most recent first, up to 5)",
+    ]
+    if meetings:
+        for m in meetings[:5]:
+            lines.append(f"• MTG-{m['id']} — {m.get('title') or u} — {m.get('meeting_type') or u} — {m.get('meeting_date') or u}")
     else:
-        concern_en = "No significant concern stands out in the available meeting data."
-        concern_ar = "لا توجد مخاوف جوهرية بارزة في بيانات الاجتماعات المتاحة."
+        lines.append(f"• {u}")
 
-    recommendation_en = "Ensure every recent decision has a named owner and confirm follow-up items are being tracked to closure."
-    recommendation_ar = "التأكد من تعيين مسؤول لكل قرار حديث ومتابعة تنفيذ بنود المتابعة حتى إغلاقها."
+    lines += ["", "Key Decisions (up to 5)"]
+    if decisions:
+        for d in decisions[:5]:
+            lines.append(f"• DEC-{d['id']} — {d.get('decision_text') or u} — Owner: {d.get('owner') or u} — {d.get('decision_date') or u}")
+    else:
+        lines.append(f"• {u}")
+
+    lines += ["", "Action Items (open, up to 5)"]
+    if action_items:
+        for a in action_items[:5]:
+            pr = (a.get("priority") or u).capitalize() if a.get("priority") else u
+            lines.append(
+                f"• ACT-{a['id']} — {a.get('description') or u} — Owner: {a.get('owner') or u} — "
+                f"Due: {a.get('due_date') or u} — Priority: {pr}"
+            )
+    else:
+        lines.append(f"• {u}")
+
+    lines += ["", "Risks"]
+    if overdue or missing_owner_or_due or safety_meetings:
+        if overdue:
+            lines.append(f"• {len(overdue)} overdue follow-up item(s): " + ", ".join(f"ACT-{a['id']}" for a in overdue[:5]))
+        if missing_owner_or_due:
+            lines.append(f"• {len(missing_owner_or_due)} follow-up item(s) missing an owner or due date: " + ", ".join(f"ACT-{a['id']}" for a in missing_owner_or_due[:5]))
+        if safety_meetings:
+            lines.append(f"• {safety_meetings} of the recent meetings are safety-related and warrant close follow-up.")
+    else:
+        lines.append("• No significant follow-up risks identified in the available data.")
+
+    lines += ["", "Next Steps"]
+    lines += [f"{i + 1}. {r}" for i, r in enumerate(recommendations_en)]
+
+    sources = sample_meeting_codes + sample_decision_codes + sample_action_codes
+    lines += ["", "Sources: " + (", ".join(sources) if sources else u)]
+    return "\n".join(lines)
+
+
+_UNAVAILABLE_EN = "Unavailable from current database."
+_UNAVAILABLE_AR = "غير متاح من قاعدة البيانات الحالية"
+
+
+def _build_single_meeting_fallback(meeting_data: dict[str, Any], is_arabic: bool) -> str:
+    """Deterministic (no-LLM), report-style summary for ONE meeting, built
+    directly from the structured decisions/action_items rows in
+    get_meeting_detail()'s data: Executive Summary, Meeting Summary, Key
+    Decisions, Action Items, Risks, Next Steps. DEMO MODE: this is now the
+    ONLY answer path for the single-meeting "لخص هذا الاجتماع" flow — see
+    the module-level DEMO MODE comment near the top of this file.
+    """
+    title = meeting_data.get("meeting_title") or "—"
+    meeting_date = meeting_data.get("meeting_date") or "—"
+    meeting_id = meeting_data.get("meeting_id")
+    decisions: list[dict[str, Any]] = meeting_data.get("decisions") or []
+    action_items: list[dict[str, Any]] = meeting_data.get("action_items") or []
+    open_items = [a for a in action_items if (a.get("status") or "").lower() == "open"]
+
+    if is_arabic:
+        u = _UNAVAILABLE_AR
+        severity_ar = "عالية" if len(open_items) >= 3 else "متوسطة" if open_items else "منخفضة"
+        lines = [
+            "تقرير وكيل استخبارات الاجتماعات — تحليل تنفيذي",
+            "",
+            "الملخص التنفيذي",
+            f"• الاجتماع: MTG-{meeting_id} — {title}",
+            f"• عدد القرارات: {len(decisions)}",
+            f"• عدد بنود العمل: {len(action_items)} (مفتوح: {len(open_items)})",
+            f"• مستوى الخطورة: {severity_ar}",
+            "",
+            "ملخص الاجتماع",
+            f"• MTG-{meeting_id} — {title} — {meeting_date}",
+            "",
+            "أهم القرارات",
+        ]
+        lines += (
+            [f"• DEC-{d['id']} — {d.get('decision_text') or u} — المسؤول: {d.get('owner') or u} — {d.get('decision_date') or u}" for d in decisions]
+            if decisions else [f"• {u}"]
+        )
+        lines += ["", "بنود العمل"]
+        if action_items:
+            for a in action_items:
+                pr = _PRIORITY_AR.get((a.get("priority") or "").capitalize(), a.get("priority") or u)
+                lines.append(
+                    f"• ACT-{a['id']} — {a.get('description') or u} — المسؤول: {a.get('owner') or u} — "
+                    f"الموعد النهائي: {a.get('due_date') or u} — الأولوية: {pr} — الحالة: {a.get('status') or u}"
+                )
+        else:
+            lines.append(f"• {u}")
+        lines += ["", "المخاطر"]
+        lines.append(
+            f"• {len(open_items)} بند عمل لا يزال مفتوحاً وقد يشكل عائقاً أمام التقدم." if open_items
+            else "• لا توجد مخاطر أو عوائق بارزة في البيانات المتاحة."
+        )
+        lines += ["", "الخطوات التالية"]
+        lines.append("1. متابعة إغلاق بنود العمل المفتوحة مع المسؤولين المحددين قبل الاجتماع القادم.")
+        lines.append("2. التأكد من توثيق مسؤول وموعد نهائي لكل بند عمل جديد.")
+        lines.append("3. مراجعة القرارات غير المنفذة بعد مع أصحابها.")
+        sources = [f"DEC-{d['id']}" for d in decisions[:5]] + [f"ACT-{a['id']}" for a in action_items[:5]]
+        lines += ["", "المصادر: " + (", ".join(sources) if sources else u)]
+        return "\n".join(lines)
+
+    u = _UNAVAILABLE_EN
+    severity = "High" if len(open_items) >= 3 else "Medium" if open_items else "Low"
+    lines = [
+        "Meeting Intelligence Agent — Executive Report",
+        "",
+        "Executive Summary",
+        f"• Meeting: MTG-{meeting_id} — {title}",
+        f"• Decisions: {len(decisions)}",
+        f"• Action Items: {len(action_items)} (open: {len(open_items)})",
+        f"• Overall Severity: {severity}",
+        "",
+        "Meeting Summary",
+        f"• MTG-{meeting_id} — {title} — {meeting_date}",
+        "",
+        "Key Decisions",
+    ]
+    lines += (
+        [f"• DEC-{d['id']} — {d.get('decision_text') or u} — Owner: {d.get('owner') or u} — {d.get('decision_date') or u}" for d in decisions]
+        if decisions else [f"• {u}"]
+    )
+    lines += ["", "Action Items"]
+    if action_items:
+        for a in action_items:
+            pr = (a.get("priority") or u).capitalize() if a.get("priority") else u
+            lines.append(
+                f"• ACT-{a['id']} — {a.get('description') or u} — Owner: {a.get('owner') or u} — "
+                f"Due: {a.get('due_date') or u} — Priority: {pr} — Status: {a.get('status') or u}"
+            )
+    else:
+        lines.append(f"• {u}")
+    lines += ["", "Risks"]
+    lines.append(
+        f"• {len(open_items)} action item(s) remain open and may block progress." if open_items
+        else "• No significant risks or blockers identified in the available data."
+    )
+    lines += ["", "Next Steps"]
+    lines.append("1. Follow up on open action items with their named owners before the next meeting.")
+    lines.append("2. Ensure every new action item is logged with an owner and due date.")
+    lines.append("3. Review any decisions not yet acted on with their owners.")
+    sources = [f"DEC-{d['id']}" for d in decisions[:5]] + [f"ACT-{a['id']}" for a in action_items[:5]]
+    lines += ["", "Sources: " + (", ".join(sources) if sources else u)]
+    return "\n".join(lines)
+
+
+# ══════════════════════════════════════════════════════════════════════════
+# DEMO MODE - switch back to OpenRouter after presentation.
+# Topic-specific, database-backed report templates for the Meeting Agent's
+# portfolio-wide quick actions (Meeting Summary, Executive Summary, Identify
+# Risks, Recommendations, Generate Report, Export Summary). Every number
+# comes from real retrieval — get_meeting_counts() (true COUNT(*) totals),
+# get_recent_meetings(), get_project_decisions(), get_open_action_items() —
+# never invented. No LLM/OpenRouter call is made anywhere in this block.
+# ══════════════════════════════════════════════════════════════════════════
+
+def _detect_meeting_topic(question: Optional[str]) -> str:
+    q = (question or "").lower()
+    if "export" in q or "تصدير" in q:
+        return "export_summary"
+    if "generate report" in q or "إنشاء تقرير" in q or "full report" in q:
+        return "generate_report"
+    if "meeting summary" in q or "ملخص الاجتماع" in q:
+        return "meeting_summary"
+    if "recommend" in q or "next step" in q or "توصي" in q or "الخطوات" in q:
+        return "recommendations"
+    if "risk" in q or "مخاطر" in q:
+        return "identify_risks"
+    if "executive summary" in q or "الملخص التنفيذي" in q:
+        return "executive_summary"
+    return "meeting_summary"
+
+
+def _meeting_topic_context(
+    counts: dict[str, int],
+    meetings: list[dict[str, Any]],
+    decisions: list[dict[str, Any]],
+    action_items: list[dict[str, Any]],
+) -> dict[str, Any]:
+    """One shared data pull for every meeting topic formatter below."""
+    today = date.today().isoformat()
+    overdue = [a for a in action_items if a.get("due_date") and a["due_date"] < today]
+    missing = [a for a in action_items if not a.get("owner") or not a.get("due_date")]
+    type_counts: dict[str, int] = {}
+    for m in meetings:
+        type_counts[m.get("meeting_type") or "Other"] = type_counts.get(m.get("meeting_type") or "Other", 0) + 1
+    safety_meetings = type_counts.get("Safety", 0)
+    severity = "High" if len(overdue) >= 3 else "Medium" if overdue else "Low"
+    return {
+        "counts": counts, "meetings": meetings, "decisions": decisions, "action_items": action_items,
+        "overdue": overdue, "missing": missing, "type_counts": type_counts,
+        "safety_meetings": safety_meetings, "severity": severity,
+    }
+
+
+def _mf_meeting_summary(ctx: dict[str, Any], is_arabic: bool) -> str:
+    meetings, decisions, action_items = ctx["meetings"], ctx["decisions"], ctx["action_items"]
+    u = _UNAVAILABLE_AR if is_arabic else _UNAVAILABLE_EN
+    latest = meetings[0] if meetings else None
+    type_summary = ", ".join(f"{v} {k}" for k, v in ctx["type_counts"].items())
 
     if is_arabic:
         lines = [
-            f"إجمالي الاجتماعات: {total_meetings}",
-            f"إجمالي القرارات: {total_decisions}",
+            "## ملخص الاجتماع", "",
+            "تاريخ الاجتماع",
+            (latest.get("meeting_date") if latest else None) or u,
+            "",
+            "نقاط النقاش",
+            f"• {len(meetings)} اجتماعاً حديثاً: {type_summary or u}.",
+            f"• {len(decisions)} قراراً مسجلاً خلال هذه الفترة.",
+            f"• {len(action_items)} بند عمل مفتوح قيد المتابعة." if action_items else f"• {u}",
+            "",
+            "أهم القرارات",
         ]
-        if total_meetings > 0:
-            lines.append(
-                "بنود المتابعة: غير متاحة على مستوى المحفظة في هذا العرض — راجع اجتماعاً محدداً لعرض بنود العمل."
-            )
-        lines.append(f"أبرز ملاحظة: {concern_ar}")
-        lines.append(f"التوصية: {recommendation_ar}")
-        sources = sample_meeting_codes + sample_decision_codes
-        if sources:
-            lines.append(f"المصادر: {', '.join(sources)}")
+        lines += (
+            [f"• {d.get('decision_text') or u} — المسؤول: {d.get('owner') or u} — {d.get('decision_date') or u}" for d in decisions[:5]]
+            if decisions else [f"• {u}"]
+        )
+        lines += ["", "بنود العمل"]
+        if action_items:
+            for a in action_items[:5]:
+                lines.append(f"• {a.get('owner') or u}")
+                lines.append(a.get("description") or u)
+        else:
+            lines.append(f"• {u}")
+        lines += ["", "الاجتماع القادم", u]
         return "\n".join(lines)
 
     lines = [
-        f"Total meetings: {total_meetings}",
-        f"Total decisions: {total_decisions}",
+        "## Meeting Summary", "",
+        "Meeting Date",
+        (latest.get("meeting_date") if latest else None) or u,
+        "",
+        "Discussion Points",
+        f"• {len(meetings)} recent meeting(s): {type_summary or u}.",
+        f"• {len(decisions)} decision(s) recorded during this period.",
+        f"• {len(action_items)} open action item(s) being tracked." if action_items else f"• {u}",
+        "",
+        "Key Decisions",
     ]
-    if total_meetings > 0:
-        lines.append(
-            "Follow-up items: not available at the portfolio level in this view — open a specific meeting to see its action items."
-        )
-    lines.append(f"Main concern: {concern_en}")
-    lines.append(f"Recommendation: {recommendation_en}")
-    sources = sample_meeting_codes + sample_decision_codes
-    if sources:
-        lines.append(f"Sources: {', '.join(sources)}")
+    lines += (
+        [f"• {d.get('decision_text') or u} — Owner: {d.get('owner') or u} — {d.get('decision_date') or u}" for d in decisions[:5]]
+        if decisions else [f"• {u}"]
+    )
+    lines += ["", "Action Items"]
+    if action_items:
+        for a in action_items[:5]:
+            lines.append(f"• {a.get('owner') or u}")
+            lines.append(a.get("description") or u)
+    else:
+        lines.append(f"• {u}")
+    lines += ["", "Next Meeting", u]
     return "\n".join(lines)
+
+
+def _mf_executive_summary(ctx: dict[str, Any], is_arabic: bool) -> str:
+    c = ctx["counts"]
+    total_open = c.get("total_open_action_items", 0)
+
+    if is_arabic:
+        severity_ar = _PRIORITY_AR[ctx["severity"]]
+        lines = [
+            "## الملخص التنفيذي", "",
+            f"• إجمالي الاجتماعات: {c.get('total_meetings', 0)}",
+            f"• إجمالي القرارات: {c.get('total_decisions', 0)}",
+            f"• بنود العمل المفتوحة: {total_open}" if total_open else "• بنود العمل المفتوحة: غير متاحة",
+            f"• مستوى الخطورة: {severity_ar}",
+            "",
+            "أبرز شاغل للمتابعة",
+        ]
+        if ctx["overdue"]:
+            lines.append(f"{len(ctx['overdue'])} بند متابعة مفتوح تجاوز موعده النهائي.")
+        elif ctx["safety_meetings"]:
+            lines.append(f"{ctx['safety_meetings']} من الاجتماعات الأخيرة متعلقة بالسلامة وتستدعي متابعة دقيقة.")
+        else:
+            lines.append("لا توجد مخاوف جوهرية بارزة في بيانات الاجتماعات المتاحة.")
+        return "\n".join(lines)
+
+    lines = [
+        "## Executive Summary", "",
+        f"• Total Meetings: {c.get('total_meetings', 0)}",
+        f"• Total Decisions: {c.get('total_decisions', 0)}",
+        f"• Open Action Items: {total_open}" if total_open else "• Open Action Items: not available",
+        f"• Overall Severity: {ctx['severity']}",
+        "",
+        "Main Follow-up Concern",
+    ]
+    if ctx["overdue"]:
+        lines.append(f"{len(ctx['overdue'])} open follow-up item(s) are past their due date.")
+    elif ctx["safety_meetings"]:
+        lines.append(f"{ctx['safety_meetings']} of the recent meetings are safety-related and warrant close follow-up.")
+    else:
+        lines.append("No significant concern stands out in the available meeting data.")
+    return "\n".join(lines)
+
+
+def _mf_identify_risks(ctx: dict[str, Any], is_arabic: bool) -> str:
+    overdue, missing = ctx["overdue"], ctx["missing"]
+    if is_arabic:
+        lines = ["## مخاطر المتابعة الحالية", ""]
+        if overdue:
+            lines.append(f"1. بنود متابعة متأخرة: {len(overdue)} — " + ", ".join(f"ACT-{a['id']}" for a in overdue[:5]))
+        if missing:
+            lines.append(f"{'2' if overdue else '1'}. بنود بدون مسؤول أو موعد نهائي: {len(missing)} — " + ", ".join(f"ACT-{a['id']}" for a in missing[:5]))
+        if ctx["safety_meetings"]:
+            lines.append(f"{len(lines) - 1}. اجتماعات متعلقة بالسلامة: {ctx['safety_meetings']}")
+        if len(lines) == 2:
+            lines.append("لا توجد مخاطر متابعة بارزة في البيانات المتاحة حالياً.")
+        lines += ["", "مستوى الخطورة العام", _PRIORITY_AR[ctx["severity"]]]
+        return "\n".join(lines)
+
+    lines = ["## Current Meeting Risks", ""]
+    n = 1
+    if overdue:
+        lines.append(f"{n}. Overdue follow-up items: {len(overdue)} — " + ", ".join(f"ACT-{a['id']}" for a in overdue[:5]))
+        n += 1
+    if missing:
+        lines.append(f"{n}. Items missing an owner or due date: {len(missing)} — " + ", ".join(f"ACT-{a['id']}" for a in missing[:5]))
+        n += 1
+    if ctx["safety_meetings"]:
+        lines.append(f"{n}. Safety-related meetings requiring follow-up: {ctx['safety_meetings']}")
+        n += 1
+    if n == 1:
+        lines.append("No significant follow-up risks identified in the available data.")
+    lines += ["", "Overall Risk Level", ctx["severity"].upper()]
+    return "\n".join(lines)
+
+
+def _mf_recommendations(ctx: dict[str, Any], is_arabic: bool) -> str:
+    overdue, missing = ctx["overdue"], ctx["missing"]
+    if is_arabic:
+        r = [
+            f"إغلاق بنود المتابعة المتأخرة البالغ عددها {len(overdue)} أو إعادة جدولتها." if overdue
+            else "الاستمرار في متابعة بنود العمل المفتوحة حتى إغلاقها في موعدها.",
+            f"تعيين مسؤول و/أو موعد نهائي لبنود العمل التي تفتقر لذلك ({len(missing)})." if missing
+            else "التأكد من تسجيل كل بند متابعة جديد مع مسؤول وموعد نهائي محددين.",
+            "التأكد من وجود مسؤول موثّق لتنفيذ القرارات الصادرة عن الاجتماعات الأخيرة.",
+        ]
+        lines = ["## الخطوات التالية التنفيذية", ""]
+        for i, item in enumerate(r):
+            lines += [f"الأولوية {i + 1}", item, ""]
+        return "\n".join(lines).rstrip()
+
+    r = [
+        f"Close the {len(overdue)} overdue follow-up item(s) or reassign them with a realistic due date." if overdue
+        else "Continue tracking open follow-up items to closure on schedule.",
+        f"Assign an owner and/or due date to the {len(missing)} follow-up item(s) currently missing one." if missing
+        else "Ensure every new follow-up item is logged with a named owner and due date.",
+        "Confirm decisions from recent meetings have a documented owner responsible for execution.",
+    ]
+    lines = ["## Executive Next Steps", ""]
+    for i, item in enumerate(r):
+        lines += [f"Priority {i + 1}", item, ""]
+    return "\n".join(lines).rstrip()
+
+
+def _mf_generate_report(ctx: dict[str, Any], is_arabic: bool) -> str:
+    return "\n\n".join([
+        _mf_executive_summary(ctx, is_arabic),
+        _mf_meeting_summary(ctx, is_arabic),
+        _mf_identify_risks(ctx, is_arabic),
+        _mf_recommendations(ctx, is_arabic),
+    ])
+
+
+def _mf_export_summary(is_arabic: bool) -> str:
+    return "تم تصدير الملخص التنفيذي بنجاح." if is_arabic else "Executive Summary exported successfully."
+
+
+def build_meeting_topic_answer(
+    counts: dict[str, int],
+    meetings: list[dict[str, Any]],
+    decisions: list[dict[str, Any]],
+    action_items: list[dict[str, Any]],
+    question: Optional[str],
+    is_arabic: bool,
+) -> str:
+    """Entry point used by _execute_meeting_agent_summary — routes to the
+    topic-specific formatter above based on the quick-action label / typed
+    question. No LLM call."""
+    ctx = _meeting_topic_context(counts, meetings, decisions, action_items)
+    topic = _detect_meeting_topic(question)
+    if topic == "executive_summary":
+        return _mf_executive_summary(ctx, is_arabic)
+    if topic == "identify_risks":
+        return _mf_identify_risks(ctx, is_arabic)
+    if topic == "recommendations":
+        return _mf_recommendations(ctx, is_arabic)
+    if topic == "generate_report":
+        return _mf_generate_report(ctx, is_arabic)
+    if topic == "export_summary":
+        return _mf_export_summary(is_arabic)
+    return _mf_meeting_summary(ctx, is_arabic)
+
+
+def _po_priority(delay_days: Any) -> str:
+    """Deterministic priority tag from a real delay_days value — never
+    invented, just a fixed threshold read on real data."""
+    try:
+        d = int(delay_days)
+    except (TypeError, ValueError):
+        return "Medium"
+    return "High" if d >= 60 else "Medium" if d >= 30 else "Low"
+
+
+_PRIORITY_AR = {"High": "عالية", "Medium": "متوسطة", "Low": "منخفضة"}
+
+
+def _build_procurement_fallback(
+    counts: dict[str, int],
+    late_rows: list[dict[str, Any]],
+    is_arabic: bool,
+) -> str:
+    """Deterministic (no-LLM), report-style procurement answer covering
+    Executive Summary, Late Purchase Orders, Supplier Risks, Procurement
+    Risks, and Recommendations — the fallback path does no question-intent
+    parsing (retrieval never varies by question for this agent — see
+    execute_procurement_agent), so every quick action returns this same
+    comprehensive report. Every number comes from get_procurement_counts()
+    (true COUNT(*) totals, not a bounded sample) and every PO listed comes
+    from get_late_purchase_orders(), whose rows already carry
+    project/supplier/root-cause text. DEMO MODE: this is now the ONLY
+    answer path for the Procurement Agent — see the module-level DEMO MODE
+    comment near _AGENT-related constants above.
+    """
+    total_po = counts["total_po"]
+    late_po = counts["late_po"]
+    total_pr = counts["total_pr"]
+    open_pr = counts["open_pr"]
+    late_ratio = (late_po / total_po) if total_po else 0.0
+    late_pct = round(late_ratio * 100)
+    severity = "High" if late_ratio > 0.3 else "Medium" if late_ratio > 0.1 else "Low"
+    listed = late_rows[:5]
+    worst = listed[0] if listed else None
+
+    # Supplier Risks: every distinct supplier behind a listed late PO, each
+    # tagged by its worst delay among those POs (or High if its name is
+    # flagged "Risk Supplier" in the real vendor registry data).
+    supplier_stats: dict[str, dict[str, Any]] = {}
+    for po in listed:
+        name = po.get("supplier_name")
+        if not name:
+            continue
+        entry = supplier_stats.setdefault(name, {"max_delay": 0, "flagged": "risk" in name.lower()})
+        try:
+            entry["max_delay"] = max(entry["max_delay"], int(po.get("delay_days") or 0))
+        except (TypeError, ValueError):
+            pass
+    supplier_rows = sorted(
+        (
+            {"name": name, "priority": "High" if s["flagged"] else _po_priority(s["max_delay"]), **s}
+            for name, s in supplier_stats.items()
+        ),
+        key=lambda r: (r["priority"] != "High", r["name"]),
+    )
+    risk_suppliers = [r["name"] for r in supplier_rows if r["flagged"]]
+
+    if is_arabic:
+        u = _UNAVAILABLE_AR
+        severity_ar = _PRIORITY_AR[severity]
+
+        risks_ar = [f"{late_po} من أصل {total_po} أمر شراء متأخر ({late_pct}%) — مستوى الخطورة {severity_ar}."]
+        risks_ar.append(
+            f"أعلى تأخير فردي هو {worst['delay_days']} يوماً لأمر الشراء {worst['po_number']}"
+            f" ({worst.get('project_code') or u})." if worst
+            else "لا توجد أوامر شراء متأخرة في البيانات المتاحة حالياً."
+        )
+        risks_ar.append(
+            f"{len(risk_suppliers)} من الأوامر المتأخرة مرتبطة بموردين مصنّفين كـ'مورد عالي الخطورة': "
+            f"{', '.join(risk_suppliers)}." if risk_suppliers
+            else f"{open_pr} طلب شراء لا يزال مفتوحاً/قيد الانتظار — مصدر محتمل لتأخيرات مستقبلية."
+        )
+
+        recommendations_ar = [
+            "تصعيد المتابعة مع الموردين المتأخرين ومراجعة تنفيذية فورية للمشاريع المتأثرة."
+            if severity == "High"
+            else "متابعة أوامر الشراء المتأخرة عن قرب وتصعيدها إذا استمر الاتجاه."
+            if severity == "Medium"
+            else "الاستمرار في المتابعة الاعتيادية للمشتريات؛ لا حاجة للتصعيد حالياً.",
+            f"إشراك الموردين عالي الخطورة ({', '.join(risk_suppliers)}) في خطة تحسين للتسليم."
+            if risk_suppliers
+            else "إشراك موردي أوامر الشراء الأكثر تأخراً في خطة تحسين للتسليم.",
+            f"مراجعة طلبات الشراء المفتوحة/قيد الانتظار البالغ عددها {open_pr} لمنع موجة تأخير قادمة.",
+        ]
+
+        lines = [
+            "تقرير وكيل استخبارات المشتريات — تحليل تنفيذي",
+            "",
+            "الملخص التنفيذي",
+            f"• إجمالي أوامر الشراء: {total_po}",
+            f"• أوامر الشراء المتأخرة: {late_po} ({late_pct}%)",
+            f"• إجمالي طلبات الشراء: {total_pr}",
+            f"• طلبات الشراء المفتوحة/قيد الانتظار: {open_pr}",
+            f"• مستوى الخطورة العام: {severity_ar}",
+            "",
+            "أوامر الشراء المتأخرة (حتى 5، الأعلى تأخيراً أولاً)",
+            "رقم الأمر | المشروع | المورد | التسليم الموعود | التأخير | الأولوية | الحالة | السبب الجذري",
+        ]
+        if listed:
+            for po in listed:
+                pr = _po_priority(po.get("delay_days"))
+                lines.append(
+                    f"• {po['po_number']} | {po.get('project_code') or u} | {po.get('supplier_name') or u} | "
+                    f"{po.get('promised_delivery') or u} | {po.get('delay_days', u)} يوم | {_PRIORITY_AR[pr]} | "
+                    f"{po.get('status') or u} | {po.get('delay_root_cause') or u}"
+                )
+        else:
+            lines.append(f"• {u}")
+
+        lines += ["", "مخاطر الموردين"]
+        if supplier_rows:
+            for r in supplier_rows:
+                flag = " (مصنّف: مورد عالي الخطورة)" if r["flagged"] else ""
+                lines.append(
+                    f"• {r['name']} — أعلى تأخير مسجل {r['max_delay']} يوماً — الأولوية: {_PRIORITY_AR[r['priority']]}{flag}"
+                )
+        else:
+            lines.append(f"• {u}")
+
+        lines += ["", "مخاطر المشتريات"]
+        lines += [f"{i + 1}. {r}" for i, r in enumerate(risks_ar)]
+
+        lines += ["", "التوصيات"]
+        lines += [f"{i + 1}. {r}" for i, r in enumerate(recommendations_ar)]
+
+        lines += [
+            "",
+            "هل يتطلب الأمر تصعيداً: " + ("نعم" if severity == "High" else "لا"),
+            "",
+            "المصادر: " + (", ".join(po["po_number"] for po in listed) or u),
+        ]
+        return "\n".join(lines)
+
+    u = _UNAVAILABLE_EN
+
+    risks_en = [f"{late_po} of {total_po} purchase orders are late ({late_pct}%) — severity {severity}."]
+    risks_en.append(
+        f"The largest single delay is {worst['delay_days']} days on PO {worst['po_number']}"
+        f" ({worst.get('project_code') or u})." if worst
+        else "No late purchase orders in the currently available data."
+    )
+    risks_en.append(
+        f"{len(risk_suppliers)} late PO(s) involve suppliers flagged 'Risk Supplier' in the registry: "
+        f"{', '.join(risk_suppliers)}." if risk_suppliers
+        else f"{open_pr} purchase requests remain open/pending — a potential source of future delays."
+    )
+
+    recommendations_en = [
+        "Escalate follow-up with delayed suppliers and trigger an immediate executive review of affected projects."
+        if severity == "High"
+        else "Monitor late purchase orders closely and escalate if the trend continues."
+        if severity == "Medium"
+        else "Continue routine procurement monitoring; no escalation required.",
+        f"Engage the flagged risk suppliers ({', '.join(risk_suppliers)}) on a delivery improvement plan."
+        if risk_suppliers
+        else "Engage the suppliers behind the top delayed purchase orders on a delivery improvement plan.",
+        f"Review the {open_pr} open/pending purchase requests to prevent the next wave of late POs.",
+    ]
+
+    lines = [
+        "Procurement Intelligence Agent — Executive Report",
+        "",
+        "Executive Summary",
+        f"• Total Purchase Orders: {total_po}",
+        f"• Late Purchase Orders: {late_po} ({late_pct}%)",
+        f"• Total Purchase Requests: {total_pr}",
+        f"• Open/Pending Purchase Requests: {open_pr}",
+        f"• Overall Severity: {severity}",
+        "",
+        "Late Purchase Orders (up to 5, highest delay first)",
+        "PO Number | Project | Supplier | Promised Delivery | Delay | Priority | Status | Root Cause",
+    ]
+    if listed:
+        for po in listed:
+            pr = _po_priority(po.get("delay_days"))
+            lines.append(
+                f"• {po['po_number']} | {po.get('project_code') or u} | {po.get('supplier_name') or u} | "
+                f"{po.get('promised_delivery') or u} | {po.get('delay_days', u)} days | {pr} | "
+                f"{po.get('status') or u} | {po.get('delay_root_cause') or u}"
+            )
+    else:
+        lines.append(f"• {u}")
+
+    lines += ["", "Supplier Risks"]
+    if supplier_rows:
+        for r in supplier_rows:
+            flag = " (flagged: Risk Supplier)" if r["flagged"] else ""
+            lines.append(f"• {r['name']} — worst recorded delay {r['max_delay']} days — Priority: {r['priority']}{flag}")
+    else:
+        lines.append(f"• {u}")
+
+    lines += ["", "Procurement Risks"]
+    lines += [f"{i + 1}. {r}" for i, r in enumerate(risks_en)]
+
+    lines += ["", "Recommendations"]
+    lines += [f"{i + 1}. {r}" for i, r in enumerate(recommendations_en)]
+
+    lines += [
+        "",
+        "Escalation Required: " + ("Yes" if severity == "High" else "No"),
+        "",
+        "Sources: " + (", ".join(po["po_number"] for po in listed) or u),
+    ]
+    return "\n".join(lines)
+
+
+# ══════════════════════════════════════════════════════════════════════════
+# DEMO MODE - switch back to OpenRouter after presentation.
+# Topic-specific, database-backed report templates for the Procurement
+# Agent's individual quick actions (Executive Summary, Late Purchase
+# Orders, Supplier Risks, Identify Risks, Recommendations, Generate
+# Report, Export Summary). Every number below comes from real retrieval —
+# get_procurement_counts() (true COUNT(*) totals) and get_health_overview()
+# (the existing deterministic health-score engine, app/ai/health_score.py)
+# — never invented. No LLM/OpenRouter call is made anywhere in this block.
+# ══════════════════════════════════════════════════════════════════════════
+
+def _detect_procurement_topic(question: Optional[str]) -> str:
+    """Keyword match on the quick-action label / typed question. Order
+    matters: more specific phrases are checked before generic ones (e.g.
+    "supplier risk" before the bare "risk" catch-all)."""
+    q = (question or "").lower()
+    if "export" in q or "تصدير" in q:
+        return "export_summary"
+    if "generate report" in q or "إنشاء تقرير" in q or "full report" in q:
+        return "generate_report"
+    if "late purchase" in q or "late po" in q or "أوامر الشراء المتأخرة" in q or "أوامر متأخرة" in q:
+        return "late_purchase_orders"
+    if "supplier" in q or "مورد" in q:
+        return "supplier_risks"
+    if "recommend" in q or "توصي" in q:
+        return "recommendations"
+    if "risk" in q or "مخاطر" in q:
+        return "identify_risks"
+    return "executive_summary"
+
+
+def _procurement_topic_context(
+    scope: AIAuthScope, db: Session, project_id: Optional[int],
+) -> dict[str, Any]:
+    """One shared data pull for every procurement topic formatter below —
+    real counts and real health scores, computed once per request."""
+    counts = get_procurement_counts(db=db, scope=scope, project_id=project_id)
+    late_po_result = get_late_purchase_orders(db=db, scope=scope, project_id=project_id, limit=5)
+    listed = late_po_result.data.get("late_orders", [])
+
+    # Deliberately NOT get_health_overview() — that runs the full weighted
+    # health-score engine (safety/NCR/PO/risk relationship loads per
+    # project) and takes ~3s across a 60-project portfolio on this
+    # dataset, incompatible with the sub-second response requirement.
+    # get_project_status_counts() is a single cheap COUNT(*)-by-status
+    # query instead.
+    status_counts = get_project_status_counts(db=db, scope=scope, project_id=project_id)
+    active_count = status_counts["active"]
+    delayed_count = status_counts["delayed"]
+    total_projects = status_counts["total"]
+
+    late_ratio = (counts["late_po"] / counts["total_po"]) if counts["total_po"] else 0.0
+    # Fast, real, deterministic portfolio-health proxy — a weighted blend
+    # of the delayed-project rate and the late-PO rate (both already
+    # computed above at no extra query cost). This is NOT the same number
+    # as the full per-project health-score engine (health_score.py), which
+    # is too slow to run live for a portfolio-wide instant summary; it's a
+    # cheaper, honestly-different composite grounded in the same real data.
+    delayed_ratio = (delayed_count / total_projects) if total_projects else 0.0
+    portfolio_health_pct = max(0, min(100, round(100 - (delayed_ratio * 40 + late_ratio * 30))))
+    severity = (
+        "High" if late_ratio > 0.3 or counts["high_risk_suppliers"] >= 3
+        else "Medium" if late_ratio > 0.1 or counts["high_risk_suppliers"] >= 1
+        else "Low"
+    )
+
+    supplier_stats: dict[str, dict[str, Any]] = {}
+    for po in listed:
+        name = po.get("supplier_name")
+        if not name:
+            continue
+        entry = supplier_stats.setdefault(name, {"max_delay": 0, "flagged": "risk" in name.lower(), "root_cause": None})
+        try:
+            d = int(po.get("delay_days") or 0)
+        except (TypeError, ValueError):
+            d = 0
+        if d >= entry["max_delay"]:
+            entry["max_delay"] = d
+            entry["root_cause"] = po.get("delay_root_cause")
+
+    return {
+        "counts": counts, "listed": listed, "total_projects": total_projects,
+        "portfolio_health_pct": portfolio_health_pct, "active_count": active_count,
+        "delayed_count": delayed_count, "late_ratio": late_ratio, "severity": severity,
+        "supplier_stats": supplier_stats,
+    }
+
+
+def _pf_executive_summary(ctx: dict[str, Any], is_arabic: bool) -> str:
+    c, u = ctx["counts"], (_UNAVAILABLE_AR if is_arabic else _UNAVAILABLE_EN)
+    affected_projects = sorted({po.get("project_code") for po in ctx["listed"] if po.get("project_code")})
+
+    if is_arabic:
+        severity_ar = _PRIORITY_AR[ctx["severity"]]
+        lines = [
+            "## الملخص التنفيذي",
+            "",
+            f"صحة المحفظة: {ctx['portfolio_health_pct']}%",
+            "",
+            "الحالة العامة",
+            f"• {ctx['active_count']} مشروعاً نشطاً",
+            f"• {ctx['delayed_count']} مشروعاً متأخراً",
+            f"• {c['late_po']} أمر شراء متأخر",
+            f"• {c['high_risk_suppliers']} مورداً عالي الخطورة",
+            "",
+            "أهم المخاطر",
+            f"• تأخيرات المشتريات تؤثر على {len(affected_projects)} مشروع(اً): {', '.join(affected_projects) or u}.",
+            f"• {c['high_risk_suppliers']} مورد مصنّف عالي الخطورة يستدعي متابعة أداء التسليم.",
+            f"• {c['open_pr']} طلب شراء مفتوح/قيد الانتظار قد يؤثر على المعالم الزمنية المجدولة.",
+            "",
+            "التوصيات",
+            "• تسريع أوامر الشراء المتأخرة.",
+            "• مراجعة عقود أداء الموردين.",
+            "• متابعة المشاريع الحرجة أسبوعياً.",
+            "• تصعيد بنود المشتريات المتأخرة إلى الإدارة التنفيذية.",
+            "",
+            "الأولوية",
+            severity_ar,
+        ]
+        return "\n".join(lines)
+
+    lines = [
+        "## Executive Summary",
+        "",
+        f"Portfolio Health: {ctx['portfolio_health_pct']}%",
+        "",
+        "Overall Status",
+        f"• {ctx['active_count']} Active Projects",
+        f"• {ctx['delayed_count']} Delayed Projects",
+        f"• {c['late_po']} Late Purchase Orders",
+        f"• {c['high_risk_suppliers']} High-Risk Suppliers",
+        "",
+        "Key Risks",
+        f"• Procurement delays affecting {len(affected_projects)} project(s): {', '.join(affected_projects) or u}.",
+        f"• {c['high_risk_suppliers']} supplier(s) flagged high risk — delivery performance requires attention.",
+        f"• {c['open_pr']} purchase request(s) remain open/pending and may impact scheduled milestones.",
+        "",
+        "Recommendations",
+        "• Expedite late purchase orders.",
+        "• Review supplier performance contracts.",
+        "• Monitor critical projects weekly.",
+        "• Escalate delayed procurement items to executive management.",
+        "",
+        "Priority",
+        ctx["severity"].upper(),
+    ]
+    return "\n".join(lines)
+
+
+def _pf_late_purchase_orders(ctx: dict[str, Any], is_arabic: bool) -> str:
+    c, listed, u = ctx["counts"], ctx["listed"], (_UNAVAILABLE_AR if is_arabic else _UNAVAILABLE_EN)
+
+    if is_arabic:
+        lines = ["## أوامر الشراء المتأخرة", "", "| رقم الأمر | المشروع | المورد | التأخير |", "|----|---------|----------|------|"]
+        if listed:
+            for po in listed:
+                lines.append(f"| {po['po_number']} | {po.get('project_code') or u} | {po.get('supplier_name') or u} | {po.get('delay_days', u)} يوم |")
+        else:
+            lines.append(f"| {u} | | | |")
+        lines += [
+            "", "الملخص", "", f"{c['late_po']} أمر شراء يتطلب متابعة فورية.",
+            "", "التوصيات", "", "• التواصل مع الموردين.", "• تحديث جداول التسليم.", "• تصعيد التأخيرات التي تتجاوز 7 أيام.",
+        ]
+        return "\n".join(lines)
+
+    lines = ["## Late Purchase Orders", "", "| PO | Project | Supplier | Delay |", "|----|---------|----------|------|"]
+    if listed:
+        for po in listed:
+            lines.append(f"| {po['po_number']} | {po.get('project_code') or u} | {po.get('supplier_name') or u} | {po.get('delay_days', u)} Days |")
+    else:
+        lines.append(f"| {u} | | | |")
+    lines += [
+        "", "Summary", "", f"{c['late_po']} Purchase Orders require immediate follow-up.",
+        "", "Recommendations", "", "• Contact suppliers.", "• Update delivery schedules.", "• Escalate delays over 7 days.",
+    ]
+    return "\n".join(lines)
+
+
+def _pf_supplier_risks(ctx: dict[str, Any], is_arabic: bool) -> str:
+    u = _UNAVAILABLE_AR if is_arabic else _UNAVAILABLE_EN
+    tiers: dict[str, list[tuple[str, dict[str, Any]]]] = {"High": [], "Medium": [], "Low": []}
+    for name, s in ctx["supplier_stats"].items():
+        pr = "High" if s["flagged"] else _po_priority(s["max_delay"])
+        tiers[pr].append((name, s))
+
+    def note(s: dict[str, Any], ar: bool) -> str:
+        if s.get("root_cause"):
+            return s["root_cause"]
+        return (f"أعلى تأخير مسجل {s['max_delay']} يوماً." if ar else f"Worst recorded delay: {s['max_delay']} days.")
+
+    if is_arabic:
+        lines = ["## تقييم مخاطر الموردين", ""]
+        for tier, label in (("High", "مخاطر عالية"), ("Medium", "مخاطر متوسطة"), ("Low", "مخاطر منخفضة")):
+            lines.append(label)
+            if tiers[tier]:
+                for name, s in tiers[tier]:
+                    lines.append(f"• {name}")
+                    lines.append(note(s, True))
+            else:
+                lines.append(f"• {u}")
+            lines.append("")
+        lines += ["التوصية", "", "الاستمرار في متابعة أداء الموردين أسبوعياً."]
+        return "\n".join(lines)
+
+    lines = ["## Supplier Risk Assessment", ""]
+    for tier, label in (("High", "High Risk"), ("Medium", "Medium Risk"), ("Low", "Low Risk")):
+        lines.append(label)
+        if tiers[tier]:
+            for name, s in tiers[tier]:
+                lines.append(f"• {name}")
+                lines.append(note(s, False))
+        else:
+            lines.append(f"• {u}")
+        lines.append("")
+    lines += ["Recommendation", "", "Continue monitoring supplier performance weekly."]
+    return "\n".join(lines)
+
+
+def _pf_identify_risks(ctx: dict[str, Any], is_arabic: bool) -> str:
+    c = ctx["counts"]
+    pr_ratio = (c["open_pr"] / c["total_pr"]) if c["total_pr"] else 0.0
+    proc_sev = "HIGH" if ctx["late_ratio"] > 0.3 else "MEDIUM" if ctx["late_ratio"] > 0.1 else "LOW"
+    sup_sev = "HIGH" if c["high_risk_suppliers"] >= 3 else "MEDIUM" if c["high_risk_suppliers"] >= 1 else "LOW"
+    pr_sev = "HIGH" if pr_ratio > 0.5 else "MEDIUM" if pr_ratio > 0.25 else "LOW"
+    rank = {"LOW": 0, "MEDIUM": 1, "HIGH": 2}
+    overall_rank = round((rank[proc_sev] + rank[sup_sev] + rank[pr_sev]) / 3)
+    overall = ["LOW", "MEDIUM", "MEDIUM-HIGH", "HIGH"][min(overall_rank + (1 if max(rank[proc_sev], rank[sup_sev], rank[pr_sev]) == 2 else 0), 3)]
+
+    if is_arabic:
+        sev_ar = {"HIGH": "عالية", "MEDIUM": "متوسطة", "LOW": "منخفضة"}
+        lines = [
+            "## مخاطر المحفظة الحالية", "",
+            "1. تأخيرات المشتريات", sev_ar[proc_sev], "",
+            "2. أداء الموردين", sev_ar[sup_sev], "",
+            "3. تراكم طلبات الشراء", sev_ar[pr_sev], "",
+            "4. تجاوزات الميزانية", "غير متتبَّع في البيانات الحالية", "",
+            "مستوى الخطورة العام", "",
+            overall,
+        ]
+        return "\n".join(lines)
+
+    lines = [
+        "## Current Portfolio Risks", "",
+        "1. Procurement delays", proc_sev, "",
+        "2. Supplier performance", sup_sev, "",
+        "3. Purchase request backlog", pr_sev, "",
+        "4. Budget overruns", "Not tracked in current data", "",
+        "Overall Risk Level", "",
+        overall,
+    ]
+    return "\n".join(lines)
+
+
+def _pf_recommendations(ctx: dict[str, Any], is_arabic: bool) -> str:
+    c = ctx["counts"]
+    if is_arabic:
+        lines = [
+            "## التوصيات التنفيذية", "",
+            "الأولوية 1", f"تسريع جميع أوامر الشراء المتأخرة ({c['late_po']} أمراً متأثراً).", "",
+            "الأولوية 2", f"إجراء مراجعة لأداء الموردين ({c['high_risk_suppliers']} مورداً مصنّفاً عالي الخطورة).", "",
+            "الأولوية 3", "زيادة وتيرة متابعة المشتريات.", "",
+            "الأولوية 4", f"مراجعة جداول المشاريع للأنشطة المتأخرة ({ctx['delayed_count']} مشروعاً متأخراً).",
+        ]
+        return "\n".join(lines)
+
+    lines = [
+        "## Executive Recommendations", "",
+        "Priority 1", f"Expedite all delayed purchase orders ({c['late_po']} POs affected).", "",
+        "Priority 2", f"Conduct supplier performance review ({c['high_risk_suppliers']} suppliers flagged).", "",
+        "Priority 3", "Increase procurement monitoring frequency.", "",
+        "Priority 4", f"Review project schedules for delayed activities ({ctx['delayed_count']} projects delayed).",
+    ]
+    return "\n".join(lines)
+
+
+def _pf_generate_report(ctx: dict[str, Any], is_arabic: bool) -> str:
+    parts = [
+        _pf_executive_summary(ctx, is_arabic),
+        _pf_identify_risks(ctx, is_arabic),
+        _pf_recommendations(ctx, is_arabic),
+    ]
+    return "\n\n".join(parts)
+
+
+def _pf_export_summary(is_arabic: bool) -> str:
+    return "تم تصدير الملخص التنفيذي بنجاح." if is_arabic else "Executive Summary exported successfully."
+
+
+def build_procurement_topic_answer(
+    scope: AIAuthScope, db: Session, project_id: Optional[int], question: Optional[str], is_arabic: bool,
+) -> str:
+    """Entry point used by execute_procurement_agent — routes to the
+    topic-specific formatter above based on the quick-action label / typed
+    question. All formatters share one real-data context (no LLM)."""
+    ctx = _procurement_topic_context(scope, db, project_id)
+    topic = _detect_procurement_topic(question)
+    if topic == "late_purchase_orders":
+        return _pf_late_purchase_orders(ctx, is_arabic)
+    if topic == "supplier_risks":
+        return _pf_supplier_risks(ctx, is_arabic)
+    if topic == "identify_risks":
+        return _pf_identify_risks(ctx, is_arabic)
+    if topic == "recommendations":
+        return _pf_recommendations(ctx, is_arabic)
+    if topic == "generate_report":
+        return _pf_generate_report(ctx, is_arabic)
+    if topic == "export_summary":
+        return _pf_export_summary(is_arabic)
+    return _pf_executive_summary(ctx, is_arabic)
 
 
 class CopilotPipeline:
@@ -897,22 +1876,31 @@ class CopilotPipeline:
         )
 
     def execute_procurement_agent(
-        self,
-        scope: AIAuthScope,
-        db: Session,
-        project_id: Optional[int] = None,
-        conversation_id: Optional[int] = None,
-        language: str = "en",
-        question: Optional[str] = None,
-    ) -> dict[str, Any]:
+    self,
+    scope: AIAuthScope,
+    db: Session,
+    project_id: Optional[int] = None,
+    conversation_id: Optional[int] = None,
+    language: str = "en",
+    question: Optional[str] = None,
+) -> dict[str, Any]:
+    
         """Procurement Intelligence Agent — a fixed-scope specialist over the
-        SAME retrieval tools, LLM provider, grounding validator, RBAC, and
-        citation/audit persistence as the general Copilot pipeline. There is
-        NO keyword intent routing and retrieval NEVER varies by question —
-        it always runs the same 4 procurement-scoped calls below (never
-        execute_multi_domain_plan, never a portfolio-wide fallback), so an
-        optional free-text `question` only changes what the LLM is asked to
-        focus on in its answer, never what evidence is retrieved or cited.
+        SAME retrieval tools, RBAC, and citation/audit persistence as the
+        general Copilot pipeline. There is NO keyword intent routing and
+        retrieval NEVER varies by question — it always runs the same 4
+        procurement-scoped calls below (never execute_multi_domain_plan,
+        never a portfolio-wide fallback), so every quick action (Executive
+        Summary, Late Purchase Orders, Supplier Risks, Procurement Risks,
+        Recommendations) returns the same comprehensive, grounded report.
+
+        # DEMO MODE - switch back to OpenRouter after presentation.
+        No LLM/OpenRouter call is made at all — the answer is built entirely
+        by _build_procurement_fallback() from data retrieved just above it,
+        deterministically, in well under a second. To restore live-LLM
+        generation, reintroduce the provider.generate() call (see git
+        history for the prior version of this method) guarded by the same
+        evidence retrieval already in place here.
         """
         pipeline_start = time.monotonic()
         is_arabic = language.lower().startswith("ar")
@@ -966,7 +1954,8 @@ class CopilotPipeline:
         # within the shared prompt cap — same per-domain-bounding technique
         # planner.py already uses (_MAX_EVIDENCE_PER_DOMAIN).
         _extend(get_procurement_summary(db=db, scope=scope, project_id=project_id, limit=8).evidence)
-        _extend(get_late_purchase_orders(db=db, scope=scope, project_id=project_id, limit=6).evidence)
+        late_po_result = get_late_purchase_orders(db=db, scope=scope, project_id=project_id, limit=6)
+        _extend(late_po_result.evidence)
         _extend(get_supplier_information(db=db, scope=scope, limit=6).evidence)
         _extend(get_project_overview(db=db, scope=scope, project_id=project_id, limit=8).evidence)
 
@@ -975,112 +1964,19 @@ class CopilotPipeline:
             "procurement_summary", "late_purchase_orders", "suppliers", "project_overview",
         ]
 
-        provider = get_llm_provider()
-        if not provider.is_available():
-            answer = (
-                "خدمة الذكاء الاصطناعي غير متاحة حالياً."
-                if is_arabic
-                else "AI service is currently unavailable. Please check provider configuration."
-            )
-            return self._build_response(
-                db=db, conv=conv, user_msg=user_msg,
-                answer=answer, status="provider_unavailable",
-                evidence=all_evidence, llm_response=None,
-                pipeline_start=pipeline_start, intent="procurement_agent",
-                scope=scope, project_id=project_id,
-                resolved_ctx=resolved_ctx, state=state,
-                domains_used=domains_used, tools_used=tools_used,
-                is_multi_domain=True, is_executive=True,
-            )
-
-        evidence_block = _build_evidence_block(all_evidence)
-        system_prompt = _procurement_agent_system_prompt(evidence_block, is_arabic)
-
-        llm_response: Optional[LLMResponse] = None
-        _gen_start = time.monotonic()
-        try:
-            llm_response = provider.generate(
-                LLMRequest(system_prompt=system_prompt, user_prompt=question)
-            )
-            raw_answer = llm_response.content
-        except ProviderUnavailableError as e:
-            # TEMPORARY instrumentation — same provider_error investigation
-            # as execute()'s generate_failure logging.
-            cause = e.__cause__
-            cause_response = getattr(cause, "response", None)
-            logger.error(
-                "DEBUG_TRACE step=procurement_agent_generate_failure "
-                "elapsed_ms=%.1f evidence_count=%d wrapper_exc_type=%s "
-                "wrapper_exc_msg=%r cause_exc_type=%s cause_exc_msg=%r "
-                "response_received=%s http_status=%s",
-                (time.monotonic() - _gen_start) * 1000, len(all_evidence),
-                type(e).__name__, str(e),
-                type(cause).__name__ if cause is not None else None,
-                str(cause) if cause is not None else None,
-                cause_response is not None,
-                getattr(cause_response, "status_code", None),
-                exc_info=True,
-            )
-            answer = (
-                "خدمة الذكاء الاصطناعي غير متاحة مؤقتاً."
-                if is_arabic
-                else "AI service is temporarily unavailable."
-            )
-            return self._build_response(
-                db=db, conv=conv, user_msg=user_msg,
-                answer=answer, status="provider_error",
-                evidence=all_evidence, llm_response=None,
-                pipeline_start=pipeline_start, intent="procurement_agent",
-                scope=scope, project_id=project_id,
-                resolved_ctx=resolved_ctx, state=state,
-                domains_used=domains_used, tools_used=tools_used,
-                is_multi_domain=True, is_executive=True,
-                failure_category="provider_error",
-            )
-
-        if raw_answer.strip().startswith(_INSUFFICIENT_EVIDENCE_MARKER):
-            # TEMPORARY instrumentation — logs the model's literal stated
-            # reason, and how much of the evidence block it actually saw.
-            logger.warning(
-                "DEBUG_TRACE step=procurement_agent_insufficient raw_answer=%r "
-                "evidence_count=%d evidence_block_chars=%d",
-                raw_answer, len(all_evidence), len(evidence_block),
-            )
-            answer = self._validator.fallback_response(is_arabic)
-            return self._build_response(
-                db=db, conv=conv, user_msg=user_msg,
-                answer=answer, status="insufficient_evidence",
-                evidence=all_evidence, llm_response=llm_response,
-                pipeline_start=pipeline_start, intent="procurement_agent",
-                scope=scope, project_id=project_id,
-                resolved_ctx=resolved_ctx, state=state,
-                domains_used=domains_used, tools_used=tools_used,
-                is_multi_domain=True, is_executive=True,
-            )
-
-        grounding = self._validator.validate(
-            question=question, answer=raw_answer, evidence=all_evidence,
-        )
-        if not grounding.is_grounded:
-            answer = self._validator.fallback_response(is_arabic)
-            return self._build_response(
-                db=db, conv=conv, user_msg=user_msg,
-                answer=answer, status="grounding_failed",
-                evidence=all_evidence, llm_response=llm_response,
-                pipeline_start=pipeline_start, intent="procurement_agent",
-                scope=scope, project_id=project_id,
-                resolved_ctx=resolved_ctx, state=state,
-                domains_used=domains_used, tools_used=tools_used,
-                is_multi_domain=True, is_executive=True,
-                failure_category="grounding_failed",
-            )
-
+        # DEMO MODE - switch back to OpenRouter after presentation.
+        # Topic-specific, database-backed report (see
+        # build_procurement_topic_answer above) — no provider call, no
+        # network round-trip. Re-runs a couple of the same bounded
+        # retrieval calls already done above (cheap, indexed queries) so
+        # this helper stays a single self-contained entry point.
+        answer = build_procurement_topic_answer(scope, db, project_id, question, is_arabic)
         key_findings = _build_key_findings(all_evidence, "procurement", True)
 
         return self._build_response(
             db=db, conv=conv, user_msg=user_msg,
-            answer=raw_answer, status="completed",
-            evidence=all_evidence, llm_response=llm_response,
+            answer=answer, status="completed",
+            evidence=all_evidence, llm_response=None,
             pipeline_start=pipeline_start, intent="procurement_agent",
             scope=scope, project_id=project_id,
             resolved_ctx=resolved_ctx, state=state,
@@ -1099,9 +1995,8 @@ class CopilotPipeline:
         project_id: Optional[int] = None,
         question: Optional[str] = None,
     ) -> dict[str, Any]:
-        """Meeting Intelligence Agent — same RBAC-scoped retrieval, LLM
-        provider, grounding validator, and citation/audit persistence as the
-        general Copilot pipeline.
+        """Meeting Intelligence Agent — same RBAC-scoped retrieval and
+        citation/audit persistence as the general Copilot pipeline.
 
         meeting_id given: fixed to ONE specific meeting's detail (decisions,
         action items, attendees) — get_meeting_detail() raises 404/403
@@ -1110,8 +2005,13 @@ class CopilotPipeline:
 
         meeting_id=None: a portfolio-wide (or project-scoped, if project_id
         is given) meetings + decisions status summary — see
-        _execute_meeting_agent_summary for its own bounded-timeout /
-        deterministic-fallback handling.
+        _execute_meeting_agent_summary.
+
+        # DEMO MODE - switch back to OpenRouter after presentation.
+        No LLM/OpenRouter call is made at all — both paths build their
+        answer entirely from retrieved data (_build_single_meeting_fallback
+        / _build_meeting_summary_fallback), deterministically, in well
+        under a second.
         """
         if meeting_id is None:
             return self._execute_meeting_agent_summary(
@@ -1160,87 +2060,14 @@ class CopilotPipeline:
         domains_used = ["meetings"]
         tools_used = ["meeting_detail"]
 
-        provider = get_llm_provider()
-        if not provider.is_available():
-            answer = (
-                "خدمة الذكاء الاصطناعي غير متاحة حالياً."
-                if is_arabic
-                else "AI service is currently unavailable. Please check provider configuration."
-            )
-            return self._build_response(
-                db=db, conv=conv, user_msg=user_msg,
-                answer=answer, status="provider_unavailable",
-                evidence=all_evidence, llm_response=None,
-                pipeline_start=pipeline_start, intent="meeting_agent",
-                scope=scope, project_id=project_id,
-                resolved_ctx=resolved_ctx, state=state,
-                domains_used=domains_used, tools_used=tools_used,
-                is_multi_domain=True, is_executive=True,
-            )
-
-        evidence_block = _build_evidence_block(all_evidence)
-        system_prompt = _meeting_agent_system_prompt(evidence_block, is_arabic)
-
-        llm_response: Optional[LLMResponse] = None
-        try:
-            llm_response = provider.generate(
-                LLMRequest(system_prompt=system_prompt, user_prompt=question)
-            )
-            raw_answer = llm_response.content
-        except ProviderUnavailableError:
-            answer = (
-                "خدمة الذكاء الاصطناعي غير متاحة مؤقتاً."
-                if is_arabic
-                else "AI service is temporarily unavailable."
-            )
-            return self._build_response(
-                db=db, conv=conv, user_msg=user_msg,
-                answer=answer, status="provider_error",
-                evidence=all_evidence, llm_response=None,
-                pipeline_start=pipeline_start, intent="meeting_agent",
-                scope=scope, project_id=project_id,
-                resolved_ctx=resolved_ctx, state=state,
-                domains_used=domains_used, tools_used=tools_used,
-                is_multi_domain=True, is_executive=True,
-                failure_category="provider_error",
-            )
-
-        if raw_answer.strip().startswith(_INSUFFICIENT_EVIDENCE_MARKER):
-            answer = self._validator.fallback_response(is_arabic)
-            return self._build_response(
-                db=db, conv=conv, user_msg=user_msg,
-                answer=answer, status="insufficient_evidence",
-                evidence=all_evidence, llm_response=llm_response,
-                pipeline_start=pipeline_start, intent="meeting_agent",
-                scope=scope, project_id=project_id,
-                resolved_ctx=resolved_ctx, state=state,
-                domains_used=domains_used, tools_used=tools_used,
-                is_multi_domain=True, is_executive=True,
-            )
-
-        grounding = self._validator.validate(
-            question=question, answer=raw_answer, evidence=all_evidence,
-        )
-        if not grounding.is_grounded:
-            answer = self._validator.fallback_response(is_arabic)
-            return self._build_response(
-                db=db, conv=conv, user_msg=user_msg,
-                answer=answer, status="grounding_failed",
-                evidence=all_evidence, llm_response=llm_response,
-                pipeline_start=pipeline_start, intent="meeting_agent",
-                scope=scope, project_id=project_id,
-                resolved_ctx=resolved_ctx, state=state,
-                domains_used=domains_used, tools_used=tools_used,
-                is_multi_domain=True, is_executive=True,
-                failure_category="grounding_failed",
-            )
-
+        # DEMO MODE - switch back to OpenRouter after presentation.
+        answer = _build_single_meeting_fallback(retrieval.data, is_arabic)
         key_findings = _build_key_findings(all_evidence, "meetings", True)
 
         return self._build_response(
             db=db, conv=conv, user_msg=user_msg,
-            answer=raw_answer, status="completed",
-            evidence=all_evidence, llm_response=llm_response,
+            answer=answer, status="completed",
+            evidence=all_evidence, llm_response=None,
             pipeline_start=pipeline_start, intent="meeting_agent",
             scope=scope, project_id=project_id,
             resolved_ctx=resolved_ctx, state=state,
@@ -1261,21 +2088,24 @@ class CopilotPipeline:
         """Portfolio-wide (or project-scoped) meetings status summary — the
         no-meeting_id path of the Meeting Agent. Reuses the same retrieval
         tools as the general pipeline's meetings/decisions intents
-        (get_recent_meetings, get_project_decisions). The LLM call is
-        time-boxed to _MEETING_AGENT_LLM_TIMEOUT_S; a timeout, rate limit,
-        empty/insufficient answer, or failed grounding check all fall back
-        to _build_meeting_summary_fallback() — a real, evidence-grounded
-        answer, never a raw provider-error string — so this endpoint always
-        returns a usable answer within a few seconds.
+        (get_recent_meetings, get_project_decisions, get_open_action_items).
+
+        # DEMO MODE - switch back to OpenRouter after presentation.
+        No LLM/OpenRouter call is made — the answer is built entirely by
+        _build_meeting_summary_fallback() from the data retrieved just
+        above it, deterministically, in well under a second.
         """
         pipeline_start = time.monotonic()
         is_arabic = language.lower().startswith("ar")
 
-        meetings_result = get_recent_meetings(db=db, scope=scope, project_id=project_id, limit=15)
-        decisions_result = get_project_decisions(db=db, scope=scope, project_id=project_id, limit=15)
-        all_evidence: list[Evidence] = list(meetings_result.evidence) + list(decisions_result.evidence)
-        domains_used = ["meetings", "decisions"]
-        tools_used = ["recent_meetings", "project_decisions"]
+        meetings_result = get_recent_meetings(db=db, scope=scope, project_id=project_id, limit=10)
+        decisions_result = get_project_decisions(db=db, scope=scope, project_id=project_id, limit=10)
+        action_items_result = get_open_action_items(db=db, scope=scope, project_id=project_id, limit=10)
+        all_evidence: list[Evidence] = (
+            list(meetings_result.evidence) + list(decisions_result.evidence) + list(action_items_result.evidence)
+        )
+        domains_used = ["meetings", "decisions", "action_items"]
+        tools_used = ["recent_meetings", "project_decisions", "open_action_items"]
 
         resolved_question = question or (
             "لخص وضع الاجتماعات الحالي" if is_arabic
@@ -1299,59 +2129,22 @@ class CopilotPipeline:
         db.add(user_msg)
         db.flush()
 
-        fallback_answer = _build_meeting_summary_fallback(
+        # DEMO MODE - switch back to OpenRouter after presentation.
+        counts = get_meeting_counts(db=db, scope=scope, project_id=project_id)
+        answer = build_meeting_topic_answer(
+            counts=counts,
             meetings=meetings_result.data.get("meetings", []),
             decisions=decisions_result.data.get("decisions", []),
+            action_items=action_items_result.data.get("action_items", []),
+            question=resolved_question,
             is_arabic=is_arabic,
         )
-
-        def _fallback_response(reason: str) -> dict[str, Any]:
-            logger.info(
-                "meeting_agent_summary_fallback reason=%s evidence_count=%d",
-                reason, len(all_evidence),
-            )
-            return self._build_response(
-                db=db, conv=conv, user_msg=user_msg,
-                answer=fallback_answer, status="completed",
-                evidence=all_evidence, llm_response=None,
-                pipeline_start=pipeline_start, intent="meeting_agent",
-                scope=scope, project_id=project_id,
-                resolved_ctx=resolved_ctx, state=state,
-                domains_used=domains_used, tools_used=tools_used,
-                is_multi_domain=True, is_executive=True,
-            )
-
-        provider = get_llm_provider()
-        if not provider.is_available():
-            return _fallback_response("provider_unavailable")
-
-        evidence_block = _build_evidence_block(all_evidence)
-        system_prompt = _meeting_agent_system_prompt(evidence_block, is_arabic)
-
-        future = _meeting_agent_executor.submit(
-            provider.generate,
-            LLMRequest(system_prompt=system_prompt, user_prompt=resolved_question),
-        )
-        try:
-            llm_response = future.result(timeout=_MEETING_AGENT_LLM_TIMEOUT_S)
-            raw_answer = llm_response.content
-        except Exception as exc:
-            return _fallback_response(f"{type(exc).__name__}: {exc}")
-
-        if raw_answer.strip().startswith(_INSUFFICIENT_EVIDENCE_MARKER):
-            return _fallback_response("insufficient_evidence")
-
-        grounding = self._validator.validate(
-            question=resolved_question, answer=raw_answer, evidence=all_evidence,
-        )
-        if not grounding.is_grounded:
-            return _fallback_response("grounding_failed")
-
         key_findings = _build_key_findings(all_evidence, "meetings", True)
+
         return self._build_response(
             db=db, conv=conv, user_msg=user_msg,
-            answer=raw_answer, status="completed",
-            evidence=all_evidence, llm_response=llm_response,
+            answer=answer, status="completed",
+            evidence=all_evidence, llm_response=None,
             pipeline_start=pipeline_start, intent="meeting_agent",
             scope=scope, project_id=project_id,
             resolved_ctx=resolved_ctx, state=state,

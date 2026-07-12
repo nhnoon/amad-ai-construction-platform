@@ -11,6 +11,7 @@ from typing import Union
 
 from .base import LLMProvider
 from .fake import FakeLLMProvider
+from .hermes import HermesProvider
 from .openai_compat import OpenAICompatProvider
 
 _OPENAI_BASE = "https://api.openai.com/v1"
@@ -24,6 +25,23 @@ def _build_provider() -> LLMProvider:
     api_key = settings.LLM_API_KEY or ""
     model = settings.LLM_MODEL or "mock-model"
     base_url = settings.LLM_BASE_URL or ""
+
+    # Evaluated before the generic "mock or no api_key" fallback below:
+    # local Hermes talks to Ollama, which needs no API key at all.
+    if provider == "hermes":
+        # TEMPORARY instrumentation — remove once Hermes selection is verified.
+        import logging
+        logging.getLogger(__name__).info(
+            "Selected provider: hermes (model=%s, profile=%s, hermes_provider=%s)",
+            model, settings.HERMES_PROFILE, settings.HERMES_PROVIDER,
+        )
+        return HermesProvider(
+            model=model,
+            hermes_bin=settings.HERMES_BIN,
+            profile=settings.HERMES_PROFILE,
+            hermes_provider=settings.HERMES_PROVIDER,
+            timeout_seconds=settings.HERMES_TIMEOUT_SECONDS,
+        )
 
     if provider == "mock" or not api_key:
         return FakeLLMProvider()

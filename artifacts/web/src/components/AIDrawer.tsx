@@ -48,6 +48,9 @@ import {
   INSUFFICIENT_DATA_REPLY,
   type PageContext,
 } from "../lib/copilotContext";
+import {
+  AiThinkingProgress, ConfidenceMeter, SourcesGrouped, StatusBadge, ExecutiveQuickActions,
+} from "./ai-answer-ui";
 
 // ── AMAD AI Copilot — Executive Analyst reasoning layer ─────────────────────
 // No AI provider, no backend changes, no new endpoints. A deterministic
@@ -100,8 +103,6 @@ const NO_LIVE_DATA = "Live data for this analysis is currently unavailable."; //
 const DATA_TIMEOUT_MS = 3000;
 const CLAIMS_AGGREGATE_TIMEOUT_MS = 10000; // fans out one request per project — needs more bounded time than a single fetch
 const COPILOT_TIMEOUT_MS = 50000; // real LLM/network round-trip needs more headroom than the deterministic paths, but is still strictly bounded — widened further after observing ~25s live response times when the panel's background data hooks are still in flight
-
-const CONFIDENCE_LABEL_AR: Record<string, string> = { none: "لا توجد", low: "منخفضة", medium: "متوسطة", high: "عالية" };
 
 const RECORD_KIND_BY_INTENT: Partial<Record<string, RecordKind>> = {
   "upcoming-meetings": "meetings",
@@ -878,6 +879,26 @@ function LiveBadge() {
   );
 }
 
+// Shown instead of LiveBadge ONLY for Procurement Agent answers that came
+// from the deterministic no-LLM fallback (see pipeline.py:
+// _build_procurement_fallback) — still real, grounded, evidence-backed data,
+// just not phrased by the LLM. Scoped to intent === "procurement_agent" so
+// Meeting Agent and Executive Copilot rendering is untouched.
+function GroundedBadge() {
+  const { t } = useTranslation();
+  return (
+    <div className="flex items-center gap-2 mb-2">
+      <span
+        className="inline-flex items-center gap-1.5 rounded-full px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider"
+        style={{ backgroundColor: "#0ea5e91A", color: "#0ea5e9" }}
+      >
+        <span className="h-1.5 w-1.5 rounded-full bg-current" />
+        {t("Grounded AMAD Analysis")}
+      </span>
+    </div>
+  );
+}
+
 // Shared premium 6-section card shell (Executive Summary / Key Findings /
 // Primary Risks / Business Impact / Executive Recommendation / Metrics).
 // Every text field is run through t() — dynamic, data-interpolated sentences
@@ -1009,14 +1030,6 @@ function FallbackLabel() {
   );
 }
 
-function AiPendingBubble() {
-  const { t } = useTranslation();
-  return (
-    <div className="rounded-2xl rounded-bl-sm border border-white/10 bg-white/[0.06] px-4 py-3">
-      <p className="text-sm text-white/60">{t("Thinking…")}</p>
-    </div>
-  );
-}
 
 function AiErrorBubble({ message, onRetry }: { message: string; onRetry: () => void }) {
   const { t } = useTranslation();
@@ -1050,7 +1063,10 @@ function ProjectMiniRow({ p }: { p: AnyBlock }) {
         </span>
         {p.score != null && <span className="text-xs text-white/60 shrink-0">{p.score}/100</span>}
       </div>
-      <p className="text-xs text-white/50 mt-0.5 truncate">{[p.status, p.city, p.budget_fmt].filter(Boolean).join(" · ")}</p>
+      <div className="flex items-center gap-1.5 mt-1 flex-wrap">
+        {p.status && <StatusBadge status={p.status} />}
+        <span className="text-xs text-white/50 truncate">{[p.city, p.budget_fmt].filter(Boolean).join(" · ")}</span>
+      </div>
     </div>
   );
 }
@@ -1186,9 +1202,10 @@ function RenderBlockItem({ block, ar }: { block: CopilotRenderBlock; ar: boolean
               <Link href={it.href} className="text-sm font-semibold text-white hover:underline truncate">
                 {it.code} — {it.name}
               </Link>
-              <span className="text-xs text-white/60 shrink-0">
-                {it.score}/100 ({it.level})
-              </span>
+              <div className="flex items-center gap-1.5 shrink-0">
+                <span className="text-xs text-white/60">{it.score}/100</span>
+                <StatusBadge status={it.level} />
+              </div>
             </div>
             {it.reasons?.[0] && <p className="text-xs text-white/50 mt-0.5">{it.reasons[0]}</p>}
           </div>
@@ -1204,9 +1221,10 @@ function RenderBlockItem({ block, ar }: { block: CopilotRenderBlock; ar: boolean
           <Link href={b.href} className="text-sm font-semibold text-white hover:underline truncate">
             {b.code} — {b.name}
           </Link>
-          <span className="text-xs text-white/60 shrink-0">
-            {b.score}/100 ({b.level})
-          </span>
+          <div className="flex items-center gap-1.5 shrink-0">
+            <span className="text-xs text-white/60">{b.score}/100</span>
+            <StatusBadge status={b.level} />
+          </div>
         </div>
         {b.reasons?.[0] && <p className="text-xs text-white/50 mt-1">{b.reasons[0]}</p>}
       </div>
@@ -1247,13 +1265,16 @@ function AiAnswerCard({
   onFollowUp: (text: string) => void;
 }) {
   const ar = isArabicText(question) || isArabicText(response.answer);
+  // Deterministic-fallback answers have no LLM behind them (model/provider
+  // are null — see pipeline.py's _fallback_response helpers). Scoped to
+  // procurement_agent only: Meeting Agent and Executive Copilot keep
+  // showing LiveBadge exactly as before.
+  const isGroundedFallback = !response.model && !response.provider && response.intent === "procurement_agent";
   return (
     <div className="max-w-[92%] rounded-2xl rounded-bl-sm border border-white/10 bg-white/[0.06] px-4 py-4">
-      <div className="flex items-center justify-between mb-2 gap-2">
-        <LiveBadge />
-        <span className="text-[10px] font-medium text-white/40 uppercase tracking-wide shrink-0">
-          {ar ? `الثقة: ${CONFIDENCE_LABEL_AR[response.confidence] ?? response.confidence}` : `Confidence: ${capitalize(response.confidence)}`}
-        </span>
+      <div className="flex items-center justify-between mb-2 gap-2 flex-wrap">
+        {isGroundedFallback ? <GroundedBadge /> : <LiveBadge />}
+        <ConfidenceMeter confidence={response.confidence} ar={ar} />
       </div>
 
       {response.clarification_required ? (
@@ -1290,28 +1311,7 @@ function AiAnswerCard({
             </div>
           )}
 
-          {!!response.citations?.length && (
-            <div className="space-y-1">
-              <p className="text-[10px] font-bold uppercase tracking-wider text-white/40">{ar ? "المصادر" : "Sources"}</p>
-              <ul className={cn("space-y-1 text-xs text-white/60", ar && "text-right")}>
-                {response.citations.map((c) => {
-                  const href = (c.ui_metadata as AnyBlock | undefined)?.href;
-                  return (
-                    <li key={c.id}>
-                      •{" "}
-                      {href ? (
-                        <Link href={href} className="text-white/70 hover:underline">
-                          {c.label}
-                        </Link>
-                      ) : (
-                        c.label
-                      )}
-                    </li>
-                  );
-                })}
-              </ul>
-            </div>
-          )}
+          <SourcesGrouped citations={response.citations ?? []} ar={ar} />
 
           {!!response.follow_up_suggestions?.length && (
             <div className="flex flex-wrap gap-1.5 pt-1">
@@ -2266,6 +2266,9 @@ export function AIDrawer({ isOpen, onClose }: AIDrawerProps) {
           </div>
         </div>
 
+        {/* ── Executive Quick Actions ───────────────────────────────── */}
+        <ExecutiveQuickActions ar={isRTL} onSelect={handleUserMessage} />
+
         {/* ── Conversation area ─────────────────────────────────────── */}
         <div ref={scrollRef} className="flex-1 overflow-y-auto px-5 py-6 space-y-5">
           {messages.length === 0 ? (
@@ -2323,7 +2326,7 @@ export function AIDrawer({ isOpen, onClose }: AIDrawerProps) {
                     <div key={m.id} className="flex items-end gap-2 animate-in fade-in-0 slide-in-from-bottom-1 duration-300">
                       <IconChip icon={Sparkles} />
                       <div className="flex flex-col items-start min-w-0">
-                        {isPending && <AiPendingBubble />}
+                        {isPending && <AiThinkingProgress ar={isArabicText(m.aiQuestion) || isRTL} />}
                         {m.aiError && <AiErrorBubble message={m.aiError} onRetry={() => handleRetry(m.id, m.aiQuestion ?? "", m.agentKind)} />}
                         {m.aiResponse && (
                           <AiAnswerCard response={m.aiResponse} question={m.aiQuestion} onFollowUp={handleUserMessage} />

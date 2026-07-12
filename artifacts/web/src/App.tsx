@@ -22,6 +22,7 @@ import SiteReports from "./pages/site-reports";
 import SiteReportDetail from "./pages/site-report-detail";
 import Safety from "./pages/safety";
 import Meetings from "./pages/meetings";
+import MeetingDetail from "./pages/meeting-detail";
 import RFIs from "./pages/rfis";
 import ChangeOrders from "./pages/change-orders";
 import Claims from "./pages/claims";
@@ -114,6 +115,7 @@ function Router() {
       <Route path="/projects/:projectId/site-reports/:reportId" component={() => <ProtectedRoute component={SiteReportDetail} />} />
       <Route path="/safety" component={() => <ProtectedRoute component={Safety} />} />
       <Route path="/meetings" component={() => <ProtectedRoute component={Meetings} />} />
+      <Route path="/meetings/:projectId/:meetingId" component={() => <ProtectedRoute component={MeetingDetail} />} />
       <Route path="/rfis" component={() => <ProtectedRoute component={RFIs} />} />
       <Route path="/change-orders" component={() => <ProtectedRoute component={ChangeOrders} />} />
       <Route path="/claims" component={() => <ProtectedRoute component={Claims} />} />
