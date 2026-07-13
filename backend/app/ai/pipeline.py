@@ -40,6 +40,11 @@ from app.ai.analyst import compute_analytical_answer, detect_query_type
 from app.ai.render_blocks import compute_render_blocks
 from app.ai.grounding import GroundingValidator
 from app.ai.intent import route_intent
+from app.ai.memory import get_memory_notes, get_user_profile_memory
+from app.ai.memory_reader import (
+    build_memory_context_block, build_user_preferences_block, is_memory_relevant,
+    select_relevant_memory,
+)
 from app.ai.planner import (
     build_comparison_data, detect_required_domains, execute_executive_summary,
     execute_multi_domain_plan, is_executive_summary_query,
@@ -98,6 +103,9 @@ RULES (MANDATORY):
 project codes.
 7. When comparing entities, structure your response with clear sections.
 8. For executive summaries, use: Key Findings / Risk Indicators / Notable Projects.
+9. Any derived background context appearing below (prior notes or stated
+   preferences, clearly labelled non-authoritative) is not evidence — never
+   cite it as a source. If it conflicts with EVIDENCE, EVIDENCE always wins.
 
 {context_block}
 EVIDENCE:
@@ -1733,11 +1741,50 @@ class CopilotPipeline:
                 is_multi_domain=is_multi, is_executive=is_exec,
             )
 
+        # ── Memory Context (Phase 3: Safe Memory Reader) ────────────────────
+        # Derived context only — never evidence, never a citation source,
+        # never counted in evidence_count. See app/ai/memory_reader.py.
+        # Never sent for every question, and never the full memory blob: a
+        # bounded, deterministically-selected slice only, and only when the
+        # question is actually about remembered/historical context.
+        memory_relevant = is_memory_relevant(
+            question=question, intent=intent, previous_intent=state.previous_intent,
+        )
+        memory_block = ""
+        memory_lines_selected = 0
+        memory_chars_selected = 0
+        if memory_relevant:
+            try:
+                memory_notes = get_memory_notes(db, scope)
+                selected_lines = select_relevant_memory(memory_notes, question)
+                memory_context = build_memory_context_block(selected_lines, is_arabic=is_arabic)
+
+                profile_memory = get_user_profile_memory(db, scope)
+                preferences_block = build_user_preferences_block(profile_memory, is_arabic=is_arabic)
+
+                memory_lines_selected = len(selected_lines)
+                memory_block = "\n\n".join(b for b in (memory_context, preferences_block) if b)
+                memory_chars_selected = len(memory_block)
+            except Exception:
+                # Memory is a best-effort supplement — never fail the request.
+                logger.warning("memory_read_failed; continuing without memory context")
+                memory_block = ""
+                memory_lines_selected = 0
+                memory_chars_selected = 0
+
+        logger.info(
+            "DEBUG_TRACE step=memory_loaded memory_relevant=%s "
+            "memory_lines_selected=%d memory_chars_selected=%d",
+            memory_relevant, memory_lines_selected, memory_chars_selected,
+        )
+
         evidence_block = _build_evidence_block(all_evidence)
         context_block = ""
         if recent_msgs:
             ctx = build_conversation_context_block(recent_msgs)
             context_block = ctx + "\n\n" if ctx else ""
+        if memory_block:
+            context_block = context_block + memory_block + "\n\n"
 
         system_prompt = _SYSTEM_TEMPLATE.format(
             context_block=context_block,
