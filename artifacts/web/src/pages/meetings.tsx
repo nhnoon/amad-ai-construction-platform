@@ -8,8 +8,10 @@ import {
   getListProjectMeetingsQueryKey,
 } from "@workspace/api-client-react";
 import { useTranslation } from "react-i18next";
-import { CalendarDays, AlertOctagon, Plus } from "lucide-react";
+import { CalendarDays, AlertOctagon, Plus, Gavel } from "lucide-react";
 import { BackToOperations } from "@/components/back-to-operations";
+import { EmptyState } from "@/components/ui/empty-state";
+import { TableSkeletonRows } from "@/components/ui/table-skeleton";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
@@ -307,9 +309,8 @@ export default function Meetings() {
       </div>
 
       {!selectedProjectId ? (
-        <div className="panel panel-body flex flex-col items-center justify-center h-48 text-muted-foreground gap-3">
-          <CalendarDays className="w-10 h-10 opacity-30" />
-          <p className="text-sm">{t("Select a project to view data")}</p>
+        <div className="panel">
+          <EmptyState icon={CalendarDays} title={t("Select a project to view data")} />
         </div>
       ) : tab === "meetings" ? (
         <div className="panel overflow-hidden">
@@ -328,11 +329,20 @@ export default function Meetings() {
               </thead>
               <tbody>
                 {meetingsLoading ? (
-                  <tr><td colSpan={7} className="text-center py-10 text-muted-foreground">{t("Loading...")}</td></tr>
+                  <TableSkeletonRows rows={5} cols={7} />
                 ) : meetingsError ? (
                   <tr><td colSpan={7} className="text-center py-10"><div className="flex flex-col items-center gap-1 text-muted-foreground"><AlertOctagon className="w-6 h-6 text-destructive opacity-60" /><span className="text-sm">{t("Failed to load meetings")}</span></div></td></tr>
                 ) : !meetings?.length ? (
-                  <tr><td colSpan={7} className="text-center py-10 text-muted-foreground">{t("No data")}</td></tr>
+                  <tr>
+                    <td colSpan={7}>
+                      <EmptyState
+                        icon={CalendarDays}
+                        title="No meetings yet"
+                        description="Meetings for this project will appear here once scheduled."
+                        action={<Button size="sm" onClick={() => setCreateOpen(true)} className="gap-1.5"><Plus className="w-3.5 h-3.5" />{t("Create Meeting")}</Button>}
+                      />
+                    </td>
+                  </tr>
                 ) : (
                   meetings.map((m) => (
                     <tr key={m.id}>
@@ -377,11 +387,19 @@ export default function Meetings() {
               </thead>
               <tbody>
                 {decisionsLoading ? (
-                  <tr><td colSpan={3} className="text-center py-10 text-muted-foreground">{t("Loading...")}</td></tr>
+                  <TableSkeletonRows rows={5} cols={3} />
                 ) : decisionsError ? (
                   <tr><td colSpan={3} className="text-center py-10"><div className="flex flex-col items-center gap-1 text-muted-foreground"><AlertOctagon className="w-6 h-6 text-destructive opacity-60" /><span className="text-sm">{t("Failed to load decisions")}</span></div></td></tr>
                 ) : !decisions?.length ? (
-                  <tr><td colSpan={3} className="text-center py-10 text-muted-foreground">{t("No data")}</td></tr>
+                  <tr>
+                    <td colSpan={3}>
+                      <EmptyState
+                        icon={Gavel}
+                        title="No decisions logged"
+                        description="Decisions recorded during meetings for this project will appear here."
+                      />
+                    </td>
+                  </tr>
                 ) : (
                   decisions.map((d) => (
                     <tr key={d.id}>

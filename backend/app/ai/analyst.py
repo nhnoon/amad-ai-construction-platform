@@ -159,7 +159,8 @@ _HAS_SAFETY_NCR = re.compile(
     re.IGNORECASE | re.DOTALL,
 )
 _COUNT = re.compile(
-    r"\bhow many\b|\bcount\b|\bكم\b.{0,15}\b(مشروع|حادث|تقرير)\b",
+    r"\bhow many\b|\bcount\b"
+    r"|\bكم\b.{0,15}\b(مشروع|حادث|تقرير|أوامر|أمر|طلب|طلبات|مشتريات|شراء|سلامة|اجتماع|اجتماعات)\b",
     re.IGNORECASE,
 )
 _RISK_SUMMARY = re.compile(
@@ -709,11 +710,72 @@ def _answer_attention_rank(evidence: list[Evidence], is_ar: bool) -> Optional[st
     return "\n".join(lines)
 
 
+_LATE_WORDS_EN = ("delayed", "late")
+_LATE_WORDS_AR = ("متأخر",)  # matches متأخرة/متأخرين/المتأخرة etc. as a substring
+_HIGH_WORDS_EN = ("high",)
+_HIGH_WORDS_AR = ("خطير",)  # matches خطيرة/الخطيرة etc.
+_OPEN_WORDS_EN = ("open",)
+_OPEN_WORDS_AR = ("مفتوح",)
+
+
+def _q_has_any(lower_q: str, question: str, en_words: tuple[str, ...], ar_words: tuple[str, ...]) -> bool:
+    return any(w in lower_q for w in en_words) or any(w in question for w in ar_words)
+
+
 def _answer_count(evidence: list[Evidence], question: str, is_ar: bool) -> Optional[str]:
     lower_q = question.lower()
     project_ev = _project_evidence(evidence)
 
-    if "delayed" in lower_q or "late" in lower_q:
+    # Prefer the true COUNT(*) aggregate evidence item when the dispatcher
+    # attached one (see pipeline.py:_append_count_summary) — the row-sample
+    # evidence lists above are bounded by `limit` and are NOT a total count,
+    # so counting len(...) of them undercounts as soon as the real total
+    # exceeds that limit. count_summary.source_id reflects the domain that
+    # was already routed for this question, so it's a more reliable domain
+    # signal here than re-scanning question keywords (which may be Arabic
+    # phrasing the English-only keyword checks below don't cover).
+    count_summary = next((e for e in evidence if e.source_type == "count_summary"), None)
+    wants_late = _q_has_any(lower_q, question, _LATE_WORDS_EN, _LATE_WORDS_AR)
+    wants_high = _q_has_any(lower_q, question, _HIGH_WORDS_EN, _HIGH_WORDS_AR)
+    wants_open = _q_has_any(lower_q, question, _OPEN_WORDS_EN, _OPEN_WORDS_AR)
+
+    if count_summary is not None:
+        domain = count_summary.source_id
+        if domain == "project_overview":
+            total = parse_field(count_summary.snippet, "delayed" if wants_late else "total")
+            if total is not None:
+                if is_ar:
+                    return f"يوجد **{total}** مشروع {'متأخر' if wants_late else ''} في إجمالي البيانات."
+                label = "delayed project(s)" if wants_late else "project(s)"
+                return f"There are **{total}** {label} in total across the portfolio."
+        elif domain == "procurement":
+            total = parse_field(count_summary.snippet, "late_purchase_orders" if wants_late else "total_purchase_orders")
+            if total is not None:
+                if is_ar:
+                    return f"يوجد **{total}** أمر شراء {'متأخر' if wants_late else ''} في إجمالي البيانات."
+                label = "late purchase order(s)" if wants_late else "purchase order(s)"
+                return f"There are **{total}** {label} in total across the portfolio."
+        elif domain == "safety":
+            total = parse_field(count_summary.snippet, "high_severity" if wants_high else "total")
+            if total is not None:
+                if is_ar:
+                    return f"يوجد **{total}** حادث سلامة {'عالي الخطورة' if wants_high else ''} في إجمالي البيانات."
+                label = "High severity safety event(s)" if wants_high else "safety event(s)"
+                return f"There are **{total}** {label} in total across the portfolio."
+        elif domain == "ncr":
+            total = parse_field(count_summary.snippet, "open" if wants_open else "total")
+            if total is not None:
+                if is_ar:
+                    return f"يوجد **{total}** طلب تصحيح {'مفتوح' if wants_open else ''} في إجمالي البيانات."
+                label = "open NCR(s)" if wants_open else "NCR(s)"
+                return f"There are **{total}** {label} in total across the portfolio."
+
+    # No count_summary available (e.g. multi-domain plan) — fall back to
+    # counting the retrieved evidence sample itself. This is only a lower
+    # bound on the true total and is labelled as "in the retrieved data" /
+    # "on record" (i.e. the sample), never "in total", to avoid implying a
+    # portfolio-wide total that wasn't actually computed.
+    if wants_late:
         delayed = [e for e in project_ev
                    if (parse_field(e.snippet, "status") or "").lower() == "delayed"]
         count = len(delayed)
@@ -1376,6 +1438,32 @@ def compute_analytical_answer(
     if qtype == "lowest_budget":
         return _answer_ranking_by_budget(evidence, highest=False, is_ar=is_ar)
     if qtype == "longest_delay":
+        # Purchase orders DO carry a real delay_days field — prefer an exact,
+        # deterministic ranking over them when present, instead of leaving
+        # this to the LLM to eyeball from a sorted evidence list (which a
+        # small local model can misread by a row or two).
+        po_ev = [e for e in evidence if e.source_type == "purchase_order"]
+        if po_ev:
+            po_ranked = [(e, parse_field(e.snippet, "delay_days")) for e in po_ev]
+            po_ranked = [(e, int(d)) for e, d in po_ranked if d is not None and d.isdigit()]
+            if po_ranked:
+                po_ranked.sort(key=lambda x: x[1], reverse=True)
+                worst_ev, worst_days = po_ranked[0]
+                po_number = worst_ev.source_id
+                project_code = parse_field(worst_ev.snippet, "project") or "N/A"
+                supplier = parse_field(worst_ev.snippet, "supplier") or "N/A"
+                if is_ar:
+                    return (
+                        f"أمر الشراء الأكثر تأخراً هو **{po_number}** "
+                        f"({project_code}, المورد: {supplier}) بتأخير **{worst_days}** يوماً.\n\n"
+                        f"المرجع: [{po_number}]"
+                    )
+                return (
+                    f"The purchase order with the longest delay is **{po_number}** "
+                    f"({project_code}, supplier: {supplier}), delayed **{worst_days}** day(s).\n\n"
+                    f"Source: [{po_number}]"
+                )
+
         # Rank delayed projects — treat delayed status as the sorting dimension
         # (no delay-days field in current schema; rank by budget as tiebreaker)
         project_ev = _project_evidence(evidence)

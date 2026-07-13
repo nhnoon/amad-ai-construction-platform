@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Zap, X } from "lucide-react";
+import { Zap } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { AIDrawer } from "./AIDrawer";
 

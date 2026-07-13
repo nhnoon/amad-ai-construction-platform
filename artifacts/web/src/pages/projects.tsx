@@ -4,8 +4,9 @@ import { useListProjects, useListProjectHealthScores } from "@workspace/api-clie
 import { Skeleton } from "@/components/ui/skeleton";
 import { Input } from "@/components/ui/input";
 import { Link } from "wouter";
-import { Search, ChevronRight, AlertOctagon } from "lucide-react";
+import { Search, ChevronRight, AlertOctagon, FolderKanban } from "lucide-react";
 import { PageContextHeader } from "@/components/page-context-header";
+import { EmptyState } from "@/components/ui/empty-state";
 
 const STATUS_BADGE: Record<string, string> = {
   Active:      "badge-success",
@@ -150,8 +151,16 @@ export default function Projects() {
             <tbody>
               {filtered?.length === 0 ? (
                 <tr>
-                  <td colSpan={7} className="text-center h-24 text-muted-foreground">
-                    {t("No data")}
+                  <td colSpan={7}>
+                    <EmptyState
+                      icon={FolderKanban}
+                      title={search || statusFilter !== "all" ? "No projects match your filters" : "No projects yet"}
+                      description={
+                        search || statusFilter !== "all"
+                          ? "Try adjusting your search or status filter."
+                          : "Projects will appear here once they're added to the portfolio."
+                      }
+                    />
                   </td>
                 </tr>
               ) : (
@@ -187,6 +196,7 @@ export default function Projects() {
                         <Link
                           href={`/projects/${project.id}`}
                           className="text-muted-foreground hover:text-foreground transition-colors"
+                          aria-label={`View ${project.project_name}`}
                         >
                           <ChevronRight className="w-4 h-4" />
                         </Link>

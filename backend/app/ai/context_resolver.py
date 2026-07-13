@@ -24,11 +24,18 @@ from app.ai.conversation_state import ConversationState
 # Pronoun / reference detection patterns                               #
 # ------------------------------------------------------------------ #
 
-# Patterns that signal the question refers to previous entities
-_ANAPHORIC_PATTERNS: list[re.Pattern[str]] = [
+# Patterns that signal the question refers to previous entities.
+#
+# Split into "strong" (essentially never has a same-sentence antecedent —
+# "them"/"those"/"tell me more"/etc. only make sense pointing at prior
+# conversation) and "weak" (common pronouns like "it"/"its" that just as
+# often refer to an entity named earlier in the SAME sentence, e.g. "NCR-2,
+# and which project is it linked to?"). Weak patterns are only treated as
+# anaphoric when the question does not already contain an explicit entity
+# code of its own — see is_anaphoric() below.
+_STRONG_ANAPHORIC_PATTERNS: list[re.Pattern[str]] = [
     re.compile(r"\b(them|they|those|these)\b", re.IGNORECASE),
     re.compile(r"\b(that project|this project|the project)\b", re.IGNORECASE),
-    re.compile(r"\b(it|its)\b", re.IGNORECASE),
     re.compile(r"\bwhich (one|ones)\b", re.IGNORECASE),
     re.compile(r"\bone of (them|those|these)\b", re.IGNORECASE),
     re.compile(r"\bthe (same|above|mentioned|previous|earlier)\b", re.IGNORECASE),
@@ -59,6 +66,25 @@ _ANAPHORIC_PATTERNS: list[re.Pattern[str]] = [
     re.compile(r"قارن[هاهيون]?"),      # قارنه, قارنها, قارني, قارنوا
     re.compile(r"(?:هل لديه|هل لها|هل له|هل فيه|هل عنده)"),
 ]
+
+_WEAK_ANAPHORIC_PATTERNS: list[re.Pattern[str]] = [
+    re.compile(r"\b(it|its)\b", re.IGNORECASE),
+]
+
+# Same entity-code family used by app/ai/memory.py's evidence-dump guard —
+# if one of these is already named in the question, a trailing "it" almost
+# certainly refers back to it within the same sentence.
+_ENTITY_CODE_RE = re.compile(r"\b(?:PRJ|PO|PR|MTG|NCR|SE|DEC|ACT)-\d+\b", re.IGNORECASE)
+
+# "Which/what <domain noun> ... it?" also has a same-sentence antecedent —
+# "it" refers back to the noun the question is already asking about (e.g.
+# "Which purchase order has the longest delay, and how many days late is
+# it?"), not to something from a prior turn.
+_SELF_CONTAINED_WHICH_RE = re.compile(
+    r"\b(which|what)\b.{0,40}\b(project|purchase order|purchase request|"
+    r"po|pr|supplier|meeting|decision|ncr|safety event|site report)\b",
+    re.IGNORECASE,
+)
 
 # Patterns that indicate intent-domain continuation without pronouns
 _CONTINUATION_MARKERS = re.compile(
@@ -100,8 +126,18 @@ class ResolvedContext:
 
 
 def is_anaphoric(question: str) -> bool:
-    """Return True if the question contains references to prior context."""
-    for pattern in _ANAPHORIC_PATTERNS:
+    """Return True if the question contains references to prior context.
+
+    Weak pronoun patterns ("it"/"its") are only counted when the question
+    does not already name the entity they refer to in the same sentence
+    (e.g. "NCR-2 ... is it linked to?" is self-contained, not a follow-up).
+    """
+    for pattern in _STRONG_ANAPHORIC_PATTERNS:
+        if pattern.search(question):
+            return True
+    if _ENTITY_CODE_RE.search(question) or _SELF_CONTAINED_WHICH_RE.search(question):
+        return False
+    for pattern in _WEAK_ANAPHORIC_PATTERNS:
         if pattern.search(question):
             return True
     return False

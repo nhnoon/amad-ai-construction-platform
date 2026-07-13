@@ -3,8 +3,10 @@ import { useListPurchaseRequests, useListPurchaseOrders } from "@workspace/api-c
 import { useTranslation } from "react-i18next";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Input } from "@/components/ui/input";
-import { Search, AlertOctagon, Info } from "lucide-react";
+import { Search, AlertOctagon, Info, ClipboardList, Truck } from "lucide-react";
 import { BackToOperations } from "@/components/back-to-operations";
+import { EmptyState } from "@/components/ui/empty-state";
+import { TableSkeletonRows } from "@/components/ui/table-skeleton";
 
 type Tab = "requests" | "orders";
 
@@ -145,9 +147,17 @@ export default function Procurement() {
               </thead>
               <tbody>
                 {prsLoading ? (
-                  <tr><td colSpan={6} className="text-center py-10 text-muted-foreground">{t("Loading...")}</td></tr>
+                  <TableSkeletonRows rows={6} cols={6} />
                 ) : !filteredPrs?.length ? (
-                  <tr><td colSpan={6} className="text-center py-10 text-muted-foreground">{t("No data")}</td></tr>
+                  <tr>
+                    <td colSpan={6}>
+                      <EmptyState
+                        icon={ClipboardList}
+                        title={search ? "No purchase requests match your search" : "No purchase requests yet"}
+                        description={search ? "Try a different search term." : "Purchase requests will appear here once submitted."}
+                      />
+                    </td>
+                  </tr>
                 ) : (
                   filteredPrs.map((pr) => (
                     <tr key={pr.id}>
@@ -185,9 +195,17 @@ export default function Procurement() {
               </thead>
               <tbody>
                 {posLoading ? (
-                  <tr><td colSpan={6} className="text-center py-10 text-muted-foreground">{t("Loading...")}</td></tr>
+                  <TableSkeletonRows rows={6} cols={6} />
                 ) : !filteredPos?.length ? (
-                  <tr><td colSpan={6} className="text-center py-10 text-muted-foreground">{t("No data")}</td></tr>
+                  <tr>
+                    <td colSpan={6}>
+                      <EmptyState
+                        icon={Truck}
+                        title={search ? "No purchase orders match your search" : "No purchase orders yet"}
+                        description={search ? "Try a different search term." : "Purchase orders will appear here once issued."}
+                      />
+                    </td>
+                  </tr>
                 ) : (
                   filteredPos.map((po) => (
                     <tr key={po.id} className={po.is_late ? "bg-red-50/50 dark:bg-red-900/5" : ""}>

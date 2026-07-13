@@ -2,9 +2,11 @@ import { useState, useEffect } from "react";
 import { useListProjects } from "@workspace/api-client-react";
 import { Link } from "wouter";
 import { useTranslation } from "react-i18next";
-import { CloudSun, AlertOctagon } from "lucide-react";
+import { CloudSun, AlertOctagon, ChevronRight, FileStack } from "lucide-react";
 import { getToken } from "@/lib/auth";
 import { PageContextHeader } from "@/components/page-context-header";
+import { EmptyState } from "@/components/ui/empty-state";
+import { Skeleton } from "@/components/ui/skeleton";
 
 const WEATHER_BADGE: Record<string, string> = {
   Clear:        "badge-success",
@@ -122,15 +124,16 @@ export default function SiteReports() {
       </div>
 
       {!selectedProjectId ? (
-        <div className="panel panel-body flex flex-col items-center justify-center h-48 text-muted-foreground gap-3">
-          <CloudSun className="w-10 h-10 opacity-30" />
-          <p className="text-sm">{t("Select a project to view data")}</p>
+        <div className="panel">
+          <EmptyState icon={CloudSun} title={t("Select a project to view data")} />
         </div>
       ) : (
         <div className="panel overflow-hidden">
           <div className="grid grid-cols-1 gap-4 p-4 md:grid-cols-2 xl:grid-cols-3" data-testid="site-reports-cards">
             {isLoading ? (
-              <div className="col-span-full text-center py-10 text-muted-foreground">{t("Loading...")}</div>
+              Array.from({ length: 6 }).map((_, i) => (
+                <Skeleton key={i} className="h-44 w-full rounded-xl" />
+              ))
             ) : isError ? (
               <div className="col-span-full text-center py-10">
                 <div className="flex flex-col items-center gap-1 text-muted-foreground">
@@ -139,7 +142,9 @@ export default function SiteReports() {
                 </div>
               </div>
             ) : !cards?.length ? (
-              <div className="col-span-full text-center py-10 text-muted-foreground">{t("No data")}</div>
+              <div className="col-span-full">
+                <EmptyState icon={FileStack} title="No site reports yet" description="Site reports for this project will appear here once submitted." />
+              </div>
             ) : (
               cards.map((card) => (
                 <article key={card.report_id} className="rounded-xl border border-border/50 bg-card/70 p-4">
@@ -160,9 +165,10 @@ export default function SiteReports() {
                   <div className="mt-4">
                     <Link
                       href={`/projects/${card.project_id}/site-reports/${card.report_id}`}
-                      className="text-sm font-semibold text-primary hover:underline"
+                      className="inline-flex items-center gap-1 text-sm font-semibold text-primary hover:underline"
                     >
-                      Open Report →
+                      Open Report
+                      <ChevronRight className="w-3.5 h-3.5" />
                     </Link>
                   </div>
                 </article>

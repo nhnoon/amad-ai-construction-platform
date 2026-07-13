@@ -72,6 +72,8 @@ _INTENT_KEYWORDS: dict[str, list[str]] = {
 
 _PROJECT_CODE_PATTERN = re.compile(r"\b(PRJ-\d+)\b", re.IGNORECASE)
 _PROJECT_ID_PATTERN = re.compile(r"\bproject\s+(\d+)\b", re.IGNORECASE)
+_MEETING_CODE_PATTERN = re.compile(r"\bMTG-(\d+)\b", re.IGNORECASE)
+_NCR_CODE_PATTERN = re.compile(r"\bNCR-(\d+)\b", re.IGNORECASE)
 
 _WORD_BOUNDARY_KEYWORDS = {"po", "pr"}
 
@@ -93,6 +95,8 @@ class RoutedIntent:
     unsupported: bool
     is_multi_domain: bool = False
     secondary_intents: list[str] = field(default_factory=list)
+    meeting_id: Optional[int] = None
+    ncr_id: Optional[int] = None
 
 
 def _kw_matches(kw: str, text: str) -> bool:
@@ -139,6 +143,22 @@ def route_intent(
 
     resolved_project_id = hint_project_id or project_id_from_text
 
+    resolved_meeting_id: Optional[int] = None
+    m3 = _MEETING_CODE_PATTERN.search(question)
+    if m3:
+        try:
+            resolved_meeting_id = int(m3.group(1))
+        except ValueError:
+            pass
+
+    resolved_ncr_id: Optional[int] = None
+    m4 = _NCR_CODE_PATTERN.search(question)
+    if m4:
+        try:
+            resolved_ncr_id = int(m4.group(1))
+        except ValueError:
+            pass
+
     # Check executive_summary first (highest priority multi-domain intent)
     exec_score = sum(
         1 for kw in _INTENT_KEYWORDS["executive_summary"]
@@ -153,6 +173,8 @@ def route_intent(
             confidence=min(exec_score / len(_INTENT_KEYWORDS["executive_summary"]), 1.0),
             unsupported=False,
             is_multi_domain=True,
+            meeting_id=resolved_meeting_id,
+            ncr_id=resolved_ncr_id,
         )
 
     scores: dict[str, int] = {}
@@ -175,6 +197,8 @@ def route_intent(
                 confidence=0.3,
                 unsupported=False,
                 is_multi_domain=False,
+                meeting_id=resolved_meeting_id,
+                ncr_id=resolved_ncr_id,
             )
         return RoutedIntent(
             intent="unknown",
@@ -183,6 +207,8 @@ def route_intent(
             filters={},
             confidence=0.0,
             unsupported=True,
+            meeting_id=resolved_meeting_id,
+            ncr_id=resolved_ncr_id,
         )
 
     best_intent = max(scores, key=lambda k: scores[k])
@@ -209,4 +235,6 @@ def route_intent(
         unsupported=False,
         is_multi_domain=is_multi,
         secondary_intents=secondary,
+        meeting_id=resolved_meeting_id,
+        ncr_id=resolved_ncr_id,
     )

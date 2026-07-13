@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { useParams } from "wouter";
 import { useQuery } from "@tanstack/react-query";
 import { useTranslation } from "react-i18next";
-import { Sparkles, RefreshCw, CalendarDays, Users, ListChecks } from "lucide-react";
+import { Sparkles, RefreshCw, CalendarDays, Users, ListChecks, CalendarX } from "lucide-react";
 import {
   useListProjectMeetings,
   useListProjectDecisions,
@@ -10,6 +10,8 @@ import {
 } from "@workspace/api-client-react";
 import { BackButton } from "@/components/back-button";
 import { Button } from "@/components/ui/button";
+import { Skeleton } from "@/components/ui/skeleton";
+import { EmptyState } from "@/components/ui/empty-state";
 import { listActionItems } from "@/lib/meetingsClient";
 import { postMeetingAgent, CopilotApiError, type CopilotQueryResponse, type CopilotCitation } from "@/lib/copilotClient";
 import { SOURCE_TYPE_LABELS, prettifySourceType } from "@/components/ai-answer-ui";
@@ -211,7 +213,9 @@ export default function MeetingDetail() {
     return (
       <div className="space-y-4">
         <BackButton to="/meetings" label="Back to Meetings" />
-        <p className="text-sm text-muted-foreground">{t("Loading...")}</p>
+        <Skeleton className="h-8 w-64" />
+        <Skeleton className="h-40 w-full rounded-xl" />
+        <Skeleton className="h-40 w-full rounded-xl" />
       </div>
     );
   }
@@ -220,8 +224,8 @@ export default function MeetingDetail() {
     return (
       <div className="space-y-4">
         <BackButton to="/meetings" label="Back to Meetings" />
-        <div className="panel panel-body text-center text-muted-foreground py-16">
-          {t("Meeting not found")}
+        <div className="panel">
+          <EmptyState icon={CalendarX} title={t("Meeting not found")} />
         </div>
       </div>
     );

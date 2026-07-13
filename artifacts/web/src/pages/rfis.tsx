@@ -1,8 +1,10 @@
 import { useEffect, useMemo, useState } from "react";
 import { useListProjects, useListProjectDecisions } from "@workspace/api-client-react";
-import { AlertOctagon, Loader2 } from "lucide-react";
+import { AlertOctagon, History } from "lucide-react";
 import { getToken } from "@/lib/auth";
 import { PageContextHeader } from "@/components/page-context-header";
+import { EmptyState } from "@/components/ui/empty-state";
+import { TableSkeletonRows } from "@/components/ui/table-skeleton";
 
 type DocRecord = {
   id: number;
@@ -24,6 +26,15 @@ type CorrespondenceRecord = {
 function isRfiLike(value: string | null | undefined) {
   if (!value) return false;
   return value.toLowerCase().includes("rfi");
+}
+
+function sourceBadge(source: string) {
+  const m: Record<string, string> = {
+    Decision: "badge-info",
+    Document: "badge-purple",
+    Correspondence: "badge-gold",
+  };
+  return m[source] ?? "badge-neutral";
 }
 
 export default function RFIs() {
@@ -133,6 +144,8 @@ export default function RFIs() {
     );
   }, [decisionRows, documents, correspondence]);
 
+  const isLoading = loadingRecords || loadingDecisions;
+
   return (
     <div className="space-y-6">
       <PageContextHeader
@@ -147,12 +160,13 @@ export default function RFIs() {
         ]}
       />
 
-      <div className="rounded-xl border border-border/50 bg-card/70 p-4 flex flex-wrap items-center gap-3">
+      <div className="panel panel-body flex flex-wrap items-center gap-3">
         <label className="text-sm font-medium text-muted-foreground">Project</label>
         <select
           className="h-10 min-w-64 rounded-lg border border-border bg-background px-3 text-sm"
           value={selectedProjectId ?? ""}
           onChange={(e) => setSelectedProjectId(Number(e.target.value))}
+          data-testid="project-selector"
         >
           <option value="" disabled>
             Select Project
@@ -167,26 +181,19 @@ export default function RFIs() {
       </div>
 
       <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
-        <div className="rounded-xl border border-border/50 bg-card/70 p-4">
+        <div className="panel panel-body">
           <p className="text-xs uppercase tracking-wide text-muted-foreground">RFI Decisions</p>
           <p className="mt-2 text-2xl font-bold text-foreground">{decisionRows.length}</p>
         </div>
-        <div className="rounded-xl border border-border/50 bg-card/70 p-4">
+        <div className="panel panel-body">
           <p className="text-xs uppercase tracking-wide text-muted-foreground">RFI Documents</p>
           <p className="mt-2 text-2xl font-bold text-foreground">{documents.length}</p>
         </div>
-        <div className="rounded-xl border border-border/50 bg-card/70 p-4">
+        <div className="panel panel-body">
           <p className="text-xs uppercase tracking-wide text-muted-foreground">RFI Correspondence</p>
           <p className="mt-2 text-2xl font-bold text-foreground">{correspondence.length}</p>
         </div>
       </div>
-
-      {(loadingRecords || loadingDecisions) && (
-        <div className="rounded-xl border border-border/50 bg-card/70 p-4 text-sm text-muted-foreground inline-flex items-center gap-2">
-          <Loader2 className="h-4 w-4 animate-spin" />
-          Loading RFI workspace records...
-        </div>
-      )}
 
       {(recordsError || decisionsError) && (
         <div className="rounded-xl border border-destructive/30 bg-destructive/5 p-4 text-sm text-destructive inline-flex items-center gap-2">
@@ -195,38 +202,46 @@ export default function RFIs() {
         </div>
       )}
 
-      <div className="rounded-xl border border-border/50 bg-card/70 overflow-hidden">
-        <div className="border-b border-border/50 px-4 py-3">
-          <h2 className="text-sm font-semibold text-foreground">RFI Timeline</h2>
+      <div className="panel overflow-hidden">
+        <div className="panel-header">
+          <span className="panel-title">RFI Timeline</span>
         </div>
-        {timelineRows.length === 0 ? (
-          <p className="p-4 text-sm text-muted-foreground">
-            No RFI-related records found for this project.
-          </p>
-        ) : (
-          <div className="overflow-x-auto">
-            <table className="w-full text-sm">
-              <thead>
-                <tr className="border-b border-border/50 text-muted-foreground">
-                  <th className="px-4 py-3 text-left font-medium">Date</th>
-                  <th className="px-4 py-3 text-left font-medium">Source</th>
-                  <th className="px-4 py-3 text-left font-medium">Title / Detail</th>
-                  <th className="px-4 py-3 text-left font-medium">Owner / Flow</th>
+        <div className="overflow-x-auto">
+          <table className="data-table" data-testid="rfi-timeline-table">
+            <thead>
+              <tr>
+                <th>Date</th>
+                <th>Source</th>
+                <th className="min-w-[240px]">Title / Detail</th>
+                <th>Owner / Flow</th>
+              </tr>
+            </thead>
+            <tbody>
+              {isLoading ? (
+                <TableSkeletonRows rows={5} cols={4} />
+              ) : timelineRows.length === 0 ? (
+                <tr>
+                  <td colSpan={4}>
+                    <EmptyState
+                      icon={History}
+                      title="No RFI-related records"
+                      description="RFI decisions, documents, and correspondence for this project will appear here."
+                    />
+                  </td>
                 </tr>
-              </thead>
-              <tbody>
-                {timelineRows.map((row) => (
-                  <tr key={row.id} className="border-b border-border/40">
-                    <td className="px-4 py-3 text-muted-foreground whitespace-nowrap">{row.date}</td>
-                    <td className="px-4 py-3">{row.source}</td>
-                    <td className="px-4 py-3">{row.title}</td>
-                    <td className="px-4 py-3 text-muted-foreground">{row.owner}</td>
+              ) : (
+                timelineRows.map((row) => (
+                  <tr key={row.id}>
+                    <td className="whitespace-nowrap text-sm text-muted-foreground">{row.date}</td>
+                    <td><span className={`badge ${sourceBadge(row.source)}`}>{row.source}</span></td>
+                    <td className="text-sm">{row.title}</td>
+                    <td className="text-muted-foreground text-sm">{row.owner}</td>
                   </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        )}
+                ))
+              )}
+            </tbody>
+          </table>
+        </div>
       </div>
     </div>
   );

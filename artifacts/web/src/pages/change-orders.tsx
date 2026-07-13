@@ -1,8 +1,10 @@
 import { useEffect, useMemo, useState } from "react";
 import { useListProjects } from "@workspace/api-client-react";
-import { AlertOctagon, Loader2 } from "lucide-react";
+import { AlertOctagon, FileEdit } from "lucide-react";
 import { getToken } from "@/lib/auth";
 import { PageContextHeader } from "@/components/page-context-header";
+import { EmptyState } from "@/components/ui/empty-state";
+import { TableSkeletonRows } from "@/components/ui/table-skeleton";
 
 type ChangeOrderRow = {
   id: number;
@@ -12,6 +14,16 @@ type ChangeOrderRow = {
   value: number;
   status: string;
 };
+
+function statusBadge(status: string) {
+  const m: Record<string, string> = {
+    Open: "badge-warning",
+    Approved: "badge-success",
+    Rejected: "badge-danger",
+    Pending: "badge-neutral",
+  };
+  return m[status] ?? "badge-neutral";
+}
 
 export default function ChangeOrders() {
   const { data: projects } = useListProjects({ limit: 60 });
@@ -102,12 +114,13 @@ export default function ChangeOrders() {
         ]}
       />
 
-      <div className="rounded-xl border border-border/50 bg-card/70 p-4 flex flex-wrap items-center gap-3">
+      <div className="panel panel-body flex flex-wrap items-center gap-3">
         <label className="text-sm font-medium text-muted-foreground">Project</label>
         <select
           className="h-10 min-w-64 rounded-lg border border-border bg-background px-3 text-sm"
           value={selectedProjectId ?? ""}
           onChange={(e) => setSelectedProjectId(Number(e.target.value))}
+          data-testid="project-selector"
         >
           <option value="" disabled>
             Select Project
@@ -121,30 +134,23 @@ export default function ChangeOrders() {
       </div>
 
       <div className="grid grid-cols-1 gap-4 md:grid-cols-4">
-        <div className="rounded-xl border border-border/50 bg-card/70 p-4">
+        <div className="panel panel-body">
           <p className="text-xs uppercase tracking-wide text-muted-foreground">Total COs</p>
           <p className="mt-2 text-2xl font-bold text-foreground">{summary.total}</p>
         </div>
-        <div className="rounded-xl border border-border/50 bg-card/70 p-4">
+        <div className="panel panel-body">
           <p className="text-xs uppercase tracking-wide text-muted-foreground">Open</p>
           <p className="mt-2 text-2xl font-bold text-foreground">{summary.open}</p>
         </div>
-        <div className="rounded-xl border border-border/50 bg-card/70 p-4">
+        <div className="panel panel-body">
           <p className="text-xs uppercase tracking-wide text-muted-foreground">Approved</p>
           <p className="mt-2 text-2xl font-bold text-foreground">{summary.approved}</p>
         </div>
-        <div className="rounded-xl border border-border/50 bg-card/70 p-4">
+        <div className="panel panel-body">
           <p className="text-xs uppercase tracking-wide text-muted-foreground">Total Value</p>
           <p className="mt-2 text-2xl font-bold text-foreground">{summary.totalValue.toLocaleString()}</p>
         </div>
       </div>
-
-      {isLoading && (
-        <div className="rounded-xl border border-border/50 bg-card/70 p-4 text-sm text-muted-foreground inline-flex items-center gap-2">
-          <Loader2 className="h-4 w-4 animate-spin" />
-          Loading change orders...
-        </div>
-      )}
 
       {isError && (
         <div className="rounded-xl border border-destructive/30 bg-destructive/5 p-4 text-sm text-destructive inline-flex items-center gap-2">
@@ -153,36 +159,46 @@ export default function ChangeOrders() {
         </div>
       )}
 
-      <div className="rounded-xl border border-border/50 bg-card/70 overflow-hidden">
-        <div className="border-b border-border/50 px-4 py-3">
-          <h2 className="text-sm font-semibold text-foreground">Change Order Register</h2>
+      <div className="panel overflow-hidden">
+        <div className="panel-header">
+          <span className="panel-title">Change Order Register</span>
         </div>
-        {rows.length === 0 ? (
-          <p className="p-4 text-sm text-muted-foreground">No change orders found for this project.</p>
-        ) : (
-          <div className="overflow-x-auto">
-            <table className="w-full text-sm">
-              <thead>
-                <tr className="border-b border-border/50 text-muted-foreground">
-                  <th className="px-4 py-3 text-left font-medium">CO Number</th>
-                  <th className="px-4 py-3 text-left font-medium">Status</th>
-                  <th className="px-4 py-3 text-left font-medium">Value</th>
-                  <th className="px-4 py-3 text-left font-medium">Description</th>
+        <div className="overflow-x-auto">
+          <table className="data-table" data-testid="change-orders-table">
+            <thead>
+              <tr>
+                <th>CO Number</th>
+                <th>Status</th>
+                <th>Value</th>
+                <th className="min-w-[220px]">Description</th>
+              </tr>
+            </thead>
+            <tbody>
+              {isLoading ? (
+                <TableSkeletonRows rows={5} cols={4} />
+              ) : rows.length === 0 ? (
+                <tr>
+                  <td colSpan={4}>
+                    <EmptyState
+                      icon={FileEdit}
+                      title="No change orders yet"
+                      description="Change orders for this project will appear here once submitted."
+                    />
+                  </td>
                 </tr>
-              </thead>
-              <tbody>
-                {rows.map((row) => (
-                  <tr key={row.id} className="border-b border-border/40">
-                    <td className="px-4 py-3 font-medium text-foreground">{row.co_number}</td>
-                    <td className="px-4 py-3">{row.status}</td>
-                    <td className="px-4 py-3 tabular-nums">{row.value.toLocaleString()}</td>
-                    <td className="px-4 py-3 text-muted-foreground">{row.description}</td>
+              ) : (
+                rows.map((row) => (
+                  <tr key={row.id}>
+                    <td className="font-semibold text-sm">{row.co_number}</td>
+                    <td><span className={`badge ${statusBadge(row.status)}`}>{row.status}</span></td>
+                    <td className="tabular-nums text-sm">{row.value.toLocaleString()}</td>
+                    <td className="text-muted-foreground text-sm max-w-xs truncate">{row.description}</td>
                   </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        )}
+                ))
+              )}
+            </tbody>
+          </table>
+        </div>
       </div>
     </div>
   );

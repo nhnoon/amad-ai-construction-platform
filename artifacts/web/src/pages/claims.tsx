@@ -1,8 +1,10 @@
 import { useEffect, useMemo, useState } from "react";
 import { useListProjects } from "@workspace/api-client-react";
-import { AlertOctagon, Loader2 } from "lucide-react";
+import { AlertOctagon, Scale } from "lucide-react";
 import { getToken } from "@/lib/auth";
 import { PageContextHeader } from "@/components/page-context-header";
+import { EmptyState } from "@/components/ui/empty-state";
+import { TableSkeletonRows } from "@/components/ui/table-skeleton";
 
 type ClaimRow = {
   id: number;
@@ -13,6 +15,16 @@ type ClaimRow = {
   status: string;
   narrative: string;
 };
+
+function statusBadge(status: string) {
+  const m: Record<string, string> = {
+    Open: "badge-warning",
+    Closed: "badge-success",
+    Rejected: "badge-danger",
+    "Under Review": "badge-info",
+  };
+  return m[status] ?? "badge-neutral";
+}
 
 export default function Claims() {
   const { data: projects } = useListProjects({ limit: 60 });
@@ -100,12 +112,13 @@ export default function Claims() {
         ]}
       />
 
-      <div className="rounded-xl border border-border/50 bg-card/70 p-4 flex flex-wrap items-center gap-3">
+      <div className="panel panel-body flex flex-wrap items-center gap-3">
         <label className="text-sm font-medium text-muted-foreground">Project</label>
         <select
           className="h-10 min-w-64 rounded-lg border border-border bg-background px-3 text-sm"
           value={selectedProjectId ?? ""}
           onChange={(e) => setSelectedProjectId(Number(e.target.value))}
+          data-testid="project-selector"
         >
           <option value="" disabled>
             Select Project
@@ -119,30 +132,23 @@ export default function Claims() {
       </div>
 
       <div className="grid grid-cols-1 gap-4 md:grid-cols-4">
-        <div className="rounded-xl border border-border/50 bg-card/70 p-4">
+        <div className="panel panel-body">
           <p className="text-xs uppercase tracking-wide text-muted-foreground">Total Claims</p>
           <p className="mt-2 text-2xl font-bold text-foreground">{summary.total}</p>
         </div>
-        <div className="rounded-xl border border-border/50 bg-card/70 p-4">
+        <div className="panel panel-body">
           <p className="text-xs uppercase tracking-wide text-muted-foreground">Open</p>
           <p className="mt-2 text-2xl font-bold text-foreground">{summary.open}</p>
         </div>
-        <div className="rounded-xl border border-border/50 bg-card/70 p-4">
+        <div className="panel panel-body">
           <p className="text-xs uppercase tracking-wide text-muted-foreground">Closed</p>
           <p className="mt-2 text-2xl font-bold text-foreground">{summary.closed}</p>
         </div>
-        <div className="rounded-xl border border-border/50 bg-card/70 p-4">
+        <div className="panel panel-body">
           <p className="text-xs uppercase tracking-wide text-muted-foreground">Total Amount</p>
           <p className="mt-2 text-2xl font-bold text-foreground">{summary.totalAmount.toLocaleString()}</p>
         </div>
       </div>
-
-      {isLoading && (
-        <div className="rounded-xl border border-border/50 bg-card/70 p-4 text-sm text-muted-foreground inline-flex items-center gap-2">
-          <Loader2 className="h-4 w-4 animate-spin" />
-          Loading claims...
-        </div>
-      )}
 
       {isError && (
         <div className="rounded-xl border border-destructive/30 bg-destructive/5 p-4 text-sm text-destructive inline-flex items-center gap-2">
@@ -151,38 +157,48 @@ export default function Claims() {
         </div>
       )}
 
-      <div className="rounded-xl border border-border/50 bg-card/70 overflow-hidden">
-        <div className="border-b border-border/50 px-4 py-3">
-          <h2 className="text-sm font-semibold text-foreground">Claims Register</h2>
+      <div className="panel overflow-hidden">
+        <div className="panel-header">
+          <span className="panel-title">Claims Register</span>
         </div>
-        {rows.length === 0 ? (
-          <p className="p-4 text-sm text-muted-foreground">No claims found for this project.</p>
-        ) : (
-          <div className="overflow-x-auto">
-            <table className="w-full text-sm">
-              <thead>
-                <tr className="border-b border-border/50 text-muted-foreground">
-                  <th className="px-4 py-3 text-left font-medium">Claim Number</th>
-                  <th className="px-4 py-3 text-left font-medium">Type</th>
-                  <th className="px-4 py-3 text-left font-medium">Status</th>
-                  <th className="px-4 py-3 text-left font-medium">Amount</th>
-                  <th className="px-4 py-3 text-left font-medium">Narrative</th>
+        <div className="overflow-x-auto">
+          <table className="data-table" data-testid="claims-table">
+            <thead>
+              <tr>
+                <th>Claim Number</th>
+                <th>Type</th>
+                <th>Status</th>
+                <th>Amount</th>
+                <th className="min-w-[220px]">Narrative</th>
+              </tr>
+            </thead>
+            <tbody>
+              {isLoading ? (
+                <TableSkeletonRows rows={5} cols={5} />
+              ) : rows.length === 0 ? (
+                <tr>
+                  <td colSpan={5}>
+                    <EmptyState
+                      icon={Scale}
+                      title="No claims yet"
+                      description="Claims for this project will appear here once filed."
+                    />
+                  </td>
                 </tr>
-              </thead>
-              <tbody>
-                {rows.map((row) => (
-                  <tr key={row.id} className="border-b border-border/40">
-                    <td className="px-4 py-3 font-medium text-foreground">{row.claim_number}</td>
-                    <td className="px-4 py-3">{row.claim_type}</td>
-                    <td className="px-4 py-3">{row.status}</td>
-                    <td className="px-4 py-3 tabular-nums">{row.amount.toLocaleString()}</td>
-                    <td className="px-4 py-3 text-muted-foreground">{row.narrative}</td>
+              ) : (
+                rows.map((row) => (
+                  <tr key={row.id}>
+                    <td className="font-semibold text-sm">{row.claim_number}</td>
+                    <td className="text-sm">{row.claim_type}</td>
+                    <td><span className={`badge ${statusBadge(row.status)}`}>{row.status}</span></td>
+                    <td className="tabular-nums text-sm">{row.amount.toLocaleString()}</td>
+                    <td className="text-muted-foreground text-sm max-w-xs truncate">{row.narrative}</td>
                   </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        )}
+                ))
+              )}
+            </tbody>
+          </table>
+        </div>
       </div>
     </div>
   );

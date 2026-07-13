@@ -3,6 +3,7 @@ from __future__ import annotations
 
 from typing import Optional
 
+from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from app.ai.scope import AIAuthScope
@@ -105,3 +106,106 @@ def get_open_ncrs(
         ))
 
     return RetrievalResult(data={"ncrs": rows, "total": len(rows)}, evidence=evidence)
+
+
+def get_safety_event_counts(
+    db: Session,
+    scope: AIAuthScope,
+    project_id: Optional[int] = None,
+) -> dict[str, int]:
+    """True portfolio-wide (or project-scoped) COUNT(*) totals by severity —
+    unlike get_safety_summary(), whose row list is bounded by `limit` and is
+    NOT a total count. Mirrors get_project_status_counts()'s pattern."""
+    q = db.query(SafetyEvent.severity, func.count(SafetyEvent.id)).group_by(SafetyEvent.severity)
+    if project_id is not None:
+        scope.enforce_project_access(project_id)
+        q = q.filter(SafetyEvent.project_id == project_id)
+    elif not scope.has_global_read:
+        ids = list(scope.accessible_project_ids)
+        if not ids:
+            return {"total": 0, "high": 0, "medium": 0, "low": 0}
+        q = q.filter(SafetyEvent.project_id.in_(ids))
+
+    counts = dict(q.all())
+    return {
+        "total": sum(counts.values()),
+        "high": counts.get("High", 0),
+        "medium": counts.get("Medium", 0),
+        "low": counts.get("Low", 0),
+    }
+
+
+def get_ncr_counts(
+    db: Session,
+    scope: AIAuthScope,
+    project_id: Optional[int] = None,
+) -> dict[str, int]:
+    """True portfolio-wide (or project-scoped) COUNT(*) totals — unlike
+    get_open_ncrs(), whose row list is bounded by `limit` and is NOT a total
+    count. Mirrors get_project_status_counts()'s pattern."""
+    q_total = db.query(NCR)
+    q_open = db.query(NCR).filter(NCR.status.in_(_OPEN_NCR_STATUSES))
+    if project_id is not None:
+        scope.enforce_project_access(project_id)
+        q_total = q_total.filter(NCR.project_id == project_id)
+        q_open = q_open.filter(NCR.project_id == project_id)
+    elif not scope.has_global_read:
+        ids = list(scope.accessible_project_ids)
+        if not ids:
+            return {"total": 0, "open": 0}
+        q_total = q_total.filter(NCR.project_id.in_(ids))
+        q_open = q_open.filter(NCR.project_id.in_(ids))
+
+    return {"total": q_total.count(), "open": q_open.count()}
+
+
+def get_ncr_detail(
+    db: Session,
+    scope: AIAuthScope,
+    ncr_id: int,
+) -> RetrievalResult:
+    """Full detail for ONE specific NCR. Raises 404 if the NCR doesn't
+    exist, 403 via enforce_project_access if the caller can't see its
+    project — same conventions as get_meeting_detail()."""
+    n = db.query(NCR).filter(NCR.id == ncr_id).first()
+    if n is None:
+        from fastapi import HTTPException, status as http_status
+        raise HTTPException(
+            status_code=http_status.HTTP_404_NOT_FOUND,
+            detail="NCR not found",
+        )
+    scope.enforce_project_access(n.project_id)
+
+    # Include the project's human-readable code (not just its internal id)
+    # so a question like "which project is it linked to" can be answered
+    # with a real citable code (PRJ-####), never the raw numeric id.
+    from app.models.projects import Project
+    project = db.query(Project).filter(Project.id == n.project_id).first()
+    project_code = project.project_code if project else "not recorded"
+
+    evidence = [Evidence(
+        source_type="ncr",
+        source_id=str(n.id),
+        label=f"NCR NCR-{n.id}",
+        snippet=(
+            f"NCR-{n.id}: type={n.ncr_type}, status={n.status}, "
+            f"project={project_code}, date={n.issue_date}, "
+            f"description={n.description[:200]}, "
+            f"root_cause={n.root_cause or 'not recorded'}"
+        ),
+        project_id=n.project_id,
+        ui_metadata={"href": "/safety", "icon": "clipboard-x"},
+    )]
+
+    return RetrievalResult(
+        data={
+            "ncr_id": n.id,
+            "project_id": n.project_id,
+            "ncr_type": n.ncr_type,
+            "status": n.status,
+            "issue_date": n.issue_date,
+            "description": n.description,
+            "root_cause": n.root_cause,
+        },
+        evidence=evidence,
+    )

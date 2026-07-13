@@ -63,12 +63,15 @@ from app.ai.retrieval.procurement import (
 from app.ai.retrieval.projects import (
     get_project_overview, get_project_risks, get_health_overview, get_project_status_counts,
 )
-from app.ai.retrieval.safety import get_open_ncrs, get_safety_summary
+from app.ai.retrieval.safety import (
+    get_ncr_counts, get_ncr_detail, get_open_ncrs, get_safety_event_counts, get_safety_summary,
+)
 from app.ai.retrieval.site_reports import (
     get_recent_daily_activities, get_recent_site_reports,
 )
 from app.ai.scope import AIAuthScope
 from app.models.ai_copilot import AIConversation, AICitation, AIMessage, CopilotAuditLog
+from app.models.projects import Project
 
 logger = logging.getLogger(__name__)
 
@@ -245,26 +248,106 @@ def _build_evidence_block(evidence: list[Evidence]) -> str:
     return "\n".join(parts)
 
 
-def _dispatch_single_retrieval(
+_COUNT_SUMMARY_ICON = {
+    "project_overview": "layout-grid",
+    "procurement": "shopping-cart",
+    "safety": "shield-alert",
+    "ncr": "clipboard-x",
+}
+
+
+def _append_count_summary(
+    result: RetrievalResult,
     intent: str,
     db: Session,
     scope: AIAuthScope,
     project_id: Optional[int],
 ) -> RetrievalResult:
+    """Attach one extra Evidence item carrying the TRUE COUNT(*) totals for
+    this domain, alongside the row-sample evidence get_*_summary()/get_*()
+    already returned. Without this, "how many X" questions were answered by
+    counting the (limit-bounded) evidence list itself — e.g. reporting "20"
+    open NCRs when the evidence sample happened to cap at 20 rows, while the
+    real total was 500. This is a normal, citable Evidence item like any
+    other — it strengthens grounding for count questions, it does not bypass
+    or weaken citations."""
+    if intent == "project_overview":
+        c = get_project_status_counts(db=db, scope=scope, project_id=project_id)
+        snippet = f"TOTAL COUNTS (all matching projects, not just those listed above): total={c['total']}, active={c['active']}, delayed={c['delayed']}"
+    elif intent == "procurement":
+        c = get_procurement_counts(db=db, scope=scope, project_id=project_id)
+        snippet = (
+            "TOTAL COUNTS (all matching records, not just those listed above): "
+            f"total_purchase_orders={c['total_po']}, late_purchase_orders={c['late_po']}, "
+            f"total_purchase_requests={c['total_pr']}, open_purchase_requests={c['open_pr']}"
+        )
+    elif intent == "safety":
+        c = get_safety_event_counts(db=db, scope=scope, project_id=project_id)
+        snippet = f"TOTAL COUNTS (all matching safety events, not just those listed above): total={c['total']}, high_severity={c['high']}, medium_severity={c['medium']}, low_severity={c['low']}"
+    elif intent == "ncr":
+        c = get_ncr_counts(db=db, scope=scope, project_id=project_id)
+        snippet = f"TOTAL COUNTS (all matching NCRs, not just those listed above): total={c['total']}, open={c['open']}"
+    else:
+        return result
+
+    result.evidence.append(Evidence(
+        source_type="count_summary",
+        source_id=intent,
+        label=f"{intent.replace('_', ' ').title()} — Total Counts",
+        snippet=snippet,
+        project_id=project_id,
+        ui_metadata={"icon": _COUNT_SUMMARY_ICON.get(intent, "hash")},
+    ))
+    return result
+
+
+def _dispatch_single_retrieval(
+    intent: str,
+    db: Session,
+    scope: AIAuthScope,
+    project_id: Optional[int],
+    meeting_id: Optional[int] = None,
+    ncr_id: Optional[int] = None,
+    question: str = "",
+) -> RetrievalResult:
     kwargs: dict[str, Any] = {"db": db, "scope": scope, "project_id": project_id}
 
     if intent == "project_overview":
-        return get_project_overview(**kwargs)
+        return _append_count_summary(get_project_overview(**kwargs), intent, db, scope, project_id)
     if intent == "procurement":
-        return get_procurement_summary(**kwargs)
+        if detect_query_type(question) == "longest_delay":
+            # "Which purchase order has the longest delay?" — get_procurement_summary()
+            # returns an unsorted sample of requests/orders, so the LLM had to
+            # guess a maximum from ~30 unsorted rows and got it wrong (a real,
+            # non-hallucinated PO, but not the actual longest delay).
+            # get_late_purchase_orders() is already sorted by delay_days desc.
+            return _append_count_summary(
+                get_late_purchase_orders(db=db, scope=scope, project_id=project_id, limit=20),
+                intent, db, scope, project_id,
+            )
+        return _append_count_summary(get_procurement_summary(**kwargs), intent, db, scope, project_id)
     if intent == "suppliers":
         return get_supplier_information(db=db, scope=scope)
     if intent == "safety":
-        return get_safety_summary(**kwargs)
+        return _append_count_summary(get_safety_summary(**kwargs), intent, db, scope, project_id)
+    if intent == "ncr" and ncr_id is not None:
+        # A specific NCR code (e.g. "NCR-2") was named — scope retrieval to
+        # that one NCR instead of the portfolio-wide open-NCR list, which
+        # would otherwise return unrelated NCRs with no connection to the
+        # one actually asked about (same fix as the meeting_id case above).
+        return get_ncr_detail(db=db, scope=scope, ncr_id=ncr_id)
     if intent == "ncr":
-        return get_open_ncrs(**kwargs)
+        return _append_count_summary(get_open_ncrs(**kwargs), intent, db, scope, project_id)
     if intent == "site_reports":
         return get_recent_site_reports(**kwargs)
+    if intent in ("meetings", "decisions") and meeting_id is not None:
+        # A specific meeting code (e.g. "MTG-1") was named in the question —
+        # scope retrieval to that one meeting instead of the portfolio-wide
+        # "most recent N" list, which would otherwise return unrelated
+        # meetings/decisions with no connection to the one actually asked
+        # about. Same authorization/404 behavior as the Meeting Agent, which
+        # already calls this function directly.
+        return get_meeting_detail(db=db, scope=scope, meeting_id=meeting_id)
     if intent == "meetings":
         return get_recent_meetings(**kwargs)
     if intent == "decisions":
@@ -1538,6 +1621,23 @@ class CopilotPipeline:
             or (resolved_ctx.hint_project_ids[0] if resolved_ctx.hint_project_ids else None)
             or routed.project_id
         )
+        # A project CODE (e.g. "PRJ-0001") was named but never resolved to an
+        # id — routed.project_id only ever gets set from a client-supplied
+        # hint or a "project 5" numeric phrasing, never from the PRJ-#### code
+        # intent.py already extracts. Without this, a question naming a
+        # specific project code was silently answered from an unfiltered,
+        # unrelated sample of projects instead of the one actually asked
+        # about. enforce_project_access() below still applies normally, so
+        # this does not bypass RBAC — an unauthorized code simply won't
+        # resolve to evidence the caller can see.
+        if effective_project_id is None and routed.project_code:
+            match = (
+                db.query(Project.id)
+                .filter(Project.project_code == routed.project_code)
+                .first()
+            )
+            if match:
+                effective_project_id = match[0]
 
         # NOTE: intent == "unknown" means the deterministic keyword router
         # (app/ai/intent.py) found no domain keyword in the question — it is
@@ -1603,6 +1703,8 @@ class CopilotPipeline:
                 db=db,
                 scope=scope,
                 project_id=effective_project_id,
+                meeting_id=routed.meeting_id,
+                ncr_id=routed.ncr_id,
             )
             all_evidence = plan.evidence
             domains_used = plan.domains_used
@@ -1615,6 +1717,8 @@ class CopilotPipeline:
                 db=db,
                 scope=scope,
                 project_id=effective_project_id,
+                meeting_id=routed.meeting_id,
+                ncr_id=routed.ncr_id,
             )
             all_evidence = plan.evidence
             domains_used = plan.domains_used
@@ -1627,6 +1731,9 @@ class CopilotPipeline:
                 db=db,
                 scope=scope,
                 project_id=effective_project_id,
+                meeting_id=routed.meeting_id,
+                ncr_id=routed.ncr_id,
+                question=resolved_ctx.resolved_query,
             )
             all_evidence = retrieval_result.evidence
             domains_used = [intent]

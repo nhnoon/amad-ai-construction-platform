@@ -2,11 +2,12 @@ import { useQuery } from "@tanstack/react-query";
 import { Brain, AlertTriangle } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
+import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { getMemory } from "@/lib/aiCenterClient";
 
 export default function RecentMemoriesPanel({ className }: { className?: string }) {
-  const { data, isLoading, isError } = useQuery({
+  const { data, isLoading, isError, refetch } = useQuery({
     queryKey: ["ai-center-memory"],
     queryFn: getMemory,
   });
@@ -30,7 +31,10 @@ export default function RecentMemoriesPanel({ className }: { className?: string 
         ) : isError ? (
           <div className="flex items-start gap-2 text-xs text-muted-foreground">
             <AlertTriangle className="w-3.5 h-3.5 shrink-0 mt-0.5" />
-            <span>Unable to load memory right now.</span>
+            <span className="flex-1">Unable to load memory right now.</span>
+            <Button size="sm" variant="ghost" className="h-6 px-2 text-xs shrink-0" onClick={() => refetch()}>
+              Retry
+            </Button>
           </div>
         ) : allItems.length === 0 ? (
           <div className="text-center py-6">

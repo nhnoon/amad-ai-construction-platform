@@ -2,9 +2,10 @@ import { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useTranslation } from "react-i18next";
 import {
-  UserPlus, Search, RotateCcw, Shield, CheckCircle2,
-  XCircle, Copy, Check, ChevronDown, Users,
+  UserPlus, Search, RotateCcw, CheckCircle2,
+  XCircle, Copy, Check, Users,
 } from "lucide-react";
+import { EmptyState } from "@/components/ui/empty-state";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
@@ -143,7 +144,7 @@ function CreateUserDialog({
       }),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["admin-users"] });
-      toast({ title: "User created", description: `${form.email} was added to the platform.` });
+      toast({ title: "User created", description: `${form.email} was added to the platform.`, variant: "success" });
       setForm({ email: "", full_name: "", role: "site_engineer", temporary_password: "Welcome123!" });
       setError("");
       onClose();
@@ -299,7 +300,13 @@ function ResetPasswordDialog({
               <code className="flex-1 px-3 py-2 rounded-md bg-muted text-sm font-mono font-semibold tracking-wider">
                 {result.temporary_password}
               </code>
-              <Button size="icon" variant="outline" onClick={handleCopy} className="shrink-0">
+              <Button
+                size="icon"
+                variant="outline"
+                onClick={handleCopy}
+                className="shrink-0"
+                aria-label={copied ? "Password copied" : "Copy temporary password"}
+              >
                 {copied ? <Check className="w-4 h-4 text-emerald-500" /> : <Copy className="w-4 h-4" />}
               </Button>
             </div>
@@ -352,6 +359,7 @@ export default function AdminUsers() {
       toast({
         title: updated.is_active ? "User activated" : "User deactivated",
         description: updated.email,
+        variant: "success",
       });
     },
     onError: (err: Error) =>
@@ -423,10 +431,7 @@ export default function AdminUsers() {
           { label: "Active", value: stats.active, color: "text-emerald-600 dark:text-emerald-400" },
           { label: "Administrators", value: stats.admins, color: "text-amber-600 dark:text-amber-400" },
         ].map((s) => (
-          <div
-            key={s.label}
-            className="rounded-xl border border-border bg-card px-5 py-4"
-          >
+          <div key={s.label} className="panel panel-body">
             <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">{s.label}</p>
             <p className={`text-3xl font-bold mt-1 ${s.color}`}>{s.value}</p>
           </div>
@@ -458,32 +463,39 @@ export default function AdminUsers() {
       </div>
 
       {/* Table */}
-      <div className="rounded-xl border border-border bg-card overflow-hidden">
+      <div className="panel overflow-hidden">
         {filtered.length === 0 ? (
-          <div className="p-12 text-center">
-            <Users className="w-8 h-8 text-muted-foreground/40 mx-auto mb-3" />
-            <p className="text-sm text-muted-foreground">
-              {search || roleFilter !== "all" ? "No users match your filters." : "No users yet. Create one above."}
-            </p>
-          </div>
+          <EmptyState
+            icon={Users}
+            title={search || roleFilter !== "all" ? "No users match your filters" : "No users yet"}
+            description={search || roleFilter !== "all" ? "Try adjusting your search or role filter." : "Create your first user to get started."}
+            action={
+              !(search || roleFilter !== "all") && (
+                <Button size="sm" onClick={() => setCreateOpen(true)} className="gap-1.5">
+                  <UserPlus className="w-3.5 h-3.5" />
+                  New User
+                </Button>
+              )
+            }
+          />
         ) : (
           <div className="overflow-x-auto">
-            <table className="w-full text-sm">
+            <table className="data-table">
               <thead>
-                <tr className="border-b border-border bg-muted/30">
-                  <th className="px-4 py-3 text-start font-medium text-muted-foreground">User</th>
-                  <th className="px-4 py-3 text-start font-medium text-muted-foreground">Role</th>
-                  <th className="px-4 py-3 text-start font-medium text-muted-foreground">Status</th>
-                  <th className="px-4 py-3 text-start font-medium text-muted-foreground hidden md:table-cell">
+                <tr>
+                  <th>User</th>
+                  <th>Role</th>
+                  <th>Status</th>
+                  <th className="hidden md:table-cell">
                     Last Login
                   </th>
-                  <th className="px-4 py-3 text-start font-medium text-muted-foreground hidden lg:table-cell">
+                  <th className="hidden lg:table-cell">
                     Created
                   </th>
-                  <th className="px-4 py-3 text-end font-medium text-muted-foreground">Actions</th>
+                  <th className="text-end">Actions</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-border">
+              <tbody>
                 {filtered.map((user) => {
                   const initials = (user.full_name ?? user.email)
                     .split(" ")
@@ -492,11 +504,8 @@ export default function AdminUsers() {
                     .join("")
                     .toUpperCase();
                   return (
-                    <tr
-                      key={user.id}
-                      className="hover:bg-muted/20 transition-colors"
-                    >
-                      <td className="px-4 py-3">
+                    <tr key={user.id}>
+                      <td>
                         <div className="flex items-center gap-3">
                           <div className="w-8 h-8 rounded-full bg-primary/10 flex items-center justify-center text-primary font-bold text-xs shrink-0">
                             {initials}
@@ -509,19 +518,19 @@ export default function AdminUsers() {
                           </div>
                         </div>
                       </td>
-                      <td className="px-4 py-3">
+                      <td>
                         <RoleBadge role={user.role} />
                       </td>
-                      <td className="px-4 py-3">
+                      <td>
                         <StatusBadge active={user.is_active} />
                       </td>
-                      <td className="px-4 py-3 text-xs text-muted-foreground hidden md:table-cell">
+                      <td className="text-xs text-muted-foreground hidden md:table-cell">
                         {formatDate(user.last_login)}
                       </td>
-                      <td className="px-4 py-3 text-xs text-muted-foreground hidden lg:table-cell">
+                      <td className="text-xs text-muted-foreground hidden lg:table-cell">
                         {formatDate(user.created_at)}
                       </td>
-                      <td className="px-4 py-3">
+                      <td>
                         <div className="flex items-center justify-end gap-1">
                           <Button
                             size="sm"
@@ -534,6 +543,7 @@ export default function AdminUsers() {
                               })
                             }
                             title={user.is_active ? "Deactivate user" : "Activate user"}
+                            aria-label={user.is_active ? `Deactivate ${user.email}` : `Activate ${user.email}`}
                           >
                             {user.is_active ? (
                               <XCircle className="w-3.5 h-3.5 text-muted-foreground" />
@@ -547,6 +557,7 @@ export default function AdminUsers() {
                             className="h-7 px-2 text-xs"
                             onClick={() => setResetTarget(user)}
                             title="Reset password"
+                            aria-label={`Reset password for ${user.email}`}
                           >
                             <RotateCcw className="w-3.5 h-3.5 text-muted-foreground" />
                           </Button>

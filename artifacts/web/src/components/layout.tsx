@@ -128,6 +128,15 @@ export function Layout({ children }: { children: ReactNode }) {
   }, [location]);
 
   const pageTitle = getPageTitle(location, t);
+
+  // Keep the browser tab title in sync with the current section so users
+  // with several tabs open (or browsing history) can tell pages apart.
+  // Routes not covered by the sidebar nav (detail pages, admin sub-pages,
+  // etc.) fall back to the static app title set in index.html.
+  useEffect(() => {
+    document.title = pageTitle ? `${pageTitle} · Amad` : "Amad — Construction Intelligence";
+  }, [pageTitle]);
+
   const roleLabel = getRoleLabel(user?.role, i18n.language);
   const initials = (user?.full_name ?? user?.email ?? "U")
     .split(" ")
@@ -265,7 +274,7 @@ export function Layout({ children }: { children: ReactNode }) {
             {/* Theme toggle */}
             <button
               onClick={toggleTheme}
-              className="flex-1 flex items-center justify-center gap-1.5 px-3 py-2 rounded-lg text-xs font-medium text-sidebar-foreground/60 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground transition-colors"
+              className="flex-1 flex items-center justify-center gap-1.5 px-3 py-2 rounded-lg text-xs font-medium text-sidebar-foreground/60 hover:bg-sidebar-accent/50 hover:text-sidebar-accent-foreground transition-colors"
               data-testid="button-theme-toggle"
               aria-label={theme === "dark" ? t("Light Mode") : t("Dark Mode")}
               title={theme === "dark" ? t("Light Mode") : t("Dark Mode")}
@@ -281,7 +290,7 @@ export function Layout({ children }: { children: ReactNode }) {
             {/* Language toggle */}
             <button
               onClick={toggleLanguage}
-              className="flex items-center justify-center gap-1.5 px-3 py-2 rounded-lg text-xs font-medium text-sidebar-foreground/60 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground transition-colors"
+              className="flex items-center justify-center gap-1.5 px-3 py-2 rounded-lg text-xs font-medium text-sidebar-foreground/60 hover:bg-sidebar-accent/50 hover:text-sidebar-accent-foreground transition-colors"
               data-testid="button-language-toggle"
               aria-label="Switch language"
             >
@@ -293,7 +302,7 @@ export function Layout({ children }: { children: ReactNode }) {
           {/* Sign out */}
           <button
             onClick={() => logout()}
-            className="w-full flex items-center gap-2 px-3 py-2 rounded-lg text-xs font-medium text-sidebar-foreground/50 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground transition-colors"
+            className="w-full flex items-center gap-2 px-3 py-2 rounded-lg text-xs font-medium text-sidebar-foreground/50 hover:bg-sidebar-accent/50 hover:text-sidebar-accent-foreground transition-colors"
             data-testid="button-logout"
           >
             <LogOut className="w-4 h-4" />

@@ -1,4 +1,4 @@
-import { useEffect, ComponentType } from "react";
+import { useEffect, ComponentType, lazy, Suspense } from "react";
 import { Switch, Route, Router as WouterRouter, useLocation } from "wouter";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { Toaster } from "@/components/ui/toaster";
@@ -11,33 +11,48 @@ import { setAuthTokenGetter } from "@workspace/api-client-react";
 import { getToken } from "./lib/auth";
 
 import Login from "./pages/login";
-import Dashboard from "./pages/dashboard";
-import Operations from "./pages/operations";
-import Documents from "./pages/documents";
-import Projects from "./pages/projects";
-import ProjectDetail from "./pages/project-detail";
-import Procurement from "./pages/procurement";
-import Suppliers from "./pages/suppliers";
-import SiteReports from "./pages/site-reports";
-import SiteReportDetail from "./pages/site-report-detail";
-import Safety from "./pages/safety";
-import Meetings from "./pages/meetings";
-import MeetingDetail from "./pages/meeting-detail";
-import RFIs from "./pages/rfis";
-import ChangeOrders from "./pages/change-orders";
-import Claims from "./pages/claims";
-import AdminUsers from "./pages/admin-users";
-import AdminOrganization from "./pages/admin-organization";
-import Copilot from "./pages/copilot";
-import Alerts from "./pages/alerts";
-import Reports from "./pages/reports";
-import AICenter from "./pages/ai-center";
+
+// Route-level code splitting — each page (and everything it imports) only
+// ships to the browser once its route is actually visited, instead of every
+// page shipping in the initial bundle regardless of role or entry route.
+const Dashboard = lazy(() => import("./pages/dashboard"));
+const Operations = lazy(() => import("./pages/operations"));
+const Documents = lazy(() => import("./pages/documents/index"));
+const Projects = lazy(() => import("./pages/projects"));
+const ProjectDetail = lazy(() => import("./pages/project-detail"));
+const Procurement = lazy(() => import("./pages/procurement"));
+const Suppliers = lazy(() => import("./pages/suppliers"));
+const SiteReports = lazy(() => import("./pages/site-reports"));
+const SiteReportDetail = lazy(() => import("./pages/site-report-detail"));
+const Safety = lazy(() => import("./pages/safety"));
+const Meetings = lazy(() => import("./pages/meetings"));
+const MeetingDetail = lazy(() => import("./pages/meeting-detail"));
+const RFIs = lazy(() => import("./pages/rfis"));
+const ChangeOrders = lazy(() => import("./pages/change-orders"));
+const Claims = lazy(() => import("./pages/claims"));
+const AdminUsers = lazy(() => import("./pages/admin-users"));
+const AdminOrganization = lazy(() => import("./pages/admin-organization"));
+const Copilot = lazy(() => import("./pages/copilot"));
+const Alerts = lazy(() => import("./pages/alerts"));
+const Reports = lazy(() => import("./pages/reports"));
+const AICenter = lazy(() => import("./pages/ai-center"));
 
 import "./lib/i18n";
 
 const queryClient = new QueryClient();
 
 setAuthTokenGetter(() => getToken());
+
+function RouteFallback() {
+  return (
+    <div className="min-h-[50vh] flex items-center justify-center">
+      <div className="flex items-center gap-3">
+        <div className="w-5 h-5 rounded-full border-2 border-primary border-t-transparent animate-spin" />
+        <span className="text-sm text-muted-foreground">Loading…</span>
+      </div>
+    </div>
+  );
+}
 
 function ProtectedRoute({ component: Component }: { component: ComponentType<unknown> }) {
   const { user, isLoading } = useAuth();
@@ -64,7 +79,9 @@ function ProtectedRoute({ component: Component }: { component: ComponentType<unk
 
   return (
     <Layout>
-      <Component />
+      <Suspense fallback={<RouteFallback />}>
+        <Component />
+      </Suspense>
     </Layout>
   );
 }
@@ -96,7 +113,9 @@ function AdminRoute({ component: Component }: { component: ComponentType<unknown
 
   return (
     <Layout>
-      <Component />
+      <Suspense fallback={<RouteFallback />}>
+        <Component />
+      </Suspense>
     </Layout>
   );
 }

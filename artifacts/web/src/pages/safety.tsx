@@ -5,7 +5,10 @@ import {
   useListProjectNcrs,
 } from "@workspace/api-client-react";
 import { useTranslation } from "react-i18next";
-import { ShieldAlert, AlertOctagon } from "lucide-react";
+import { ShieldAlert, AlertOctagon, AlertTriangle, ClipboardCheck } from "lucide-react";
+import { BackToOperations } from "@/components/back-to-operations";
+import { EmptyState } from "@/components/ui/empty-state";
+import { TableSkeletonRows } from "@/components/ui/table-skeleton";
 
 type Tab = "events" | "ncrs";
 
@@ -59,6 +62,8 @@ export default function Safety() {
 
   return (
     <div className="space-y-6">
+      <BackToOperations />
+
       {/* Header */}
       <div className="page-header">
         <div>
@@ -107,7 +112,7 @@ export default function Safety() {
       )}
       {openNcrs > 0 && (
         <div className="rounded-xl border border-amber-200 bg-amber-50 dark:border-amber-900/30 dark:bg-amber-900/10 px-5 py-3 flex items-center gap-3">
-          <span className="text-amber-500 shrink-0">⚠</span>
+          <AlertTriangle className="w-4 h-4 text-amber-500 shrink-0" />
           <p className="text-sm font-semibold text-amber-700 dark:text-amber-400">
             {openNcrs} open NCR{openNcrs !== 1 ? "s" : ""} requiring resolution
           </p>
@@ -136,9 +141,8 @@ export default function Safety() {
       </div>
 
       {!selectedProjectId ? (
-        <div className="panel panel-body flex flex-col items-center justify-center h-48 text-muted-foreground gap-3">
-          <ShieldAlert className="w-10 h-10 opacity-30" />
-          <p className="text-sm">{t("Select a project to view data")}</p>
+        <div className="panel">
+          <EmptyState icon={ShieldAlert} title={t("Select a project to view data")} />
         </div>
       ) : tab === "events" ? (
         <div className="panel overflow-hidden">
@@ -154,11 +158,15 @@ export default function Safety() {
               </thead>
               <tbody>
                 {eventsLoading ? (
-                  <tr><td colSpan={4} className="text-center py-10 text-muted-foreground">{t("Loading...")}</td></tr>
+                  <TableSkeletonRows rows={5} cols={4} />
                 ) : eventsError ? (
                   <tr><td colSpan={4} className="text-center py-10"><div className="flex flex-col items-center gap-1 text-muted-foreground"><AlertOctagon className="w-6 h-6 text-destructive opacity-60" /><span className="text-sm">Failed to load safety events</span></div></td></tr>
                 ) : !events?.length ? (
-                  <tr><td colSpan={4} className="text-center py-10 text-muted-foreground">{t("No data")}</td></tr>
+                  <tr>
+                    <td colSpan={4}>
+                      <EmptyState icon={ShieldAlert} title="No safety events logged" description="Safety events for this project will appear here." />
+                    </td>
+                  </tr>
                 ) : (
                   events.map((e) => (
                     <tr key={e.id}>
@@ -190,11 +198,15 @@ export default function Safety() {
               </thead>
               <tbody>
                 {ncrsLoading ? (
-                  <tr><td colSpan={5} className="text-center py-10 text-muted-foreground">{t("Loading...")}</td></tr>
+                  <TableSkeletonRows rows={5} cols={5} />
                 ) : ncrsError ? (
                   <tr><td colSpan={5} className="text-center py-10"><div className="flex flex-col items-center gap-1 text-muted-foreground"><AlertOctagon className="w-6 h-6 text-destructive opacity-60" /><span className="text-sm">Failed to load NCRs</span></div></td></tr>
                 ) : !ncrs?.length ? (
-                  <tr><td colSpan={5} className="text-center py-10 text-muted-foreground">{t("No data")}</td></tr>
+                  <tr>
+                    <td colSpan={5}>
+                      <EmptyState icon={ClipboardCheck} title="No NCRs logged" description="Non-conformance reports for this project will appear here." />
+                    </td>
+                  </tr>
                 ) : (
                   ncrs.map((n) => (
                     <tr key={n.id}>

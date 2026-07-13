@@ -1,15 +1,14 @@
 import { useState, useRef, useEffect, useCallback } from "react";
 import { useTranslation } from "react-i18next";
 import {
-  Bot, Send, Plus, Clock, ChevronRight, Loader2,
+  Bot, Send, Plus, Loader2,
   MessageSquare, AlertTriangle, BookOpen, Sparkles,
-  ShieldAlert, ShoppingCart, ClipboardCheck, CalendarDays,
-  Briefcase, Users, FileText, RotateCcw, ChevronDown, ChevronUp,
-  Layers, HelpCircle, Lightbulb, BarChart2,
+  ShieldAlert, ShoppingCart, ClipboardCheck,
+  Briefcase, Users, RotateCcw, ChevronDown, ChevronUp,
+  Layers, HelpCircle, Lightbulb,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
-import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
 import { useAuth } from "@/context/AuthContext";
 import { RichAnswer } from "@/components/CopilotAnswer";
@@ -749,9 +748,9 @@ export default function CopilotPage({ compact = false }: { compact?: boolean } =
           )}
 
           {error && (
-            <div className="flex items-center gap-3 p-3 rounded-xl bg-red-500/10 border border-red-500/30">
-              <AlertTriangle className="w-4 h-4 text-red-500 shrink-0" />
-              <p className="text-sm text-red-500">{error}</p>
+            <div className="flex items-center gap-3 p-3 rounded-xl bg-destructive/10 border border-destructive/30">
+              <AlertTriangle className="w-4 h-4 text-destructive shrink-0" />
+              <p className="text-sm text-destructive">{error}</p>
               <button
                 onClick={() => {
                   setError(null);
@@ -759,8 +758,9 @@ export default function CopilotPage({ compact = false }: { compact?: boolean } =
                   if (last) sendMessage(last.content);
                 }}
                 className="ms-auto shrink-0"
+                aria-label="Retry last message"
               >
-                <RotateCcw className="w-4 h-4 text-red-400 hover:text-red-500 transition-colors" />
+                <RotateCcw className="w-4 h-4 text-destructive/70 hover:text-destructive transition-colors" />
               </button>
             </div>
           )}
@@ -790,6 +790,7 @@ export default function CopilotPage({ compact = false }: { compact?: boolean } =
               onClick={() => sendMessage(question)}
               disabled={!question.trim() || isLoading}
               className="shrink-0 rounded-xl w-10 h-10"
+              aria-label="Send message"
             >
               {isLoading ? (
                 <Loader2 className="w-4 h-4 animate-spin" />

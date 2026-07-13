@@ -3,7 +3,9 @@ import { useListSuppliers } from "@workspace/api-client-react";
 import { useTranslation } from "react-i18next";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Input } from "@/components/ui/input";
-import { Search, AlertOctagon } from "lucide-react";
+import { Search, AlertOctagon, Truck } from "lucide-react";
+import { PageContextHeader } from "@/components/page-context-header";
+import { EmptyState } from "@/components/ui/empty-state";
 
 function statusBadge(status: string) {
   const m: Record<string, string> = {
@@ -68,14 +70,17 @@ export default function Suppliers() {
   return (
     <div className="space-y-6">
       {/* Header */}
-      <div className="page-header">
-        <div>
-          <h1 className="page-title">{t("Suppliers")}</h1>
-          <p className="page-subtitle">
-            {suppliers?.length ?? 0} registered · {activeCount} active
-          </p>
-        </div>
-      </div>
+      <PageContextHeader
+        title={t("Suppliers")}
+        subtitle={`${suppliers?.length ?? 0} registered · ${activeCount} active`}
+        backLabel="Back to Operations"
+        backHref="/operations"
+        breadcrumbs={[
+          { label: "Dashboard", href: "/" },
+          { label: "Operations", href: "/operations" },
+          { label: "Suppliers" },
+        ]}
+      />
 
       {/* Filters */}
       <div className="flex flex-wrap gap-3">
@@ -129,8 +134,16 @@ export default function Suppliers() {
             <tbody>
               {!filtered?.length ? (
                 <tr>
-                  <td colSpan={5} className="text-center py-10 text-muted-foreground">
-                    {t("No data")}
+                  <td colSpan={5}>
+                    <EmptyState
+                      icon={Truck}
+                      title={search || categoryFilter !== "all" || statusFilter !== "all" ? "No suppliers match your filters" : "No suppliers yet"}
+                      description={
+                        search || categoryFilter !== "all" || statusFilter !== "all"
+                          ? "Try adjusting your search or filters."
+                          : "Registered suppliers will appear here."
+                      }
+                    />
                   </td>
                 </tr>
               ) : (

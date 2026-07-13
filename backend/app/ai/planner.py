@@ -123,6 +123,8 @@ def execute_multi_domain_plan(
     db: Session,
     scope: AIAuthScope,
     project_id: Optional[int],
+    meeting_id: Optional[int] = None,
+    ncr_id: Optional[int] = None,
 ) -> PlannerResult:
     """Execute retrieval for multiple domains and combine evidence.
 
@@ -133,29 +135,77 @@ def execute_multi_domain_plan(
     from app.ai.retrieval.procurement import (
         get_procurement_summary, get_late_purchase_orders, get_supplier_information,
     )
-    from app.ai.retrieval.safety import get_safety_summary, get_open_ncrs
+    from app.ai.retrieval.safety import get_safety_summary, get_open_ncrs, get_ncr_detail
     from app.ai.retrieval.site_reports import get_recent_site_reports
-    from app.ai.retrieval.meetings import get_recent_meetings, get_project_decisions
+    from app.ai.retrieval.meetings import get_recent_meetings, get_project_decisions, get_meeting_detail
+
+    # A specific meeting code (e.g. "MTG-1") was named in the question — scope
+    # meetings/decisions retrieval to that one meeting instead of the
+    # portfolio-wide "most recent N" list, which would otherwise return
+    # unrelated meetings/decisions with no connection to the one actually
+    # asked about (same fix as pipeline.py:_dispatch_single_retrieval).
+    # When resolved, also scope any "project_overview" domain in the same
+    # plan to the SAME project — otherwise an unrelated top-N project sample
+    # sits in the prompt next to the named entity's evidence and gives the
+    # LLM room to associate the wrong project name with it.
+    project_overview_id = project_id
+    if meeting_id is not None:
+        meeting_result = None
+        try:
+            meeting_result = get_meeting_detail(db=db, scope=scope, meeting_id=meeting_id)
+        except Exception:
+            pass
+        if meeting_result is not None and project_overview_id is None:
+            project_overview_id = meeting_result.data.get("project_id")
+        meetings_fn = (lambda r=meeting_result: r) if meeting_result is not None else (
+            lambda: get_meeting_detail(db=db, scope=scope, meeting_id=meeting_id)
+        )
+    else:
+        meetings_fn = lambda: get_recent_meetings(db=db, scope=scope, project_id=project_id)
+
+    # Same idea for a specific NCR code (e.g. "NCR-2").
+    if ncr_id is not None:
+        ncr_result = None
+        try:
+            ncr_result = get_ncr_detail(db=db, scope=scope, ncr_id=ncr_id)
+        except Exception:
+            pass
+        if ncr_result is not None and project_overview_id is None:
+            project_overview_id = ncr_result.data.get("project_id")
+        ncr_fn = (lambda r=ncr_result: r) if ncr_result is not None else (
+            lambda: get_ncr_detail(db=db, scope=scope, ncr_id=ncr_id)
+        )
+    else:
+        ncr_fn = lambda: get_open_ncrs(db=db, scope=scope, project_id=project_id)
 
     domain_retrieval_map: dict[str, Any] = {
-        "project_overview": lambda: get_project_overview(db=db, scope=scope, project_id=project_id),
+        "project_overview": lambda: get_project_overview(db=db, scope=scope, project_id=project_overview_id),
         "health": lambda: get_health_overview(db=db, scope=scope, project_id=project_id),
         "procurement": lambda: get_procurement_summary(db=db, scope=scope, project_id=project_id),
         "suppliers": lambda: get_supplier_information(db=db, scope=scope),
         "safety": lambda: get_safety_summary(db=db, scope=scope, project_id=project_id),
-        "ncr": lambda: get_open_ncrs(db=db, scope=scope, project_id=project_id),
+        "ncr": ncr_fn,
         "site_reports": lambda: get_recent_site_reports(db=db, scope=scope, project_id=project_id),
-        "meetings": lambda: get_recent_meetings(db=db, scope=scope, project_id=project_id),
-        "decisions": lambda: get_project_decisions(db=db, scope=scope, project_id=project_id),
+        "meetings": meetings_fn,
+        "decisions": meetings_fn if meeting_id is not None else (lambda: get_project_decisions(db=db, scope=scope, project_id=project_id)),
         "risks": lambda: get_project_risks(db=db, scope=scope, project_id=project_id),
     }
 
     all_evidence: list[Evidence] = []
     tools_used: list[str] = []
     domains_executed: list[str] = []
+    # "meetings" and "decisions" both resolve to the same get_meeting_detail()
+    # call when a specific meeting_id is scoped — avoid fetching (and
+    # duplicating evidence for) the same meeting twice if both domains are
+    # requested together (e.g. "what decisions were made in MTG-1").
+    meeting_detail_fetched = False
 
     for domain in domains:
         if domain not in domain_retrieval_map:
+            continue
+        is_meeting_detail_domain = meeting_id is not None and domain in ("meetings", "decisions")
+        if is_meeting_detail_domain and meeting_detail_fetched:
+            domains_executed.append(domain)
             continue
         try:
             result: RetrievalResult = domain_retrieval_map[domain]()
@@ -164,6 +214,8 @@ def execute_multi_domain_plan(
             all_evidence.extend(bounded)
             tools_used.append(domain)
             domains_executed.append(domain)
+            if is_meeting_detail_domain:
+                meeting_detail_fetched = True
         except Exception:
             # Authorization errors or DB errors for one domain should not
             # prevent results from others

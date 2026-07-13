@@ -1,6 +1,5 @@
 import { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { useTranslation } from "react-i18next";
 import { Building2, Plus, Edit2, CheckCircle2, XCircle, Save, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -72,6 +71,7 @@ function OrgCard({
       toast({
         title: updated.is_active ? "Organization activated" : "Organization deactivated",
         description: updated.name,
+        variant: "success",
       });
     },
     onError: (err: Error) =>
@@ -170,7 +170,7 @@ function EditOrgDialog({
       }),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["admin-orgs"] });
-      toast({ title: "Organization updated", description: form.name });
+      toast({ title: "Organization updated", description: form.name, variant: "success" });
       onClose();
     },
     onError: (err: Error) => setError(err.message),
@@ -261,7 +261,7 @@ function CreateOrgDialog({
       }),
     onSuccess: (org) => {
       qc.invalidateQueries({ queryKey: ["admin-orgs"] });
-      toast({ title: "Organization created", description: org.name });
+      toast({ title: "Organization created", description: org.name, variant: "success" });
       setForm({ name: "", slug: "" });
       setError("");
       onClose();
@@ -333,7 +333,6 @@ function CreateOrgDialog({
 }
 
 export default function AdminOrganization() {
-  const { t } = useTranslation();
   const [editTarget, setEditTarget] = useState<Organization | null>(null);
   const [createOpen, setCreateOpen] = useState(false);
 
