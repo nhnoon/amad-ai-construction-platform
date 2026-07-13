@@ -92,5 +92,13 @@ class Settings(BaseSettings):
 
     ALLOWED_ORIGINS: list[str] = ["*"]
 
+    # ── Document OCR Foundation (app/ai/document_ocr.py) — local disk only,
+    # not object storage. Files are stored under a UUID-derived name, never
+    # the user-supplied filename, to prevent path traversal.
+    OCR_UPLOAD_DIR: str = str(BACKEND_DIR / "data" / "ocr_uploads")
+    OCR_MAX_FILE_SIZE_BYTES: int = 20 * 1024 * 1024  # 20 MB
+    OCR_MAX_EXTRACTED_TEXT_CHARS: int = 500_000
+    OCR_TEXT_PREVIEW_CHARS: int = 2000
+
 
 settings = Settings()

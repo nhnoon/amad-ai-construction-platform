@@ -13,3 +13,19 @@ httpx==0.28.1
 pytest==8.3.4
 pytest-asyncio==0.25.2
 anyio==4.8.0
+
+# ── Document OCR Foundation (backend/app/ai/document_ocr.py) ──────────────
+# pymupdf: PDF selectable-text extraction, page count, page rasterization.
+# NOTE: pymupdf is dual-licensed AGPL-3.0-or-later / commercial (Artifex).
+# Confirm license terms are acceptable for this deployment before shipping.
+pymupdf==1.28.0
+# pytesseract: thin wrapper around the Tesseract OCR binary. Requires a
+# SEPARATE system install of Tesseract OCR (not a pip package) — NOT
+# installed on this dev machine as of this writing. Without it, OCR of
+# images/scanned pages fails safely (status="failed") while selectable-text
+# PDF extraction continues to work normally. See final report for install
+# instructions.
+pytesseract==0.3.13
+pillow==11.3.0
+# langdetect: pure-Python language detection, no external binary.
+langdetect==1.0.9
