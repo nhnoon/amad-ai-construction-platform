@@ -25,6 +25,7 @@ import {
   Folder,
   BarChart3,
   Settings,
+  Sparkles,
 } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { useQuery } from "@tanstack/react-query";
@@ -35,6 +36,7 @@ const NAV_ITEMS = [
   { key: "Dashboard", href: "/", icon: LayoutDashboard, label: "Dashboard" },
   { key: "Operations", href: "/operations", icon: Briefcase, label: "Operations" },
   { key: "Documents", href: "/documents", icon: Folder, label: "Documents" },
+  { key: "AI Center", href: "/ai-center", icon: Sparkles, label: "AI Center" },
   { key: "Reports", href: "/reports", icon: BarChart3, label: "Reports" },
 ];
 

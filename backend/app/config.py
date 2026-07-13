@@ -100,5 +100,10 @@ class Settings(BaseSettings):
     OCR_MAX_EXTRACTED_TEXT_CHARS: int = 500_000
     OCR_TEXT_PREVIEW_CHARS: int = 2000
 
+    # ── Contract Intelligence Extractor (app/ai/contract_extraction.py) —
+    # reads OCR text already stored by Phase 1, never re-runs OCR.
+    CONTRACT_EXTRACTION_MAX_INPUT_CHARS: int = 12_000
+    CONTRACT_EXTRACTION_MAX_RAW_RESPONSE_CHARS: int = 20_000
+
 
 settings = Settings()

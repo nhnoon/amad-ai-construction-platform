@@ -30,10 +30,10 @@ from PIL import Image
 from fastapi import HTTPException, status as http_status
 from sqlalchemy.orm import Session
 
+from app.ai.document_access import get_authorized_document
 from app.ai.scope import AIAuthScope
 from app.config import settings
 from app.models.document_ocr import DocumentOCRResult
-from app.models.documents import Document
 
 logger = logging.getLogger(__name__)
 
@@ -279,10 +279,7 @@ def process_document_ocr(
     """Authorize, validate, store the upload, extract text, and persist one
     auditable DocumentOCRResult row (upserted per document_id — reprocessing
     replaces the previous result rather than accumulating duplicates)."""
-    document = db.query(Document).filter(Document.id == document_id).first()
-    if document is None:
-        raise HTTPException(status_code=http_status.HTTP_404_NOT_FOUND, detail="Document not found")
-    scope.enforce_project_access(document.project_id)
+    document = get_authorized_document(db, scope, document_id)
 
     try:
         mime_type = _validate_upload(file_bytes)
@@ -300,7 +297,7 @@ def process_document_ocr(
         db.add(row)
 
     row.status = "processing"
-    row.organization_id = scope.organization_id
+    row.organization_id = document.organization_id
     row.project_id = document.project_id
     row.requested_by = scope.user_id
     row.source_filename = _sanitize_display_filename(filename)
@@ -351,10 +348,7 @@ def process_document_ocr(
 def get_document_ocr_result(
     db: Session, scope: AIAuthScope, document_id: int
 ) -> DocumentOCRResult:
-    document = db.query(Document).filter(Document.id == document_id).first()
-    if document is None:
-        raise HTTPException(status_code=http_status.HTTP_404_NOT_FOUND, detail="Document not found")
-    scope.enforce_project_access(document.project_id)
+    get_authorized_document(db, scope, document_id)
 
     row = (
         db.query(DocumentOCRResult)

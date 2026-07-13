@@ -47,6 +47,18 @@ class AIAuthScope:
                 detail="Access denied to this project",
             )
 
+    def enforce_organization_access(self, organization_id: Optional[int]) -> None:
+        """Raise 403 unless ``organization_id`` matches the caller's own
+        organization. Used for organization-scoped resources that have no
+        project (e.g. General Library documents) — deliberately does NOT
+        grant global-read roles a cross-organization bypass; project-level
+        global read and organization membership are separate axes."""
+        if organization_id is None or self.organization_id is None or organization_id != self.organization_id:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Access denied to this document",
+            )
+
     def filter_project_ids(self, project_ids: list[int]) -> list[int]:
         """Return only those project IDs the scope is allowed to see."""
         if self.has_global_read:

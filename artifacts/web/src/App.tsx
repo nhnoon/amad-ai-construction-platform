@@ -31,6 +31,7 @@ import AdminOrganization from "./pages/admin-organization";
 import Copilot from "./pages/copilot";
 import Alerts from "./pages/alerts";
 import Reports from "./pages/reports";
+import AICenter from "./pages/ai-center";
 
 import "./lib/i18n";
 
@@ -123,6 +124,7 @@ function Router() {
       <Route path="/admin/organization" component={() => <AdminRoute component={AdminOrganization} />} />
       <Route path="/admin" component={() => <AdminRoute component={AdminUsers} />} />
       <Route path="/copilot" component={() => <ProtectedRoute component={Copilot} />} />
+      <Route path="/ai-center" component={() => <ProtectedRoute component={AICenter} />} />
       <Route path="/alerts" component={() => <ProtectedRoute component={Alerts} />} />
       <Route path="/reports" component={() => <ProtectedRoute component={Reports} />} />
       <Route component={NotFound} />

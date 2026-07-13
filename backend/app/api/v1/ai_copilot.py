@@ -17,6 +17,8 @@ from typing import Optional
 
 from fastapi import APIRouter, HTTPException, Query, status
 
+from app.ai.memory import get_memory_notes, get_user_profile_memory
+from app.ai.memory_reader import group_memory_notes
 from app.ai.pipeline import CopilotPipeline
 from app.ai.ratelimit import get_ai_rate_limiter
 from app.ai.scope import build_ai_scope
@@ -27,6 +29,7 @@ from app.schemas.ai_copilot import (
     CopilotQueryRequest,
     CopilotQueryResponse,
     MeetingAgentRequest,
+    MemoryOut,
     MessageOut,
     ProcurementAgentRequest,
 )
@@ -35,6 +38,20 @@ logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/ai", tags=["ai"])
 _pipeline = CopilotPipeline()
+
+
+@router.get("/memory", response_model=MemoryOut)
+def read_memory(current_user: CurrentUser, db: DbSession) -> MemoryOut:
+    """Read-only view of the caller's own bounded Copilot memory (Phase 4,
+    AI Center Memory tab). Reuses app/ai/memory.py exactly as-is — no new
+    business logic, just an HTTP read path that never existed before."""
+    scope = build_ai_scope(current_user, db)
+    memory_notes = get_memory_notes(db, scope)
+    return MemoryOut(
+        memory_notes=memory_notes,
+        groups=group_memory_notes(memory_notes),
+        profile_memory=get_user_profile_memory(db, scope),
+    )
 
 
 @router.post("/copilot/query", response_model=CopilotQueryResponse, status_code=200)

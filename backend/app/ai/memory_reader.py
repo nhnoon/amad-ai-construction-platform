@@ -233,3 +233,61 @@ def build_user_preferences_block(
         text = text[: max_chars - 1].rstrip() + "…"
     header = _PROFILE_HEADER_AR if is_arabic else _PROFILE_HEADER_EN
     return f"{header}\n{text}"
+
+
+# ---------------------------------------------------------------------------
+# Memory Viewer grouping (Phase 4 AI Center) — deterministic marker-based
+# grouping for display only. No LLM call, no invented dates/summaries/
+# importance: a field is null unless the line actually contains it.
+# ---------------------------------------------------------------------------
+
+_MEMORY_GROUP_KEYS = ("meeting", "project", "decision", "supplier", "other")
+
+_GROUP_MARKERS: tuple[tuple[re.Pattern, str], ...] = (
+    (re.compile(r"^\[MEETING_MEMORY:([^\]]+)\]"), "meeting"),
+    (re.compile(r"^\[PROJECT_MEMORY:([^\]]+)\]"), "project"),
+    (re.compile(r"^\[DECISION_MEMORY:([^\]]+)\]"), "decision"),
+    (re.compile(r"^\[SUPPLIER_MEMORY:([^\]]+)\]"), "supplier"),
+)
+
+_GROUP_DATE_RE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
+
+
+def _parse_marked_line(line: str, marker_text: str) -> dict:
+    """Parse the pipe-delimited shape the Meeting Memory writer produces
+    (app/ai/meeting_memory.py): marker | code | date | project_code | title
+    | rest... Any field not actually present stays null — never invented."""
+    parts = [p.strip() for p in line.split("|")]
+    date = parts[2] if len(parts) > 2 and _GROUP_DATE_RE.match(parts[2]) else None
+    if len(parts) > 4 and parts[4]:
+        title = parts[4]
+    elif len(parts) > 1 and parts[1]:
+        title = parts[1]
+    else:
+        title = line.replace(marker_text, "").strip() or None
+    summary_parts = parts[5:] if len(parts) > 5 else parts[1:]
+    summary = " | ".join(p for p in summary_parts if p) or None
+    return {"title": title, "date": date, "summary": summary, "importance": None}
+
+
+def group_memory_notes(memory_notes: str) -> dict[str, list[dict]]:
+    """Deterministically group the bounded memory_notes blob into known
+    categories by stable marker convention ([MEETING_MEMORY:...] etc, see
+    app/ai/meeting_memory.py). Unknown markers and plain-text lines both go
+    to "other" — grouping is display-only and never invents a category, a
+    date, a summary, or an importance value that isn't actually present."""
+    groups: dict[str, list[dict]] = {key: [] for key in _MEMORY_GROUP_KEYS}
+    for raw_line in (memory_notes or "").splitlines():
+        line = raw_line.strip()
+        if not line:
+            continue
+        for pattern, category in _GROUP_MARKERS:
+            m = pattern.match(line)
+            if m:
+                groups[category].append(_parse_marked_line(line, m.group(0)))
+                break
+        else:
+            groups["other"].append(
+                {"title": None, "date": None, "summary": line, "importance": None}
+            )
+    return groups

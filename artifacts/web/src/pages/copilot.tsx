@@ -456,7 +456,9 @@ function EmptyState({ onPrompt, lang }: { onPrompt: (q: string) => void; lang: s
 }
 
 // ── Main page ─────────────────────────────────────────────────────────────
-export default function CopilotPage() {
+// `compact` is opt-in only (AI Center's Copilot tab passes it) — default
+// behavior at the standalone /copilot route is unchanged.
+export default function CopilotPage({ compact = false }: { compact?: boolean } = {}) {
   const { i18n } = useTranslation();
   const lang = i18n.language ?? "en";
   const isRTL = lang === "ar";
@@ -639,7 +641,11 @@ export default function CopilotPage() {
 
   return (
     <div
-      className={cn("flex h-[calc(100vh-64px)] overflow-hidden", isRTL && "direction-rtl")}
+      className={cn(
+        "flex overflow-hidden",
+        compact ? "h-[75vh] min-h-[480px] rounded-lg border border-border" : "h-[calc(100vh-64px)]",
+        isRTL && "direction-rtl"
+      )}
       dir={isRTL ? "rtl" : "ltr"}
     >
       {/* ── Sidebar ──────────────────────────────────────────────────── */}

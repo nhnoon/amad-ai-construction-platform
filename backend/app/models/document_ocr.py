@@ -30,10 +30,12 @@ class DocumentOCRResult(Base):
         ForeignKey("organizations.id", ondelete="SET NULL"),
         nullable=True,
     )
+    # NULL for a General Library (organization-scoped) document — see
+    # Document.project_id in app/models/documents.py.
     project_id = Column(
         Integer,
         ForeignKey("projects.id", ondelete="CASCADE"),
-        nullable=False,
+        nullable=True,
     )
     requested_by = Column(
         Integer,

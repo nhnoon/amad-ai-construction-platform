@@ -12,6 +12,37 @@ class CopilotQueryRequest(BaseModel):
     project_id: Optional[int] = None
 
 
+class MemoryGroupItem(BaseModel):
+    """One memory line, deterministically parsed — see
+    app/ai/memory_reader.py::group_memory_notes(). Fields the line doesn't
+    actually contain are null; never invented."""
+
+    title: Optional[str] = None
+    date: Optional[str] = None
+    summary: Optional[str] = None
+    importance: Optional[str] = None
+
+
+class MemoryGroups(BaseModel):
+    meeting: list[MemoryGroupItem] = Field(default_factory=list)
+    project: list[MemoryGroupItem] = Field(default_factory=list)
+    decision: list[MemoryGroupItem] = Field(default_factory=list)
+    supplier: list[MemoryGroupItem] = Field(default_factory=list)
+    other: list[MemoryGroupItem] = Field(default_factory=list)
+
+
+class MemoryOut(BaseModel):
+    """Read-only view of the authenticated user's bounded Copilot memory
+    (app/ai/memory.py). No new business logic — a thin HTTP read wrapper
+    around get_memory_notes()/get_user_profile_memory(), plus deterministic
+    marker-based grouping (app/ai/memory_reader.py) for the AI Center's
+    Memory Viewer."""
+
+    memory_notes: str
+    profile_memory: str
+    groups: MemoryGroups
+
+
 class ProcurementAgentRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
