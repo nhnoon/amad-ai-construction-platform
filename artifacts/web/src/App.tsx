@@ -7,6 +7,7 @@ import NotFound from "@/pages/not-found";
 import { AuthProvider, useAuth } from "./context/AuthContext";
 import { ThemeProvider } from "./context/ThemeContext";
 import { Layout } from "./components/layout";
+import { ErrorBoundary } from "./components/ErrorBoundary";
 import { setAuthTokenGetter } from "@workspace/api-client-react";
 import { getToken } from "./lib/auth";
 
@@ -56,7 +57,7 @@ function RouteFallback() {
 
 function ProtectedRoute({ component: Component }: { component: ComponentType<unknown> }) {
   const { user, isLoading } = useAuth();
-  const [, setLocation] = useLocation();
+  const [location, setLocation] = useLocation();
 
   useEffect(() => {
     if (!isLoading && !user) {
@@ -79,16 +80,21 @@ function ProtectedRoute({ component: Component }: { component: ComponentType<unk
 
   return (
     <Layout>
-      <Suspense fallback={<RouteFallback />}>
-        <Component />
-      </Suspense>
+      {/* Keyed by route so a crash on one page doesn't stick around after
+          navigating away — sidebar/nav (outside this boundary) stay usable
+          either way. */}
+      <ErrorBoundary key={location} fullPage>
+        <Suspense fallback={<RouteFallback />}>
+          <Component />
+        </Suspense>
+      </ErrorBoundary>
     </Layout>
   );
 }
 
 function AdminRoute({ component: Component }: { component: ComponentType<unknown> }) {
   const { user, isLoading } = useAuth();
-  const [, setLocation] = useLocation();
+  const [location, setLocation] = useLocation();
 
   useEffect(() => {
     if (!isLoading && !user) {
@@ -113,9 +119,11 @@ function AdminRoute({ component: Component }: { component: ComponentType<unknown
 
   return (
     <Layout>
-      <Suspense fallback={<RouteFallback />}>
-        <Component />
-      </Suspense>
+      <ErrorBoundary key={location} fullPage>
+        <Suspense fallback={<RouteFallback />}>
+          <Component />
+        </Suspense>
+      </ErrorBoundary>
     </Layout>
   );
 }
@@ -153,18 +161,20 @@ function Router() {
 
 function App() {
   return (
-    <ThemeProvider>
-      <QueryClientProvider client={queryClient}>
-        <TooltipProvider>
-          <AuthProvider>
-            <WouterRouter base={import.meta.env.BASE_URL.replace(/\/$/, "")}>
-              <Router />
-            </WouterRouter>
-          </AuthProvider>
-          <Toaster />
-        </TooltipProvider>
-      </QueryClientProvider>
-    </ThemeProvider>
+    <ErrorBoundary fullPage>
+      <ThemeProvider>
+        <QueryClientProvider client={queryClient}>
+          <TooltipProvider>
+            <AuthProvider>
+              <WouterRouter base={import.meta.env.BASE_URL.replace(/\/$/, "")}>
+                <Router />
+              </WouterRouter>
+            </AuthProvider>
+            <Toaster />
+          </TooltipProvider>
+        </QueryClientProvider>
+      </ThemeProvider>
+    </ErrorBoundary>
   );
 }
 

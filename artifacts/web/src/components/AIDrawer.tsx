@@ -1031,14 +1031,26 @@ function FallbackLabel() {
 }
 
 
-function AiErrorBubble({ message, onRetry }: { message: string; onRetry: () => void }) {
+function AiErrorBubble({
+  message,
+  onRetry,
+  disabled,
+}: {
+  message: string;
+  onRetry: () => void;
+  disabled?: boolean;
+}) {
   const { t } = useTranslation();
   return (
     <div className="max-w-[92%] rounded-2xl rounded-bl-sm border border-red-500/20 bg-red-500/[0.08] px-4 py-3 space-y-2">
       <p className="text-sm text-red-200/90 leading-relaxed">{t(message)}</p>
       <button
         onClick={onRetry}
-        className="inline-flex items-center gap-1.5 rounded-lg border border-white/15 px-2.5 py-1 text-xs font-medium text-white/80 hover:bg-white/10 transition-colors"
+        disabled={disabled}
+        className={cn(
+          "inline-flex items-center gap-1.5 rounded-lg border border-white/15 px-2.5 py-1 text-xs font-medium text-white/80 transition-colors",
+          disabled ? "opacity-40 cursor-not-allowed" : "hover:bg-white/10"
+        )}
       >
         <RefreshCw className="h-3 w-3" />
         {t("Retry")}
@@ -1782,6 +1794,14 @@ export function AIDrawer({ isOpen, onClose }: AIDrawerProps) {
   const [input, setInput] = useState("");
   const scrollRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+  // Synchronous, immediate re-entry guard for handleUserMessage/handleRetry —
+  // same pattern as pages/copilot.tsx's sendingRef. `isSending` (state) only
+  // takes effect once React commits and re-renders, so it can't stop two
+  // triggers that fire in the same tick (Enter key + a Send click that
+  // hasn't been disabled yet because `input` hasn't cleared in the DOM); the
+  // ref is readable/writable the instant either handler starts.
+  const sendingRef = useRef(false);
+  const [isSending, setIsSending] = useState(false);
   // Ref, not state — read/written across async calls only, never rendered.
   const conversationIdRef = useRef<number | null>(null);
   // Which backend path typed messages go through. "procurement" pins EVERY
@@ -2078,15 +2098,23 @@ export function AIDrawer({ isOpen, onClose }: AIDrawerProps) {
   };
 
   const handleRetry = (messageId: string, question: string, agentKind?: "procurement" | "meeting") => {
+    if (sendingRef.current) return;
+    sendingRef.current = true;
+    setIsSending(true);
+    const release = () => {
+      sendingRef.current = false;
+      setIsSending(false);
+    };
+
     setMessages((prev) => prev.map((m) => (m.id === messageId ? { ...m, aiError: undefined, aiResponse: undefined } : m)));
     if (agentKind === "procurement") {
       // question is the fixed label on the initial click, or the user's own
       // typed text for later turns — only pass it through in the latter case.
-      void runProcurementAgent(messageId, question === t("Run Procurement Agent") ? undefined : question);
+      void runProcurementAgent(messageId, question === t("Run Procurement Agent") ? undefined : question).finally(release);
     } else if (agentKind === "meeting") {
-      void runMeetingAgent(messageId, question === t("Run Meeting Agent") ? undefined : question);
+      void runMeetingAgent(messageId, question === t("Run Meeting Agent") ? undefined : question).finally(release);
     } else {
-      void runCopilotQuery(question, messageId);
+      void runCopilotQuery(question, messageId).finally(release);
     }
   };
 
@@ -2100,8 +2128,19 @@ export function AIDrawer({ isOpen, onClose }: AIDrawerProps) {
   // fallback), so that view is used directly — instant, grounded in real
   // data, no backend round-trip needed for this one query shape.
   const handleUserMessage = (rawText: string) => {
+    if (sendingRef.current) return;
     const content = rawText.trim();
     if (!content) return;
+    sendingRef.current = true;
+    setIsSending(true);
+    // Releases the guard once the underlying request settles — chained onto
+    // the existing runXxx() promises below, without changing anything about
+    // what they do or how they build/send the request.
+    const release = () => {
+      sendingRef.current = false;
+      setIsSending(false);
+    };
+
     const now = Date.now();
     const assistantMsgId = `a-${now}`;
 
@@ -2122,11 +2161,10 @@ export function AIDrawer({ isOpen, onClose }: AIDrawerProps) {
       ]);
       setInput("");
       textareaRef.current?.focus();
-      if (agentKind === "procurement") {
-        void runProcurementAgent(assistantMsgId, content);
-      } else {
-        void runMeetingAgent(assistantMsgId, content);
-      }
+      const run = agentKind === "procurement"
+        ? runProcurementAgent(assistantMsgId, content)
+        : runMeetingAgent(assistantMsgId, content);
+      void run.finally(release);
       return;
     }
 
@@ -2138,6 +2176,7 @@ export function AIDrawer({ isOpen, onClose }: AIDrawerProps) {
       ]);
       setInput("");
       textareaRef.current?.focus();
+      release(); // synchronous path, no network request — nothing to wait on
       return;
     }
 
@@ -2148,7 +2187,7 @@ export function AIDrawer({ isOpen, onClose }: AIDrawerProps) {
     ]);
     setInput("");
     textareaRef.current?.focus();
-    void runCopilotQuery(content, assistantMsgId);
+    void runCopilotQuery(content, assistantMsgId).finally(release);
   };
 
   // Send the DISPLAYED (possibly Arabic) chip text as the actual message —
@@ -2327,7 +2366,7 @@ export function AIDrawer({ isOpen, onClose }: AIDrawerProps) {
                       <IconChip icon={Sparkles} />
                       <div className="flex flex-col items-start min-w-0">
                         {isPending && <AiThinkingProgress ar={isArabicText(m.aiQuestion) || isRTL} />}
-                        {m.aiError && <AiErrorBubble message={m.aiError} onRetry={() => handleRetry(m.id, m.aiQuestion ?? "", m.agentKind)} />}
+                        {m.aiError && <AiErrorBubble message={m.aiError} onRetry={() => handleRetry(m.id, m.aiQuestion ?? "", m.agentKind)} disabled={isSending} />}
                         {m.aiResponse && (
                           <AiAnswerCard response={m.aiResponse} question={m.aiQuestion} onFollowUp={handleUserMessage} />
                         )}
@@ -2470,11 +2509,11 @@ export function AIDrawer({ isOpen, onClose }: AIDrawerProps) {
             <button
               type="button"
               onClick={() => handleUserMessage(input)}
-              disabled={!input.trim()}
+              disabled={!input.trim() || isSending}
               aria-label={t("Send")}
               className={cn(
                 "shrink-0 flex h-8 w-8 items-center justify-center rounded-xl transition-all",
-                input.trim() ? "hover:opacity-90" : "opacity-30 cursor-not-allowed"
+                input.trim() && !isSending ? "hover:opacity-90" : "opacity-30 cursor-not-allowed"
               )}
               style={{ backgroundColor: "#eab308", color: "#1a1400" }}
             >

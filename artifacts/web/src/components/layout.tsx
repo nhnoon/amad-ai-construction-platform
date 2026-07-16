@@ -4,6 +4,7 @@ import { useTheme } from "../context/ThemeContext";
 import { Link, useLocation } from "wouter";
 import { LogoMark } from "./LogoMark";
 import { FloatingAIButton } from "./FloatingAIButton";
+import { ErrorBoundary } from "./ErrorBoundary";
 import {
   LayoutDashboard,
   Briefcase,
@@ -359,8 +360,15 @@ export function Layout({ children }: { children: ReactNode }) {
         </main>
       </div>
 
-      {/* Floating AI Button — appears on all authenticated pages */}
-      <FloatingAIButton />
+      {/* Floating AI Button — appears on all authenticated pages. Isolated in
+          its own boundary so a crash inside the drawer can never take down
+          the sidebar or main content; falls back to "not rendered" rather
+          than an error card since it's a fixed-position overlay, not
+          in-flow content, and Copilot is still reachable via the sidebar
+          and /copilot directly if this fails. */}
+      <ErrorBoundary silent>
+        <FloatingAIButton />
+      </ErrorBoundary>
     </div>
   );
 }

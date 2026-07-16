@@ -26,6 +26,7 @@ import time
 from datetime import date
 from typing import Any, Optional
 
+from fastapi import HTTPException
 from sqlalchemy.orm import Session
 
 from app.ai.clarification import check_clarification_needed
@@ -51,7 +52,10 @@ from app.ai.planner import (
 )
 from app.ai.providers.base import LLMRequest, LLMResponse, ProviderUnavailableError
 from app.ai.providers.factory import get_llm_provider
+from app.ai.providers.hermes import HermesProvider
+from app.ai.retrieval.alerts import get_active_alerts
 from app.ai.retrieval.base import Evidence, RetrievalResult
+from app.ai.retrieval.documents import get_document_detail, get_recent_documents
 from app.ai.retrieval.meetings import (
     get_meeting_counts, get_meeting_detail, get_open_action_items, get_project_decisions,
     get_recent_meetings,
@@ -102,8 +106,7 @@ RULES (MANDATORY):
    "INSUFFICIENT_EVIDENCE: <brief reason>"
 4. Cite your sources using their codes (e.g. PRJ-001, PO-1042, SE-88).
 5. Never reveal internal database IDs, raw SQL, or user credentials.
-6. If the question is in Arabic, respond entirely in Arabic; preserve \
-project codes.
+6. {language_rule}
 7. When comparing entities, structure your response with clear sections.
 8. For executive summaries, use: Key Findings / Risk Indicators / Notable Projects.
 9. Any derived background context appearing below (prior notes or stated
@@ -239,6 +242,81 @@ def _detect_arabic(text: str) -> bool:
     return arabic_chars > len(text) * 0.2
 
 
+def _language_rule(is_arabic: bool) -> str:
+    """Explicit, symmetric answer-language instruction.
+
+    Previously the system prompt only told the model what to do for an
+    Arabic question and said nothing for English, so a question in English
+    against evidence rows that happen to be stored in Arabic (decision_text,
+    meeting titles, etc.) could still pull the model's output into Arabic \u2014
+    there was no instruction pinning the OUTPUT language to the QUESTION's
+    language when they diverge from the evidence's language. Naming the
+    target language explicitly, in both directions, removes that ambiguity.
+    """
+    lang = "Arabic" if is_arabic else "English"
+    return (
+        f"The user's question is dominantly in {lang} (their dominant "
+        "language, even if they mixed in a few words of the other one). "
+        f"Respond ENTIRELY in {lang} — full sentences, no drifting into "
+        "another language (English, Russian, Chinese, Japanese, etc.) "
+        "anywhere in your response — regardless of the language used in the "
+        "evidence below. The one exception: keep source codes (e.g. "
+        "PRJ-001, PO-1042, MTG-1, DEC-2, ACT-3), proper names (people, "
+        "suppliers, companies, document titles), and standard technical "
+        "terms exactly as they naturally appear — do not force-translate a "
+        "code, name, or term a professional reader would expect to see "
+        "as-is."
+    )
+
+
+def _meeting_detail_query_system_prompt(
+    context_block: str, evidence_block: str, is_arabic: bool
+) -> str:
+    """System prompt for a question naming ONE specific meeting (meeting_id
+    resolved), used by the general /copilot/query path \u2014 not the dedicated
+    Meeting Agent endpoint, which stays on its own deterministic report.
+
+    Distinct from _SYSTEM_TEMPLATE because the generic prompt has no
+    instruction to synthesize across evidence categories: a small model
+    given a mixed evidence block (meeting + decisions + action items +
+    project + risks) would otherwise answer from only the first matching
+    row and declare the rest "not available" even when it was retrieved.
+    """
+    return f"""\
+You are Amad Construction Intelligence Copilot, a read-only assistant \
+answering questions about ONE specific meeting's real stored record for a \
+Saudi construction project.
+
+RULES (MANDATORY):
+1. {_language_rule(is_arabic)}
+2. Answer ONLY using the EVIDENCE section below. It may contain the meeting \
+record, its decisions, its action items, attendees, the related project's \
+context, and the project's open risks \u2014 combine ALL of these into one \
+coherent, executive-style answer that directly addresses the question. Do \
+NOT stop after reading only the meeting record if decisions, action items, \
+project context, or risks are also present in the evidence below.
+3. Do NOT invent facts, owners, due dates, decisions, or action items not \
+present in the evidence.
+4. Never respond with a generic "no information available" message while \
+ANY relevant evidence exists below \u2014 summarize what IS available instead. \
+If one specific detail (e.g. an attendee list or a due date) is truly \
+absent from the evidence, name that ONE missing detail explicitly \u2014 never \
+treat a single missing detail as a reason to withhold the rest of the \
+answer.
+5. If the evidence section is completely empty, respond with the exact \
+phrase: "INSUFFICIENT_EVIDENCE: <brief reason>".
+6. Cite your sources using their codes (e.g. MTG-1, DEC-2, ACT-3, PRJ-001).
+7. Never reveal internal database IDs, raw SQL, or user credentials.
+8. Any derived background context appearing below (prior notes or stated
+   preferences, clearly labelled non-authoritative) is not evidence — never
+   cite it as a source. If it conflicts with EVIDENCE, EVIDENCE always wins.
+
+{context_block}
+EVIDENCE:
+{evidence_block}
+"""
+
+
 def _build_evidence_block(evidence: list[Evidence]) -> str:
     if not evidence:
         return "[No evidence retrieved]"
@@ -308,6 +386,7 @@ def _dispatch_single_retrieval(
     project_id: Optional[int],
     meeting_id: Optional[int] = None,
     ncr_id: Optional[int] = None,
+    document_id: Optional[int] = None,
     question: str = "",
 ) -> RetrievalResult:
     kwargs: dict[str, Any] = {"db": db, "scope": scope, "project_id": project_id}
@@ -347,7 +426,23 @@ def _dispatch_single_retrieval(
         # meetings/decisions with no connection to the one actually asked
         # about. Same authorization/404 behavior as the Meeting Agent, which
         # already calls this function directly.
-        return get_meeting_detail(db=db, scope=scope, meeting_id=meeting_id)
+        result = get_meeting_detail(db=db, scope=scope, meeting_id=meeting_id)
+        # Enrich with the meeting's own project context + open risks so the
+        # LLM can produce a real executive summary instead of stopping at
+        # the bare meeting row. Still tightly bounded (one project + up to 5
+        # risks) — nowhere near the old ~52-item open-domain retrieval.
+        meeting_project_id = result.data.get("project_id")
+        if meeting_project_id is not None:
+            extra_evidence = list(
+                get_project_overview(db=db, scope=scope, project_id=meeting_project_id, limit=1).evidence
+            ) + list(
+                get_project_risks(db=db, scope=scope, project_id=meeting_project_id, limit=5).evidence
+            )
+            if extra_evidence:
+                result = RetrievalResult(
+                    data=result.data, evidence=list(result.evidence) + extra_evidence
+                )
+        return result
     if intent == "meetings":
         return get_recent_meetings(**kwargs)
     if intent == "decisions":
@@ -368,6 +463,19 @@ def _dispatch_single_retrieval(
 
     if intent == "health":
         return get_health_overview(db=db, scope=scope, project_id=project_id)
+
+    if intent == "documents" and document_id is not None:
+        # A specific document code (e.g. "DOC-3") was named — scope
+        # retrieval to that one document (with its OCR text and, if
+        # completed, contract extraction fields) instead of a generic
+        # recent-documents sample. Same convention as meeting_id/ncr_id.
+        return get_document_detail(db=db, scope=scope, document_id=document_id)
+    if intent == "documents":
+        return get_recent_documents(**kwargs)
+    if intent == "alerts":
+        return get_active_alerts(db=db, scope=scope, project_id=project_id)
+    if intent == "action_items":
+        return get_open_action_items(db=db, scope=scope, project_id=project_id)
 
     return RetrievalResult(data={}, evidence=[])
 
@@ -1521,6 +1629,7 @@ class CopilotPipeline:
         clarification = check_clarification_needed(
             question=resolved_ctx.resolved_query,
             state=state,
+            is_arabic=is_arabic,
             context_resolver_said_clarify=resolved_ctx.clarification_needed,
             context_resolver_reason=resolved_ctx.clarification_reason,
         )
@@ -1653,11 +1762,16 @@ class CopilotPipeline:
         is_open_domain = intent == "unknown"
 
         # TEMPORARY instrumentation — provider_error investigation.
+        # Entity ids only (never record contents) — proves which specific
+        # record a question resolved to without logging anything sensitive.
         logger.info(
             "DEBUG_TRACE step=intent_routed intent=%s is_open_domain=%s "
-            "is_multi_domain=%s secondary_intents=%s confidence=%.3f",
+            "is_multi_domain=%s secondary_intents=%s confidence=%.3f "
+            "entities.project_id=%s entities.meeting_id=%s entities.ncr_id=%s "
+            "entities.document_id=%s",
             intent, is_open_domain, routed.is_multi_domain,
             routed.secondary_intents, routed.confidence,
+            routed.project_id, routed.meeting_id, routed.ncr_id, routed.document_id,
         )
 
         if scope.accessible_project_ids == () and not scope.has_global_read:
@@ -1676,7 +1790,18 @@ class CopilotPipeline:
             )
 
         # ── 6. Domain planning + retrieval ─────────────────────────────────
-        is_exec = is_executive_summary_query(question) or intent == "executive_summary"
+        # is_executive_summary_query() is a SEPARATE keyword check (planner.py)
+        # from route_intent() above — it matches "summarize"/"summary" etc.
+        # independently of what intent routing decided. Without the
+        # `routed.meeting_id is None` guard, "Summarize meeting MTG-1" would
+        # match this "summarize" pattern and take the 5-domain executive
+        # summary path (project_overview/procurement/safety/ncr/site_reports)
+        # instead of the single meeting actually named — an explicit entity
+        # reference must win over a generic keyword match here too, for the
+        # same reason it already does inside route_intent() itself.
+        is_exec = routed.meeting_id is None and (
+            is_executive_summary_query(question) or intent == "executive_summary"
+        )
         all_evidence: list[Evidence] = []
         domains_used: list[str] = []
         tools_used: list[str] = []
@@ -1698,7 +1823,7 @@ class CopilotPipeline:
                 domains=[
                     "project_overview", "health", "procurement", "suppliers",
                     "safety", "ncr", "site_reports", "meetings", "decisions",
-                    "risks",
+                    "risks", "documents", "alerts", "action_items",
                 ],
                 db=db,
                 scope=scope,
@@ -1726,24 +1851,43 @@ class CopilotPipeline:
             is_multi = plan.is_multi_domain
             comparison_data = build_comparison_data(all_evidence, domains_used)
         else:
-            retrieval_result = _dispatch_single_retrieval(
-                intent=intent,
-                db=db,
-                scope=scope,
-                project_id=effective_project_id,
-                meeting_id=routed.meeting_id,
-                ncr_id=routed.ncr_id,
-                question=resolved_ctx.resolved_query,
-            )
+            try:
+                retrieval_result = _dispatch_single_retrieval(
+                    intent=intent,
+                    db=db,
+                    scope=scope,
+                    project_id=effective_project_id,
+                    meeting_id=routed.meeting_id,
+                    ncr_id=routed.ncr_id,
+                    document_id=routed.document_id,
+                    question=resolved_ctx.resolved_query,
+                )
+            except HTTPException as e:
+                # A named entity (MTG-<id>/NCR-<id>/DOC-<id>) that does not
+                # exist raises 404 from the single-record retrieval helpers
+                # (get_meeting_detail/get_ncr_detail/get_document_detail).
+                # Treat that as "no evidence found" rather than a hard
+                # failure, so the question still reaches Hermes and the
+                # existing grounding rules produce an explicit "insufficient
+                # evidence" answer instead of an opaque 404 — a real 403
+                # (RBAC denial) still propagates unchanged.
+                if e.status_code == 404:
+                    retrieval_result = RetrievalResult(data={}, evidence=[])
+                else:
+                    raise
             all_evidence = retrieval_result.evidence
             domains_used = [intent]
             tools_used = [intent]
 
         # TEMPORARY instrumentation — provider_error investigation.
+        # evidence_size is a character count only (sum of snippet lengths),
+        # never the snippet text itself — sizes grounding without exposing
+        # record contents in logs.
+        _evidence_size_chars = sum(len(e.snippet) for e in all_evidence)
         logger.info(
             "DEBUG_TRACE step=retrieval_done domains_used=%s tools_used=%s "
-            "evidence_count=%d is_multi_domain=%s",
-            domains_used, tools_used, len(all_evidence), is_multi,
+            "evidence_count=%d evidence_size_chars=%d is_multi_domain=%s",
+            domains_used, tools_used, len(all_evidence), _evidence_size_chars, is_multi,
         )
 
         # ── 6.5 Comparison evidence expansion ──────────────────────────────
@@ -1799,7 +1943,7 @@ class CopilotPipeline:
                     intent="executive_summary" if is_exec else intent,
                     evidence=all_evidence,
                     scope=scope,
-                    question=question,
+                    is_arabic=is_arabic,
                     status="completed",
                 )
                 key_findings = _build_key_findings(all_evidence, intent, is_exec)
@@ -1823,6 +1967,21 @@ class CopilotPipeline:
 
         # ── 8. Provider + LLM generation ───────────────────────────────────
         provider = get_llm_provider()
+        if is_multi and isinstance(provider, HermesProvider):
+            # Multi-domain evidence blocks are larger than single-domain
+            # ones — give Hermes a dedicated longer timeout for this call
+            # only (see MULTI_DOMAIN_HERMES_TIMEOUT_SECONDS), same pattern
+            # as site_report_reasoning.py's _get_reasoning_provider(). Every
+            # other provider (mock/OpenAI/OpenRouter) and every single-
+            # domain question is unaffected.
+            from app.config import settings as _settings
+            provider = HermesProvider(
+                model=provider.model_name,
+                hermes_bin=_settings.HERMES_BIN,
+                profile=_settings.HERMES_PROFILE,
+                hermes_provider=_settings.HERMES_PROVIDER,
+                timeout_seconds=_settings.MULTI_DOMAIN_HERMES_TIMEOUT_SECONDS,
+            )
 
         # TEMPORARY instrumentation — provider_error investigation.
         logger.info(
@@ -1893,17 +2052,31 @@ class CopilotPipeline:
         if memory_block:
             context_block = context_block + memory_block + "\n\n"
 
-        system_prompt = _SYSTEM_TEMPLATE.format(
-            context_block=context_block,
-            evidence_block=evidence_block,
-        )
+        if routed.meeting_id is not None:
+            # A specific meeting was named — use the meeting-detail prompt,
+            # which instructs the model to synthesize across ALL retrieved
+            # evidence categories (see _dispatch_single_retrieval above)
+            # instead of stopping at the bare meeting row.
+            system_prompt = _meeting_detail_query_system_prompt(
+                context_block=context_block,
+                evidence_block=evidence_block,
+                is_arabic=is_arabic,
+            )
+        else:
+            system_prompt = _SYSTEM_TEMPLATE.format(
+                context_block=context_block,
+                evidence_block=evidence_block,
+                language_rule=_language_rule(is_arabic),
+            )
 
         llm_response: Optional[LLMResponse] = None
         # TEMPORARY instrumentation — provider_error investigation.
+        # prompt_length is a character count only, never the prompt text.
         _gen_start = time.monotonic()
+        _prompt_length_chars = len(system_prompt) + len(resolved_ctx.resolved_query)
         logger.info(
-            "DEBUG_TRACE step=generate_start provider=%s model=%s",
-            provider.provider_name, provider.model_name,
+            "DEBUG_TRACE step=generate_start provider=%s model=%s prompt_length_chars=%d",
+            provider.provider_name, provider.model_name, _prompt_length_chars,
         )
         try:
             llm_response = provider.generate(
@@ -1963,7 +2136,7 @@ class CopilotPipeline:
             answer = self._validator.fallback_response(is_arabic)
             follow_ups = generate_follow_up_suggestions(
                 intent=intent, evidence=all_evidence, scope=scope,
-                question=question, status="insufficient_evidence",
+                is_arabic=is_arabic, status="insufficient_evidence",
             )
             return self._build_response(
                 db=db, conv=conv, user_msg=user_msg,
@@ -1987,7 +2160,7 @@ class CopilotPipeline:
             answer = self._validator.fallback_response(is_arabic)
             follow_ups = generate_follow_up_suggestions(
                 intent=intent, evidence=all_evidence, scope=scope,
-                question=question, status="grounding_failed",
+                is_arabic=is_arabic, status="grounding_failed",
             )
             return self._build_response(
                 db=db, conv=conv, user_msg=user_msg,
@@ -2007,7 +2180,7 @@ class CopilotPipeline:
             intent="executive_summary" if is_exec else intent,
             evidence=all_evidence,
             scope=scope,
-            question=question,
+            is_arabic=is_arabic,
             status="completed",
         )
 
@@ -2057,7 +2230,13 @@ class CopilotPipeline:
         evidence retrieval already in place here.
         """
         pipeline_start = time.monotonic()
-        is_arabic = language.lower().startswith("ar")
+        # A real user-typed question is the authoritative signal for
+        # response language — `language` reflects only the app's current UI
+        # toggle (see AIDrawer.tsx), which must never override an actual
+        # message the user typed in the other language. It's still the right
+        # fallback when there's no typed text at all (a bare quick-action
+        # trigger click).
+        is_arabic = _detect_arabic(question) if question else language.lower().startswith("ar")
         question = question or (
             "تشغيل وكيل استخبارات المشتريات: تحليل شامل لطلبات الشراء وأوامر "
             "الشراء والموردين ومخاطر التسليم عبر المشاريع."
@@ -2175,7 +2354,11 @@ class CopilotPipeline:
             )
 
         pipeline_start = time.monotonic()
-        is_arabic = language.lower().startswith("ar")
+        # See the identical comment in execute_procurement_agent above: a
+        # real typed question is the authoritative language signal, not the
+        # UI's `language` toggle. Must be computed from the CALLER-supplied
+        # question before it's overwritten by the canned trigger text below.
+        is_arabic = _detect_arabic(question) if question else language.lower().startswith("ar")
 
         # Retrieval first: raises 404/403 for an invalid/unauthorized
         # meeting_id, same convention as _get_or_create_conversation.
@@ -2250,7 +2433,8 @@ class CopilotPipeline:
         above it, deterministically, in well under a second.
         """
         pipeline_start = time.monotonic()
-        is_arabic = language.lower().startswith("ar")
+        # See the identical comment in execute_procurement_agent above.
+        is_arabic = _detect_arabic(question) if question else language.lower().startswith("ar")
 
         meetings_result = get_recent_meetings(db=db, scope=scope, project_id=project_id, limit=10)
         decisions_result = get_project_decisions(db=db, scope=scope, project_id=project_id, limit=10)

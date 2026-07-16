@@ -473,6 +473,15 @@ export default function CopilotPage({ compact = false }: { compact?: boolean } =
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const { token } = useAuth();
 
+  // Synchronous, immediate re-entry guard for sendMessage — separate from
+  // the `isLoading` state flag. `isLoading` only takes effect once React
+  // has committed the state update and re-rendered (so `disabled={isLoading}`
+  // reflects it); a ref is readable/writable synchronously the instant
+  // sendMessage starts, closing the gap where two triggers firing in the
+  // same tick (e.g. Enter key + a queued click) could both read a stale
+  // `isLoading=false` and both issue the request.
+  const sendingRef = useRef(false);
+
   const fetchConversations = useCallback(async () => {
     if (!token) return;
     try {
@@ -487,7 +496,8 @@ export default function CopilotPage({ compact = false }: { compact?: boolean } =
   useEffect(() => { bottomRef.current?.scrollIntoView({ behavior: "smooth" }); }, [messages]);
 
   const sendMessage = async (q: string) => {
-    if (!q.trim() || isLoading) return;
+    if (!q.trim() || isLoading || sendingRef.current) return;
+    sendingRef.current = true;
     setError(null);
 
     const now = new Date().toISOString();
@@ -587,6 +597,7 @@ export default function CopilotPage({ compact = false }: { compact?: boolean } =
       setMessages((prev) => prev.filter((m) => !m.isTyping));
     } finally {
       setIsLoading(false);
+      sendingRef.current = false;
     }
   };
 

@@ -14,7 +14,9 @@
       "Bash(python -c \"import json; json.load\\(open\\('.claude/settings.local.json'\\)\\); print\\('VALID JSON'\\)\")",
       "Bash(node -e \"JSON.parse\\(require\\('fs'\\).readFileSync\\(0,'utf8'\\)\\); console.log\\('VALID JSON'\\)\")",
       "Bash(LLM_PROVIDER=mock \"C:/Users/ASUS/AppData/Local/Programs/Python/Python312/python.exe\" -m pytest tests/test_document_ocr.py -q)",
-      "Bash(taskkill //F //PID 10700)"
+      "Bash(taskkill //F //PID 10700)",
+      "Bash(mkdir -p \"C:\\\\Users\\\\ASUS\\\\AppData\\\\Local\\\\Temp\\\\claude\\\\c--Users-ASUS-Downloads-amad-construction-ai-platform-main-amad-construction-ai-platform-main\\\\6f28a3c4-1e64-4c02-b24d-db721da1bf01\\\\scratchpad\\\\pw\")",
+      "Bash(npm init *)"
     ]
   }
 }

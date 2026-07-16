@@ -105,5 +105,37 @@ class Settings(BaseSettings):
     CONTRACT_EXTRACTION_MAX_INPUT_CHARS: int = 12_000
     CONTRACT_EXTRACTION_MAX_RAW_RESPONSE_CHARS: int = 20_000
 
+    # ── Site Report Intelligence (app/ai/site_report_reasoning.py) — one
+    # Hermes reasoning call per /analyze request, over report-scoped evidence.
+    SITE_REPORT_MAX_EVIDENCE_CHARS: int = 14_000
+    SITE_REPORT_MAX_RAW_RESPONSE_CHARS: int = 20_000
+    # When a report has no prior report to anchor its evidence window to
+    # (the project's first report), how many days back to look for safety/
+    # NCR/procurement/meeting/document evidence.
+    SITE_REPORT_DEFAULT_LOOKBACK_DAYS: int = 14
+    # A full 14-section structured report is a much larger generation task
+    # than other Hermes call sites in this app (measured during
+    # implementation: ~117s for a 2-field ask against real evidence, on the
+    # same qwen2.5:7b/Ollama setup that answers simple Copilot questions in
+    # well under HERMES_TIMEOUT_SECONDS). A dedicated, longer timeout for
+    # this one pipeline avoids raising the shared HERMES_TIMEOUT_SECONDS
+    # (which would affect every other Hermes call in the app, including
+    # fast ones with no need for the extra budget).
+    SITE_REPORT_HERMES_TIMEOUT_SECONDS: int = 480
+    # How many prior reports' evidence windows to summarize for trend
+    # comparison (repeated/escalating/resolved/new issues).
+    SITE_REPORT_TREND_LOOKBACK_REPORTS: int = 3
+
+    # ── Knowledge Access Layer (AI-003) — multi-domain Copilot questions
+    # (e.g. "What decisions from MTG-1 could delay procurement?") combine
+    # evidence from 2+ retrieval domains into one prompt. Measured during
+    # implementation: an 11-item multi-domain evidence block exceeded the
+    # shared 240s HERMES_TIMEOUT_SECONDS on the same qwen2.5:7b/Ollama setup
+    # that answers single-domain questions comfortably within it. Same
+    # pattern as SITE_REPORT_HERMES_TIMEOUT_SECONDS — a dedicated, longer
+    # timeout for multi-domain generation only, so single-domain Copilot
+    # questions keep their existing fast timeout unchanged.
+    MULTI_DOMAIN_HERMES_TIMEOUT_SECONDS: int = 400
+
 
 settings = Settings()

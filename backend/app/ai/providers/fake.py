@@ -22,7 +22,7 @@ from typing import Optional
 
 from .base import LLMRequest, LLMResponse, ProviderUnavailableError
 
-_EVIDENCE_BLOCK_RE = re.compile(r"EVIDENCE:\s*(.+)", re.DOTALL)
+_EVIDENCE_BLOCK_RE = re.compile(r"^EVIDENCE:\s*(.+)", re.DOTALL | re.MULTILINE)
 _ITEM_RE = re.compile(r"\[\d+\]\s+(.+?)(?=\n\[\d+\]|\Z)", re.DOTALL)
 # Grab the first label (before the snippet line)
 _LABEL_RE = re.compile(r"^\s*(.+?)\n", re.DOTALL)

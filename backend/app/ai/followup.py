@@ -120,11 +120,6 @@ _FOLLOW_UP_BY_INTENT_AR: dict[str, list[str]] = {
 }
 
 
-def _detect_arabic(text: str) -> bool:
-    arabic_chars = sum(1 for c in text if "\u0600" <= c <= "\u06FF")
-    return arabic_chars > len(text) * 0.15
-
-
 def _extract_project_labels(evidence: list[Evidence], max_n: int = 2) -> list[str]:
     """Extract up to max_n project labels from evidence for entity-specific suggestions."""
     seen: list[str] = []
@@ -144,7 +139,7 @@ def generate_follow_up_suggestions(
     intent: str,
     evidence: list[Evidence],
     scope: AIAuthScope,
-    question: str,
+    is_arabic: bool,
     status: str,
     max_suggestions: int = _MAX_SUGGESTIONS,
 ) -> list[str]:
@@ -154,7 +149,12 @@ def generate_follow_up_suggestions(
         intent: The resolved intent of the current query.
         evidence: Retrieved evidence (used for entity-specific suggestions).
         scope: Authorization scope (ensures suggestions are accessible).
-        question: The original question (used to detect language).
+        is_arabic: Response language, decided once by the caller (pipeline.py)
+            from the user's message and shared with the answer itself —
+            suggestions must always match the answer's language (requirement:
+            "Follow-up suggestions must be generated in the same language as
+            the answer"), so this takes the already-decided value instead of
+            re-detecting it from question text a second time.
         status: Pipeline status (only generate for completed turns).
         max_suggestions: Maximum number of suggestions to return.
 
@@ -165,7 +165,6 @@ def generate_follow_up_suggestions(
     if status not in ("completed", "insufficient_evidence", "unsupported_intent"):
         return []
 
-    is_arabic = _detect_arabic(question)
     template_map = _FOLLOW_UP_BY_INTENT_AR if is_arabic else _FOLLOW_UP_BY_INTENT_EN
 
     # Normalize unknown intent to executive summary templates if appropriate

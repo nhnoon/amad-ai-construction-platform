@@ -36,6 +36,9 @@ _DOMAIN_SIGNALS: dict[str, list[str]] = {
     "site_reports": ["site report", "daily report", "manpower", "تقرير موقع"],
     "meetings": ["meeting", "decision", "اجتماع", "قرار"],
     "risks": ["risk", "issue", "مخاطر"],
+    "documents": ["document", "contract", "ocr", "file", "وثيقة", "مستند", "عقد"],
+    "alerts": ["alert", "warning", "تنبيه"],
+    "action_items": ["action item", "follow-up", "follow up", "مهمة متابعة"],
 }
 
 # Short tokens that must match as whole words (not substrings)
@@ -137,7 +140,11 @@ def execute_multi_domain_plan(
     )
     from app.ai.retrieval.safety import get_safety_summary, get_open_ncrs, get_ncr_detail
     from app.ai.retrieval.site_reports import get_recent_site_reports
-    from app.ai.retrieval.meetings import get_recent_meetings, get_project_decisions, get_meeting_detail
+    from app.ai.retrieval.meetings import (
+        get_recent_meetings, get_project_decisions, get_meeting_detail, get_open_action_items,
+    )
+    from app.ai.retrieval.documents import get_recent_documents
+    from app.ai.retrieval.alerts import get_active_alerts
 
     # A specific meeting code (e.g. "MTG-1") was named in the question — scope
     # meetings/decisions retrieval to that one meeting instead of the
@@ -176,19 +183,34 @@ def execute_multi_domain_plan(
             lambda: get_ncr_detail(db=db, scope=scope, ncr_id=ncr_id)
         )
     else:
-        ncr_fn = lambda: get_open_ncrs(db=db, scope=scope, project_id=project_id)
+        # project_overview_id, not project_id: a meeting_id resolved just
+        # above may have already set the effective project for this plan.
+        ncr_fn = lambda: get_open_ncrs(db=db, scope=scope, project_id=project_overview_id)
 
+    # project_overview_id is the project resolved from an explicit meeting_id/
+    # ncr_id (falling back to the caller's own project_id if neither named an
+    # entity). Every project-scoped domain below must use THIS value, not the
+    # raw project_id parameter — otherwise, e.g. "What decisions from MTG-1
+    # could delay procurement?" would scope decisions to the one meeting but
+    # scope procurement to the entire portfolio, since project_id itself is
+    # None when the caller only named a meeting, not a project. This was a
+    # real bug: only "project_overview" used project_overview_id before this
+    # fix; every other domain silently ignored the meeting/NCR-resolved
+    # project and fell back to portfolio-wide retrieval.
     domain_retrieval_map: dict[str, Any] = {
         "project_overview": lambda: get_project_overview(db=db, scope=scope, project_id=project_overview_id),
-        "health": lambda: get_health_overview(db=db, scope=scope, project_id=project_id),
-        "procurement": lambda: get_procurement_summary(db=db, scope=scope, project_id=project_id),
+        "health": lambda: get_health_overview(db=db, scope=scope, project_id=project_overview_id),
+        "procurement": lambda: get_procurement_summary(db=db, scope=scope, project_id=project_overview_id),
         "suppliers": lambda: get_supplier_information(db=db, scope=scope),
-        "safety": lambda: get_safety_summary(db=db, scope=scope, project_id=project_id),
+        "safety": lambda: get_safety_summary(db=db, scope=scope, project_id=project_overview_id),
         "ncr": ncr_fn,
-        "site_reports": lambda: get_recent_site_reports(db=db, scope=scope, project_id=project_id),
+        "site_reports": lambda: get_recent_site_reports(db=db, scope=scope, project_id=project_overview_id),
         "meetings": meetings_fn,
-        "decisions": meetings_fn if meeting_id is not None else (lambda: get_project_decisions(db=db, scope=scope, project_id=project_id)),
-        "risks": lambda: get_project_risks(db=db, scope=scope, project_id=project_id),
+        "decisions": meetings_fn if meeting_id is not None else (lambda: get_project_decisions(db=db, scope=scope, project_id=project_overview_id)),
+        "risks": lambda: get_project_risks(db=db, scope=scope, project_id=project_overview_id),
+        "documents": lambda: get_recent_documents(db=db, scope=scope, project_id=project_overview_id),
+        "alerts": lambda: get_active_alerts(db=db, scope=scope, project_id=project_overview_id),
+        "action_items": lambda: get_open_action_items(db=db, scope=scope, project_id=project_overview_id),
     }
 
     all_evidence: list[Evidence] = []
@@ -249,6 +271,41 @@ def execute_executive_summary(
         project_id=None,
     )
     result.is_executive_summary = True
+
+    # Portfolio-wide dashboard KPIs (deterministic COUNT/SUM aggregates —
+    # not a retrieval sample) as one extra evidence item. The dashboard
+    # endpoint (app/api/v1/dashboard.py) has no project/org scoping by
+    # design — it is a true cross-portfolio total — so only inject it for
+    # roles that already have global read access; a project-scoped caller
+    # would otherwise see numbers spanning projects they cannot access.
+    if scope.has_global_read:
+        try:
+            from app.api.v1.dashboard import get_dashboard_summary
+            kpis = get_dashboard_summary(db=db)
+            result.evidence.append(Evidence(
+                source_type="dashboard_kpi",
+                source_id="portfolio",
+                label="Executive Dashboard — Portfolio KPIs",
+                snippet=(
+                    f"Portfolio totals: {kpis.total_projects} projects "
+                    f"({kpis.active_projects} active, {kpis.delayed_projects} delayed, "
+                    f"{kpis.on_hold_projects} on hold, {kpis.completed_projects} completed); "
+                    f"{kpis.total_suppliers} suppliers ({kpis.active_suppliers} active); "
+                    f"{kpis.open_purchase_requests}/{kpis.total_purchase_requests} purchase requests open, "
+                    f"{kpis.late_purchase_orders}/{kpis.total_purchase_orders} purchase orders late; "
+                    f"{kpis.high_severity_events}/{kpis.total_safety_events} safety events high/critical severity; "
+                    f"{kpis.open_ncrs}/{kpis.total_ncrs} NCRs open; "
+                    f"{kpis.total_site_reports} site reports, {kpis.total_meetings} meetings, "
+                    f"{kpis.total_decisions} decisions recorded."
+                ),
+                project_id=None,
+                ui_metadata={"href": "/dashboard", "icon": "gauge"},
+            ))
+        except Exception:
+            # Dashboard KPIs are a supplement, not the primary evidence —
+            # never let it block the rest of the executive summary.
+            pass
+
     return result
 
 

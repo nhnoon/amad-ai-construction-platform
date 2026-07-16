@@ -1,5 +1,6 @@
 import { Sparkles, Bot, Brain } from "lucide-react";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { ErrorBoundary } from "@/components/ErrorBoundary";
 import CopilotPage from "@/pages/copilot";
 import RecentMemoriesPanel from "./RecentMemoriesPanel";
 import MemoryTab from "./MemoryTab";
@@ -40,15 +41,24 @@ export default function AICenter() {
 
         <TabsContent value="copilot">
           <div className="flex flex-col lg:flex-row gap-4">
+            {/* Each panel gets its own boundary — Copilot must stay usable
+                even if the Memory sidebar panel fails to render, and vice
+                versa. */}
             <div className="flex-1 min-w-0">
-              <CopilotPage compact />
+              <ErrorBoundary>
+                <CopilotPage compact />
+              </ErrorBoundary>
             </div>
-            <RecentMemoriesPanel className="w-full lg:w-80 shrink-0 h-[75vh] min-h-[480px]" />
+            <ErrorBoundary>
+              <RecentMemoriesPanel className="w-full lg:w-80 shrink-0 h-[75vh] min-h-[480px]" />
+            </ErrorBoundary>
           </div>
         </TabsContent>
 
         <TabsContent value="memory">
-          <MemoryTab />
+          <ErrorBoundary>
+            <MemoryTab />
+          </ErrorBoundary>
         </TabsContent>
       </Tabs>
     </div>

@@ -1,6 +1,10 @@
 from fastapi import APIRouter, HTTPException, Query
 from typing import Optional
-from ...ai.site_report_intelligence import build_site_report_intelligence, list_site_report_cards
+from ...ai.site_report_intelligence import (
+    analyze_site_report,
+    build_site_report_intelligence,
+    list_site_report_cards,
+)
 from ...core.deps import DbSession
 from ...models.site import SiteReport, DailyActivity
 from ...schemas.site import (
@@ -93,9 +97,8 @@ def get_site_report_intelligence(project_id: int, report_id: int, db: DbSession)
     "/projects/{project_id}/site-reports/{report_id}/analyze",
     response_model=SiteReportAnalysisOut,
 )
-def analyze_site_report(project_id: int, report_id: int, db: DbSession):
+def analyze_site_report_route(project_id: int, report_id: int, db: DbSession):
     try:
-        result = build_site_report_intelligence(db=db, project_id=project_id, report_id=report_id)
+        return analyze_site_report(db=db, project_id=project_id, report_id=report_id)
     except ValueError as exc:
         raise HTTPException(status_code=404, detail=str(exc))
-    return result.analysis

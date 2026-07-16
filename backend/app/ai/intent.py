@@ -68,12 +68,27 @@ _INTENT_KEYWORDS: dict[str, list[str]] = {
         "top performing", "most successful",
         "درجة الصحة", "صحة المشروع", "مشاريع حرجة", "أفضل أداء",
     ],
+    "documents": [
+        "document", "documents", "contract", "contracts", "ocr", "scanned",
+        "attachment", "attachments", "file", "files", "extracted text",
+        "وثيقة", "وثائق", "مستند", "مستندات", "عقد", "عقود", "ملف",
+    ],
+    "alerts": [
+        "alert", "alerts", "warning", "warnings", "flagged", "flag",
+        "تنبيه", "تنبيهات", "إنذار",
+    ],
+    "action_items": [
+        "action item", "action items", "open items", "outstanding items",
+        "follow-up", "follow up", "follow-ups", "overdue task", "overdue tasks",
+        "مهمة متابعة", "مهام متابعة", "إجراءات متابعة",
+    ],
 }
 
 _PROJECT_CODE_PATTERN = re.compile(r"\b(PRJ-\d+)\b", re.IGNORECASE)
 _PROJECT_ID_PATTERN = re.compile(r"\bproject\s+(\d+)\b", re.IGNORECASE)
 _MEETING_CODE_PATTERN = re.compile(r"\bMTG-(\d+)\b", re.IGNORECASE)
 _NCR_CODE_PATTERN = re.compile(r"\bNCR-(\d+)\b", re.IGNORECASE)
+_DOCUMENT_CODE_PATTERN = re.compile(r"\bDOC-(\d+)\b", re.IGNORECASE)
 
 _WORD_BOUNDARY_KEYWORDS = {"po", "pr"}
 
@@ -97,6 +112,7 @@ class RoutedIntent:
     secondary_intents: list[str] = field(default_factory=list)
     meeting_id: Optional[int] = None
     ncr_id: Optional[int] = None
+    document_id: Optional[int] = None
 
 
 def _kw_matches(kw: str, text: str) -> bool:
@@ -159,6 +175,79 @@ def route_intent(
         except ValueError:
             pass
 
+    resolved_document_id: Optional[int] = None
+    m5 = _DOCUMENT_CODE_PATTERN.search(question)
+    if m5:
+        try:
+            resolved_document_id = int(m5.group(1))
+        except ValueError:
+            pass
+
+    # An explicit meeting code (e.g. "MTG-1") is a stronger, more specific
+    # signal than any generic keyword match — short-circuit straight to the
+    # meetings domain before keyword scoring. Without this, phrasings that
+    # don't happen to contain "meeting"/"decision" (e.g. "What happened in
+    # MTG-1?", "What are the action items from MTG-1?") fell through to
+    # intent=unknown and triggered a full 10-domain open-domain retrieval —
+    # and phrasings that DO contain a keyword belonging to a higher-priority
+    # domain (e.g. "Summarize meeting MTG-1" matching "summarize" under
+    # executive_summary) were misrouted to a portfolio-wide summary instead
+    # of the one meeting actually named. Checked ahead of executive_summary
+    # for the same reason: an explicit entity reference beats a generic verb.
+    if resolved_meeting_id is not None:
+        # A question can name a meeting AND ask about a second domain in the
+        # same breath — "What decisions from MTG-1 could delay procurement?"
+        # Without this, the original single-domain short-circuit above (added
+        # to fix the "MTG-1 pulls in 52 unrelated items" bug) had the side
+        # effect of making the meeting_id path ALWAYS single-domain, silently
+        # dropping any other domain the question also asked about. Score the
+        # question against every OTHER domain's keywords (meetings/decisions/
+        # action_items are already covered by meeting_id itself — see
+        # get_meeting_detail(), which returns the meeting's own decisions
+        # AND action items in one call; executive_summary is a separate
+        # portfolio-wide mechanism, not a per-meeting one) and carry forward
+        # whatever matches as secondary_intents — the pipeline uses this to
+        # run the multi-domain plan (still scoped to this one meeting's
+        # project, not the whole portfolio) instead of the single-meeting
+        # dispatch when a second, genuinely DIFFERENT domain is also named.
+        secondary: list[str] = []
+        for other_intent, keywords in _INTENT_KEYWORDS.items():
+            if other_intent in ("meetings", "decisions", "action_items", "executive_summary"):
+                continue
+            if any(_kw_matches(kw, lower) for kw in keywords):
+                secondary.append(other_intent)
+        return RoutedIntent(
+            intent="meetings",
+            project_id=resolved_project_id,
+            project_code=project_code,
+            filters={},
+            confidence=1.0,
+            unsupported=False,
+            is_multi_domain=bool(secondary),
+            secondary_intents=secondary[:2],
+            meeting_id=resolved_meeting_id,
+            ncr_id=resolved_ncr_id,
+            document_id=resolved_document_id,
+        )
+
+    # Same idea for an explicit document code (e.g. "DOC-3") — a stronger
+    # signal than a generic "document"/"contract" keyword match. Checked
+    # after meeting_id (a meeting can reference a document without the
+    # document itself being the primary subject) but before executive_summary
+    # for the same reason as the meeting short-circuit above.
+    if resolved_document_id is not None:
+        return RoutedIntent(
+            intent="documents",
+            project_id=resolved_project_id,
+            project_code=project_code,
+            filters={},
+            confidence=1.0,
+            unsupported=False,
+            meeting_id=resolved_meeting_id,
+            ncr_id=resolved_ncr_id,
+            document_id=resolved_document_id,
+        )
+
     # Check executive_summary first (highest priority multi-domain intent)
     exec_score = sum(
         1 for kw in _INTENT_KEYWORDS["executive_summary"]
@@ -175,6 +264,7 @@ def route_intent(
             is_multi_domain=True,
             meeting_id=resolved_meeting_id,
             ncr_id=resolved_ncr_id,
+            document_id=resolved_document_id,
         )
 
     scores: dict[str, int] = {}
@@ -199,6 +289,7 @@ def route_intent(
                 is_multi_domain=False,
                 meeting_id=resolved_meeting_id,
                 ncr_id=resolved_ncr_id,
+                document_id=resolved_document_id,
             )
         return RoutedIntent(
             intent="unknown",
@@ -209,6 +300,7 @@ def route_intent(
             unsupported=True,
             meeting_id=resolved_meeting_id,
             ncr_id=resolved_ncr_id,
+            document_id=resolved_document_id,
         )
 
     best_intent = max(scores, key=lambda k: scores[k])
@@ -237,4 +329,5 @@ def route_intent(
         secondary_intents=secondary,
         meeting_id=resolved_meeting_id,
         ncr_id=resolved_ncr_id,
+        document_id=resolved_document_id,
     )

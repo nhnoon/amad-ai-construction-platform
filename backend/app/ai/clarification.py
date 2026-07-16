@@ -100,14 +100,10 @@ _DOMAIN_CLARIFICATION_OPTIONS_AR: dict[str, list[str]] = {
 }
 
 
-def _detect_arabic(text: str) -> bool:
-    arabic_chars = sum(1 for c in text if "\u0600" <= c <= "\u06FF")
-    return arabic_chars > len(text) * 0.15
-
-
 def check_clarification_needed(
     question: str,
     state: ConversationState,
+    is_arabic: bool,
     context_resolver_said_clarify: bool = False,
     context_resolver_reason: Optional[str] = None,
 ) -> Optional[ClarificationResponse]:
@@ -116,12 +112,19 @@ def check_clarification_needed(
     Returns None if no clarification is needed.
 
     Args:
-        question: The resolved (or original) question.
+        question: The resolved (or original) question \u2014 used for ambiguity
+            pattern matching only, NOT for language detection (see is_arabic).
         state: Current conversation state.
+        is_arabic: Response language, decided once by the caller (pipeline.py,
+            from the user's raw original message) and passed in \u2014 this
+            function used to re-detect language from `question` itself, which
+            could disagree with the pipeline's own decision whenever
+            `question` had already been rewritten with appended context (see
+            context_resolver.py), e.g. a short Arabic follow-up diluted below
+            the detection threshold by appended English project codes.
         context_resolver_said_clarify: Whether the context resolver flagged this.
         context_resolver_reason: Reason from the context resolver.
     """
-    is_arabic = _detect_arabic(question)
     opts_map = _DOMAIN_CLARIFICATION_OPTIONS_AR if is_arabic else _DOMAIN_CLARIFICATION_OPTIONS
 
     # If context resolver already said clarify, honour that

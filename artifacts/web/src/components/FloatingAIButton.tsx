@@ -15,7 +15,11 @@ export function FloatingAIButton() {
         onMouseEnter={() => setIsHovered(true)}
         onMouseLeave={() => setIsHovered(false)}
         className={cn(
-          "fixed bottom-6 right-6 z-40",
+          // Logical end-6 (not physical right-6): the sidebar docks to the
+          // physical right in RTL too (its own start-0 flips), so a
+          // physical-right button would sit on top of the sidebar's footer
+          // controls in Arabic instead of the opposite corner as in LTR.
+          "fixed bottom-6 end-6 z-40",
           "group",
           "transition-all duration-300 ease-out"
         )}
