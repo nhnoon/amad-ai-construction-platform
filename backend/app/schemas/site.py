@@ -182,6 +182,11 @@ class SiteReportAnalysisOut(BaseModel):
     questions_for_site_team: list[str] = []
     contradictions: list[str] = []
     trend_analysis: TrendAnalysisOut
+    # New, additive field from the compact Hermes output contract (AMAD AI
+    # Stabilization) — what the model flagged as missing rather than what
+    # it found. Also mirrored into questions_for_site_team for existing
+    # frontend consumers that already render that field.
+    missing_information: list[str] = []
 
     # Mathematically-derived risk index (0-100), NOT a fabricated
     # LLM-confidence percentage — see app/ai/site_report_risk_scoring.py for

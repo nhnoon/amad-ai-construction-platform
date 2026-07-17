@@ -19,10 +19,15 @@ Two distinct outputs, matching the two existing API routes
 """
 from __future__ import annotations
 
+import hashlib
+import logging
+import time
 from collections import defaultdict
 from dataclasses import dataclass
 
 from sqlalchemy.orm import Session
+
+logger = logging.getLogger(__name__)
 
 from app.ai.site_report_evidence import (
     ReportEvidence,
@@ -33,7 +38,11 @@ from app.ai.site_report_evidence import (
     gather_report_evidence,
     parse_report_date,
 )
-from app.ai.site_report_reasoning import generate_report_reasoning
+from app.ai.site_report_reasoning import (
+    _TIMED_OUT_MESSAGE_EN,
+    _UNAVAILABLE_MESSAGE_EN,
+    generate_report_reasoning,
+)
 from app.ai.site_report_risk_scoring import compute_report_risk_score
 from app.models.documents import Correspondence, Document, GeneratedDocument
 from app.models.projects import Project
@@ -301,12 +310,159 @@ def build_site_report_intelligence(db: Session, project_id: int, report_id: int)
     return IntelligenceResult(report=report_payload, analysis=analysis)
 
 
-def analyze_site_report(db: Session, project_id: int, report_id: int) -> SiteReportAnalysisOut:
+def _unavailable_analysis_out(reason: str) -> SiteReportAnalysisOut:
+    """Structured fallback for a failure so unexpected it happened before
+    evidence/risk could even be gathered — e.g. a DB error inside
+    gather_report_evidence(). The route only ever raises ValueError (->404)
+    or lets this function's own return value through; nothing else should
+    ever reach the client as a bare, unlabeled 500 (see analyze_site_report
+    below). This is the API contract "always return either completed
+    intelligence or a structured error with explanation" for the one case
+    where even the evidence/risk score aren't available."""
+    return SiteReportAnalysisOut(
+        analysis_generated_from="AI reasoning unavailable — an unexpected error occurred before evidence could be gathered.",
+        reasoning_status="unavailable",
+        reasoning_provider=None,
+        reasoning_model=None,
+        reasoning_error=reason,
+        insufficient_evidence=False,
+        insufficient_evidence_reason=None,
+        ocr_quality_note=None,
+        executive_summary="I don't have enough evidence to generate an AI analysis right now — an unexpected error occurred. Please try again or contact support if this persists.",
+        major_findings=[], safety_findings=[], quality_findings=[], schedule_findings=[],
+        procurement_findings=[], equipment_issues=[], weather_impact="", blocked_activities=[],
+        critical_risks=[], recommended_actions=[], priority_matrix=[], next_site_visit_focus=[],
+        questions_for_site_team=[], contradictions=[],
+        trend_analysis=TrendAnalysisOut(available=False, summary=None, signals=[]),
+        confidence_score=0,
+        risk_score_breakdown=RiskScoreBreakdownOut(total=0, level="Unknown", components=[]),
+        priority_level="Unknown",
+        escalation_required=False,
+        section_sources=[],
+        source_attribution=[],
+    )
+
+
+# ---------------------------------------------------------------------------
+# Deterministic mapping: compact Hermes output -> the broader
+# SiteReportAnalysisOut shape the frontend already knows how to render.
+# Hermes itself never generates this broader shape (see
+# site_report_reasoning.py's module docstring) — every section below is
+# derived in plain Python from the 7-field compact result, satisfying
+# "generate secondary UI sections deterministically where possible."
+# ---------------------------------------------------------------------------
+
+def _format_finding_line(item) -> str:
+    if item.evidence_codes:
+        return f"{item.statement} [{', '.join(item.evidence_codes)}]"
+    return item.statement
+
+
+def _findings_by_category(findings: list, category: str) -> list[str]:
+    return [_format_finding_line(f) for f in findings if f.category == category]
+
+
+# ---------------------------------------------------------------------------
+# In-memory, process-local cache: if the same report is re-analyzed and its
+# evidence hasn't changed, return the last completed analysis instantly
+# instead of re-running Hermes. Deliberately NOT a new DB table/migration —
+# a fingerprint of the formatted evidence block is enough to detect "the
+# underlying data changed" without persisting anything. Lost on server
+# restart and not shared across multiple worker processes — see the final
+# report's limitations section; upgrading to a persisted cache is a small,
+# separate follow-up if this deployment ever runs multiple workers.
+# ---------------------------------------------------------------------------
+_ANALYSIS_CACHE: dict[tuple[int, int], tuple[str, SiteReportAnalysisOut]] = {}
+
+
+def _evidence_fingerprint(ev: ReportEvidence, risk) -> str:
+    from app.ai.site_report_reasoning import _format_evidence_block
+    raw = _format_evidence_block(ev, risk)
+    return hashlib.sha256(raw.encode("utf-8")).hexdigest()
+
+
+def _record_site_report_memory(db: Session, scope, project_id: int, report_id: int, ev, risk, out) -> None:
+    """Best-effort — a memory write must never fail the /analyze request
+    that produced it. Only called for a completed (not insufficient-
+    evidence, not unavailable) reasoning result, so memory never records a
+    "no analysis" placeholder as if it were a real one."""
+    if scope is None:
+        return
+    try:
+        from app.ai.memory_records import record_memory
+        keywords = (
+            ["site report", f"SR-{report_id}", risk.level]
+            + [f.statement[:40] for f in out.key_findings[:3]]
+            + [f.statement[:40] for f in out.critical_risks[:2]]
+        )
+        record_memory(
+            db, scope,
+            source="site_report", category="risk_report",
+            title=f"SR-{report_id} — {ev.project.project_code} ({risk.level} risk, {risk.total}/100)",
+            summary=out.executive_summary,
+            keywords=[k for k in keywords if k],
+            citation=f"SR-{report_id}",
+            confidence=risk.total,
+            project_id=project_id,
+        )
+    except Exception as exc:
+        logger.warning("site_report_memory_write_failed report_id=%s error=%s", report_id, exc)
+
+
+def analyze_site_report(db: Session, project_id: int, report_id: int, scope=None) -> SiteReportAnalysisOut:
     """The actual AI reasoning pipeline (POST .../analyze). One evidence
-    gather, one deterministic risk score, one Hermes call."""
-    ev = gather_report_evidence(db, project_id, report_id)
-    risk = compute_report_risk_score(ev)
-    result = generate_report_reasoning(ev, risk)
+    gather, one deterministic risk score, one Hermes call.
+
+    Only ValueError (report/project not found) propagates to the caller —
+    every other exception is caught here and converted into a structured
+    "unavailable" SiteReportAnalysisOut so the frontend never has to handle
+    a bare 500 for this endpoint, and never sits waiting on a request that
+    can only ever end in an opaque server error.
+
+    scope: optional AIAuthScope, used only to attribute an automatic
+    memory write of a completed analysis (see app/ai/memory_records.py) —
+    not used for retrieval/authorization, which this endpoint has never
+    enforced (see app/api/v1/site_reports.py)."""
+    try:
+        ev = gather_report_evidence(db, project_id, report_id)
+        risk = compute_report_risk_score(ev)
+    except ValueError:
+        raise
+    except Exception as exc:
+        logger.error("site_report_evidence_gather_failed project_id=%s report_id=%s error=%s", project_id, report_id, exc, exc_info=True)
+        return _unavailable_analysis_out(f"Evidence/risk computation failed: {type(exc).__name__}")
+
+    # Cache check: if this exact report's evidence hasn't changed since the
+    # last COMPLETED analysis, return it instantly — no Hermes call, no
+    # deterministic re-computation needed beyond the fingerprint itself.
+    # Never caches a fallback/unavailable/timed_out result, so a transient
+    # Hermes failure is always retried on the next click rather than stuck.
+    fingerprint = _evidence_fingerprint(ev, risk)
+    cache_key = (project_id, report_id)
+    cached = _ANALYSIS_CACHE.get(cache_key)
+    if cached is not None and cached[0] == fingerprint:
+        logger.info(
+            "site_report_analysis_cache_hit project_id=%s report_id=%s",
+            project_id, report_id,
+        )
+        return cached[1]
+
+    total_start = time.monotonic()
+    try:
+        result = generate_report_reasoning(ev, risk)
+    except Exception as exc:
+        # generate_report_reasoning() already catches provider/validation
+        # errors internally and returns status="unavailable"/"timed_out" —
+        # reaching this except means something outside that contract broke
+        # (e.g. a bug in evidence formatting). Evidence/risk are already
+        # computed, so still return them instead of discarding real data.
+        logger.error("site_report_reasoning_unexpected_failure project_id=%s report_id=%s error=%s", project_id, report_id, exc, exc_info=True)
+        from app.ai.site_report_reasoning import ReasoningResult
+        result = ReasoningResult(
+            status="unavailable", output=None, provider=None, model_name=None,
+            error_message=f"Unexpected reasoning failure: {type(exc).__name__}",
+        )
+    total_duration_ms = (time.monotonic() - total_start) * 1000
 
     risk_out = RiskScoreBreakdownOut(
         total=risk.total,
@@ -329,9 +485,22 @@ def analyze_site_report(db: Session, project_id: int, report_id: int) -> SiteRep
         AnalysisSectionSourceOut(section="Executive Summary", sources=[i.code for i in ev.evidence_items[:8]]),
     ]
 
+    logger.info(
+        "site_report_analyze_timing project_id=%s report_id=%s "
+        "evidence_before_count=%d evidence_after_count=%d prompt_length=%d "
+        "provider=%s model=%s hermes_duration_ms=%.0f total_duration_ms=%.0f "
+        "reasoning_status=%s fallback_used=%s",
+        project_id, report_id, ev.evidence_before_count, len(ev.evidence_items),
+        result.prompt_length, result.provider, result.model_name,
+        result.hermes_duration_ms, total_duration_ms, result.status,
+        result.status != "completed",
+    )
+
     if result.status == "completed" and result.output is not None:
         out = result.output
-        return SiteReportAnalysisOut(
+        if not out.insufficient_evidence:
+            _record_site_report_memory(db, scope, project_id, report_id, ev, risk, out)
+        analysis_out = SiteReportAnalysisOut(
             analysis_generated_from=f"Hermes reasoning over {len(ev.evidence_items)} report-scoped evidence item(s).",
             reasoning_status="completed",
             reasoning_provider=result.provider,
@@ -339,36 +508,32 @@ def analyze_site_report(db: Session, project_id: int, report_id: int) -> SiteRep
             reasoning_error=None,
             insufficient_evidence=out.insufficient_evidence,
             insufficient_evidence_reason=out.insufficient_evidence_reason,
-            ocr_quality_note=out.ocr_quality_note or (ev.ocr_quality_notes[0] if ev.ocr_quality_notes else None),
+            ocr_quality_note=ev.ocr_quality_notes[0] if ev.ocr_quality_notes else None,
             executive_summary=out.executive_summary,
-            major_findings=out.major_findings,
-            safety_findings=out.safety_findings,
-            quality_findings=out.quality_findings,
-            schedule_findings=out.schedule_findings,
-            procurement_findings=out.procurement_findings,
-            equipment_issues=out.equipment_issues,
-            weather_impact=out.weather_impact,
-            blocked_activities=out.blocked_activities,
-            critical_risks=out.critical_risks,
+            major_findings=[_format_finding_line(f) for f in out.key_findings],
+            safety_findings=_findings_by_category(out.key_findings, "safety"),
+            quality_findings=_findings_by_category(out.key_findings, "quality"),
+            schedule_findings=_findings_by_category(out.key_findings, "schedule"),
+            procurement_findings=_findings_by_category(out.key_findings, "procurement"),
+            equipment_issues=_findings_by_category(out.key_findings, "equipment"),
+            weather_impact="",
+            blocked_activities=[],
+            critical_risks=[_format_finding_line(f) for f in out.critical_risks],
             recommended_actions=[
                 RecommendedActionOut(
-                    action=a.action, priority=a.priority, reason=a.reason,
-                    evidence_refs=a.evidence_refs, expected_benefit=a.expected_benefit,
+                    action=a.statement, priority=a.priority, reason="",
+                    evidence_refs=a.evidence_codes, expected_benefit="",
                 )
                 for a in out.recommended_actions
             ],
-            priority_matrix=[
-                PriorityMatrixItemOut(item=m.item, urgency=m.urgency, impact=m.impact, evidence_refs=m.evidence_refs)
-                for m in out.priority_matrix
-            ],
-            next_site_visit_focus=out.next_site_visit_focus,
-            questions_for_site_team=out.questions_for_site_team,
-            contradictions=out.contradictions,
+            priority_matrix=[],
+            next_site_visit_focus=[],
+            questions_for_site_team=list(out.missing_information),
+            contradictions=[],
             trend_analysis=TrendAnalysisOut(
-                available=out.trend_analysis.available,
-                summary=out.trend_analysis.summary,
-                signals=out.trend_analysis.signals,
+                available=bool(out.trend_summary), summary=out.trend_summary or None, signals=[],
             ),
+            missing_information=list(out.missing_information),
             confidence_score=risk.total,
             risk_score_breakdown=risk_out,
             priority_level=risk.level,
@@ -376,20 +541,23 @@ def analyze_site_report(db: Session, project_id: int, report_id: int) -> SiteRep
             section_sources=section_sources,
             source_attribution=source_attribution,
         )
+        _ANALYSIS_CACHE[cache_key] = (fingerprint, analysis_out)
+        return analysis_out
 
-    # Reasoning unavailable — honest failure state, never a keyword-template
-    # narrative pretending to be the AI's answer. Evidence and risk score
-    # (both independent of Hermes) are still returned.
+    # Reasoning unavailable/timed out — honest failure state, never a
+    # keyword-template narrative pretending to be the AI's answer. Evidence
+    # and risk score (both independent of Hermes) are still returned.
+    is_timeout = result.status == "timed_out"
     return SiteReportAnalysisOut(
-        analysis_generated_from=f"AI reasoning unavailable — {len(ev.evidence_items)} evidence item(s) were retrieved but not analyzed.",
-        reasoning_status="unavailable",
+        analysis_generated_from=f"AI reasoning {'timed out' if is_timeout else 'unavailable'} — {len(ev.evidence_items)} evidence item(s) were retrieved but not analyzed.",
+        reasoning_status=result.status,
         reasoning_provider=result.provider,
         reasoning_model=result.model_name,
         reasoning_error=result.error_message,
         insufficient_evidence=False,
         insufficient_evidence_reason=None,
         ocr_quality_note=ev.ocr_quality_notes[0] if ev.ocr_quality_notes else None,
-        executive_summary="I don't have enough evidence to generate an AI analysis right now — reasoning could not be completed. The report's raw evidence and the deterministic risk score below are unaffected.",
+        executive_summary=_TIMED_OUT_MESSAGE_EN if is_timeout else _UNAVAILABLE_MESSAGE_EN,
         major_findings=[],
         safety_findings=[],
         quality_findings=[],
@@ -405,6 +573,7 @@ def analyze_site_report(db: Session, project_id: int, report_id: int) -> SiteRep
         questions_for_site_team=[],
         contradictions=[],
         trend_analysis=TrendAnalysisOut(available=False, summary=None, signals=[]),
+        missing_information=[],
         confidence_score=risk.total,
         risk_score_breakdown=risk_out,
         priority_level=risk.level,

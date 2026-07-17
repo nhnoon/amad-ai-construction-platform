@@ -46,6 +46,10 @@ from app.ai.memory_reader import (
     build_memory_context_block, build_user_preferences_block, is_memory_relevant,
     select_relevant_memory,
 )
+from app.ai.memory_command import build_confirmation_message, detect_memory_command
+from app.ai.memory_records import (
+    MemoryCommandRejected, build_memory_record_block, record_user_memory, search_memory_records,
+)
 from app.ai.planner import (
     build_comparison_data, detect_required_domains, execute_executive_summary,
     execute_multi_domain_plan, is_executive_summary_query,
@@ -1618,6 +1622,60 @@ class CopilotPipeline:
             else []
         )
 
+        # ── 2a. Memory-command detection — MUST run before context
+        # resolution/clarification/intent routing. A save directive like
+        # "Remember that Project PRJ-001 has a crane inspection..." used to
+        # fall into resolve_context()'s anaphoric-follow-up detection (the
+        # word "that" immediately before "Project" collided with the
+        # "that project" pattern) and got misrouted to a clarification
+        # question before it ever had a chance to be recognized as a
+        # command — see app/ai/context_resolver.py's own fix for the
+        # underlying pattern collision, and app/ai/memory_command.py for
+        # the detector itself. Deterministic, no LLM call, no evidence
+        # retrieval — a save directive is answered immediately.
+        memory_cmd = detect_memory_command(question)
+        if memory_cmd is not None:
+            memory_resolved_ctx = ResolvedContext(
+                resolved_query=question, original_question=question, is_follow_up=False,
+            )
+            user_msg = AIMessage(
+                conversation_id=conv.id, role="user", content=question,
+                status="completed", original_question=question,
+                clarification_required=False, context_refs_used=0,
+            )
+            db.add(user_msg)
+            db.flush()
+
+            try:
+                _record, created = record_user_memory(
+                    db, scope, content=memory_cmd.content, project_code=memory_cmd.project_code,
+                )
+                answer = build_confirmation_message(memory_cmd)
+                status = "memory_saved"
+                logger.info(
+                    "DEBUG_TRACE step=memory_command_detected memory_saved=%s "
+                    "already_existed=%s project_code=%s is_arabic=%s",
+                    True, not created, memory_cmd.project_code, memory_cmd.is_arabic,
+                )
+            except MemoryCommandRejected as exc:
+                answer = (
+                    f"لم يتم الحفظ: {exc}" if memory_cmd.is_arabic else f"Not saved: {exc}"
+                )
+                status = "memory_save_rejected"
+                logger.info(
+                    "DEBUG_TRACE step=memory_command_detected memory_saved=%s "
+                    "already_existed=%s project_code=%s is_arabic=%s",
+                    False, False, memory_cmd.project_code, memory_cmd.is_arabic,
+                )
+
+            return self._build_response(
+                db=db, conv=conv, user_msg=user_msg, answer=answer, status=status,
+                evidence=[], llm_response=None, pipeline_start=pipeline_start,
+                intent="memory_save", scope=scope, project_id=project_id,
+                resolved_ctx=memory_resolved_ctx, state=state,
+                domains_used=[], tools_used=[], is_multi_domain=False, is_executive=False,
+            )
+
         # ── 3. Context resolution (follow-up rewriting) ────────────────────
         resolved_ctx: ResolvedContext = resolve_context(
             question=question,
@@ -2019,6 +2077,8 @@ class CopilotPipeline:
         memory_block = ""
         memory_lines_selected = 0
         memory_chars_selected = 0
+        memory_records_selected = 0
+        memory_source_types: list[str] = []
         if memory_relevant:
             try:
                 memory_notes = get_memory_notes(db, scope)
@@ -2028,8 +2088,23 @@ class CopilotPipeline:
                 profile_memory = get_user_profile_memory(db, scope)
                 preferences_block = build_user_preferences_block(profile_memory, is_arabic=is_arabic)
 
+                # Structured, cross-conversation memory (app/ai/memory_records.py)
+                # — a real, filterable knowledge store distinct from the
+                # per-user note blob above, searchable by project/org/keyword.
+                # Same relevance gate (is_memory_relevant) decides whether to
+                # search it at all, so "current state" questions never pull in
+                # historical memory unnecessarily.
+                matched_records = search_memory_records(
+                    db, scope, question, project_id=effective_project_id,
+                )
+                records_block = build_memory_record_block(matched_records, is_arabic=is_arabic)
+
                 memory_lines_selected = len(selected_lines)
-                memory_block = "\n\n".join(b for b in (memory_context, preferences_block) if b)
+                memory_records_selected = len(matched_records)
+                memory_source_types = sorted({r.source for r in matched_records})
+                memory_block = "\n\n".join(
+                    b for b in (memory_context, records_block, preferences_block) if b
+                )
                 memory_chars_selected = len(memory_block)
             except Exception:
                 # Memory is a best-effort supplement — never fail the request.
@@ -2037,11 +2112,15 @@ class CopilotPipeline:
                 memory_block = ""
                 memory_lines_selected = 0
                 memory_chars_selected = 0
+                memory_records_selected = 0
+                memory_source_types = []
 
         logger.info(
             "DEBUG_TRACE step=memory_loaded memory_relevant=%s "
-            "memory_lines_selected=%d memory_chars_selected=%d",
-            memory_relevant, memory_lines_selected, memory_chars_selected,
+            "memory_lines_selected=%d memory_records_selected=%d memory_source_types=%s "
+            "memory_chars_selected=%d",
+            memory_relevant, memory_lines_selected, memory_records_selected,
+            memory_source_types, memory_chars_selected,
         )
 
         evidence_block = _build_evidence_block(all_evidence)

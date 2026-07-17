@@ -195,14 +195,89 @@ export interface MemoryGroups {
   other: MemoryGroupItem[];
 }
 
+// Structured memory (AMAD AI Stabilization) — real AIMemoryRecord rows,
+// additive alongside the original note-blob groups above.
+export interface StructuredMemory {
+  id: number;
+  source: string;
+  category: string;
+  title: string;
+  summary: string;
+  keywords: string[];
+  project_id: number | null;
+  project_code: string | null;
+  citation: string | null;
+  confidence: number;
+  priority: "High" | "Medium" | "Low" | string;
+  created_at: string;
+  can_delete: boolean;
+  can_edit: boolean;
+}
+
+// Categories a user can pick when creating a memory from the Memory
+// Center form — must match backend USER_MEMORY_CATEGORIES exactly
+// (app/ai/memory_records.py).
+export const USER_MEMORY_CATEGORIES = [
+  { value: "project_note", label: "Project" },
+  { value: "meeting_note", label: "Meeting" },
+  { value: "decision_note", label: "Decision" },
+  { value: "risk_note", label: "Risk" },
+  { value: "contract_note", label: "Contract" },
+  { value: "supplier_note", label: "Supplier" },
+  { value: "site_report_note", label: "Site Report" },
+  { value: "personal_note", label: "Personal Notes" },
+] as const;
+
+export type UserMemoryCategory = (typeof USER_MEMORY_CATEGORIES)[number]["value"];
+
 export interface MemoryOut {
   memory_notes: string;
   profile_memory: string;
   groups: MemoryGroups;
+  structured_memories: StructuredMemory[];
+  category_counts: Record<string, number>;
 }
 
 export async function getMemory(): Promise<MemoryOut> {
   const resp = await fetch(`/api/v1/ai/memory`, { headers: authHeaders() });
+  if (!resp.ok) throw new AICenterApiError(await parseErrorDetail(resp), resp.status);
+  return resp.json();
+}
+
+export async function deleteMemoryRecord(id: number): Promise<void> {
+  const resp = await fetch(`/api/v1/ai/memory/${id}`, { method: "DELETE", headers: authHeaders() });
+  if (!resp.ok) throw new AICenterApiError(await parseErrorDetail(resp), resp.status);
+}
+
+export async function createMemoryRecord(params: {
+  title: string;
+  summary: string;
+  category: UserMemoryCategory;
+  projectCode?: string | null;
+}): Promise<StructuredMemory> {
+  const resp = await fetch(`/api/v1/ai/memory`, {
+    method: "POST",
+    headers: authHeaders({ "Content-Type": "application/json" }),
+    body: JSON.stringify({
+      title: params.title,
+      summary: params.summary,
+      category: params.category,
+      project_code: params.projectCode || null,
+    }),
+  });
+  if (!resp.ok) throw new AICenterApiError(await parseErrorDetail(resp), resp.status);
+  return resp.json();
+}
+
+export async function updateMemoryRecord(
+  id: number,
+  params: { title?: string; summary?: string; category?: UserMemoryCategory },
+): Promise<StructuredMemory> {
+  const resp = await fetch(`/api/v1/ai/memory/${id}`, {
+    method: "PATCH",
+    headers: authHeaders({ "Content-Type": "application/json" }),
+    body: JSON.stringify(params),
+  });
   if (!resp.ok) throw new AICenterApiError(await parseErrorDetail(resp), resp.status);
   return resp.json();
 }

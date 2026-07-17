@@ -151,7 +151,7 @@ function Router() {
       <Route path="/admin/organization" component={() => <AdminRoute component={AdminOrganization} />} />
       <Route path="/admin" component={() => <AdminRoute component={AdminUsers} />} />
       <Route path="/copilot" component={() => <ProtectedRoute component={Copilot} />} />
-      <Route path="/ai-center" component={() => <ProtectedRoute component={AICenter} />} />
+      <Route path="/ai-center/:workspace?" component={() => <ProtectedRoute component={AICenter} />} />
       <Route path="/alerts" component={() => <ProtectedRoute component={Alerts} />} />
       <Route path="/reports" component={() => <ProtectedRoute component={Reports} />} />
       <Route component={NotFound} />

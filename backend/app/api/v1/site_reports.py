@@ -1,11 +1,14 @@
+import logging
+
 from fastapi import APIRouter, HTTPException, Query
 from typing import Optional
+from ...ai.scope import build_ai_scope
 from ...ai.site_report_intelligence import (
     analyze_site_report,
     build_site_report_intelligence,
     list_site_report_cards,
 )
-from ...core.deps import DbSession
+from ...core.deps import CurrentUser, DbSession
 from ...models.site import SiteReport, DailyActivity
 from ...schemas.site import (
     SiteReportOut,
@@ -14,6 +17,8 @@ from ...schemas.site import (
     SiteReportIntelligenceOut,
     SiteReportAnalysisOut,
 )
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(tags=["site-reports"])
 
@@ -97,8 +102,22 @@ def get_site_report_intelligence(project_id: int, report_id: int, db: DbSession)
     "/projects/{project_id}/site-reports/{report_id}/analyze",
     response_model=SiteReportAnalysisOut,
 )
-def analyze_site_report_route(project_id: int, report_id: int, db: DbSession):
+def analyze_site_report_route(project_id: int, report_id: int, db: DbSession, current_user: CurrentUser):
     try:
-        return analyze_site_report(db=db, project_id=project_id, report_id=report_id)
+        scope = build_ai_scope(current_user, db)
+        return analyze_site_report(db=db, project_id=project_id, report_id=report_id, scope=scope)
     except ValueError as exc:
         raise HTTPException(status_code=404, detail=str(exc))
+    except Exception as exc:
+        # analyze_site_report() already converts everything except
+        # ValueError into a structured "unavailable" result — reaching
+        # this except means something broke outside that contract (e.g. in
+        # response serialization itself). Still never let a bare, unlabeled
+        # 500 reach the frontend for this endpoint: the client-side
+        # AbortController timeout (site-report-detail.tsx) is generous
+        # enough to tolerate a real Hermes call, so an unhandled exception
+        # here would otherwise look identical to "endless loading" for as
+        # long as that timeout takes to fire.
+        logger.error("analyze_site_report_route_unhandled project_id=%s report_id=%s error=%s", project_id, report_id, exc, exc_info=True)
+        from ...ai.site_report_intelligence import _unavailable_analysis_out
+        return _unavailable_analysis_out(f"Unexpected server error: {type(exc).__name__}")

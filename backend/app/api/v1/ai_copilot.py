@@ -19,19 +19,32 @@ from fastapi import APIRouter, HTTPException, Query, status
 
 from app.ai.memory import get_memory_notes, get_user_profile_memory
 from app.ai.memory_reader import group_memory_notes
+from app.ai.memory_records import (
+    MemoryCommandRejected,
+    create_user_memory,
+    delete_memory_record,
+    derive_priority,
+    list_memory_records_for_scope,
+    update_memory_record,
+)
 from app.ai.pipeline import CopilotPipeline
 from app.ai.ratelimit import get_ai_rate_limiter
 from app.ai.scope import build_ai_scope
 from app.core.deps import CurrentUser, DbSession
 from app.models.ai_copilot import AIConversation, AIMessage
+from app.models.copilot_memory import AIMemoryRecord
+from app.models.projects import Project
 from app.schemas.ai_copilot import (
     ConversationOut,
     CopilotQueryRequest,
     CopilotQueryResponse,
     MeetingAgentRequest,
+    MemoryCreateRequest,
     MemoryOut,
+    MemoryUpdateRequest,
     MessageOut,
     ProcurementAgentRequest,
+    StructuredMemoryOut,
 )
 
 logger = logging.getLogger(__name__)
@@ -40,18 +53,108 @@ router = APIRouter(prefix="/ai", tags=["ai"])
 _pipeline = CopilotPipeline()
 
 
+def _serialize_memory(
+    r: AIMemoryRecord, scope, project_codes: dict[int, str],
+) -> StructuredMemoryOut:
+    can_edit_or_delete = bool(scope.has_global_read or (r.user_id is not None and r.user_id == scope.user_id))
+    return StructuredMemoryOut(
+        id=r.id,
+        source=r.source,
+        category=r.category,
+        title=r.title,
+        summary=r.summary,
+        keywords=[k.strip() for k in (r.keywords or "").split(",") if k.strip()],
+        project_id=r.project_id,
+        project_code=project_codes.get(r.project_id) if r.project_id else None,
+        citation=r.citation,
+        confidence=r.confidence,
+        priority=derive_priority(r.source, r.category, r.confidence),
+        created_at=r.created_at.isoformat() if r.created_at else "",
+        can_delete=can_edit_or_delete,
+        can_edit=can_edit_or_delete,
+    )
+
+
+def _project_codes_for(db: DbSession, records: list[AIMemoryRecord]) -> dict[int, str]:
+    project_ids = {r.project_id for r in records if r.project_id is not None}
+    if not project_ids:
+        return {}
+    return {p.id: p.project_code for p in db.query(Project).filter(Project.id.in_(project_ids)).all()}
+
+
 @router.get("/memory", response_model=MemoryOut)
 def read_memory(current_user: CurrentUser, db: DbSession) -> MemoryOut:
-    """Read-only view of the caller's own bounded Copilot memory (Phase 4,
-    AI Center Memory tab). Reuses app/ai/memory.py exactly as-is — no new
-    business logic, just an HTTP read path that never existed before."""
+    """The caller's Copilot memory — both the original bounded note-blob
+    view (Phase 4) and, additively, real structured AIMemoryRecord rows
+    (AMAD AI Stabilization Part B) scoped to the caller's organization/
+    projects, not just their own writes — so a Project Manager sees the
+    same memory Hermes actually reasons over, not just their own notes."""
     scope = build_ai_scope(current_user, db)
     memory_notes = get_memory_notes(db, scope)
+
+    records = list_memory_records_for_scope(db, scope)
+    project_codes = _project_codes_for(db, records)
+
+    structured = [_serialize_memory(r, scope, project_codes) for r in records]
+    category_counts: dict[str, int] = {}
+    for r in records:
+        category_counts[r.category] = category_counts.get(r.category, 0) + 1
+
     return MemoryOut(
         memory_notes=memory_notes,
         groups=group_memory_notes(memory_notes),
         profile_memory=get_user_profile_memory(db, scope),
+        structured_memories=structured,
+        category_counts=category_counts,
     )
+
+
+@router.post("/memory", response_model=StructuredMemoryOut, status_code=status.HTTP_201_CREATED)
+def create_memory(body: MemoryCreateRequest, current_user: CurrentUser, db: DbSession) -> StructuredMemoryOut:
+    """Create one structured memory from the Memory Center's "Add Memory"
+    form (Product UX Phase 1) — the structured-UI counterpart to the
+    free-form "remember that..." chat command."""
+    scope = build_ai_scope(current_user, db)
+    try:
+        record = create_user_memory(
+            db, scope,
+            title=body.title, summary=body.summary,
+            category=body.category, project_code=body.project_code,
+        )
+    except MemoryCommandRejected as exc:
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(exc))
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc))
+    project_codes = _project_codes_for(db, [record])
+    return _serialize_memory(record, scope, project_codes)
+
+
+@router.patch("/memory/{record_id}", response_model=StructuredMemoryOut)
+def edit_memory(record_id: int, body: MemoryUpdateRequest, current_user: CurrentUser, db: DbSession) -> StructuredMemoryOut:
+    """Edit an existing structured memory's title/summary/category
+    (Product UX Phase 1's "Edit Memory") — 404/403 rules match delete."""
+    scope = build_ai_scope(current_user, db)
+    try:
+        record = update_memory_record(
+            db, scope, record_id,
+            title=body.title, summary=body.summary, category=body.category,
+        )
+    except MemoryCommandRejected as exc:
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(exc))
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc))
+    project_codes = _project_codes_for(db, [record])
+    return _serialize_memory(record, scope, project_codes)
+
+
+@router.delete("/memory/{record_id}", status_code=204, response_model=None)
+def delete_memory(record_id: int, current_user: CurrentUser, db: DbSession) -> None:
+    """Delete one structured memory record. 404 if not visible to the
+    caller's scope, 403 if visible but neither owned by the caller nor a
+    global-read role (see app/ai/memory_records.py::delete_memory_record
+    for the exact rule)."""
+    scope = build_ai_scope(current_user, db)
+    delete_memory_record(db, scope, record_id)
 
 
 @router.post("/copilot/query", response_model=CopilotQueryResponse, status_code=200)

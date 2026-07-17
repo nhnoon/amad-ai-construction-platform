@@ -122,6 +122,11 @@ class ReportEvidence:
 
     evidence_items: list[EvidenceItem] = field(default_factory=list)
     ocr_quality_notes: list[str] = field(default_factory=list)
+    # Instrumentation only (see PERFORMANCE IMPLEMENTATION §2) — the row
+    # count actually retrieved from the DB in-window, before per-domain
+    # ranking/capping. Compared against len(evidence_items) to measure how
+    # much the compaction step is actually reducing prompt size by.
+    evidence_before_count: int = 0
 
     @property
     def subcontractor_ids_on_site(self) -> set[int]:
@@ -258,6 +263,118 @@ def _looks_blocked(text: Optional[str]) -> bool:
     return any(w in low for w in _BLOCKER_WORDS)
 
 
+# ---------------------------------------------------------------------------
+# Evidence compaction — per-domain caps, applied to the raw rows BEFORE they
+# become EvidenceItems, so the prompt Hermes receives is bounded regardless
+# of how large a report's window happens to be. Window-scoping (above) fixed
+# "every report looks the same"; this fixes "a busy 2-week window sends 40
+# rows to a 7B model and pushes generation time past several minutes."
+# Ranking favors what a human reviewer would actually look at first:
+# severity/unresolved status, then recency — never an arbitrary DB order.
+# ---------------------------------------------------------------------------
+
+_MAX_SAFETY_EVIDENCE = 3
+_MAX_NCR_EVIDENCE = 3
+_MAX_PROCUREMENT_EVIDENCE = 3
+_MAX_MEETING_EVIDENCE = 2
+_MAX_DOCUMENT_EVIDENCE = 3
+
+_SEVERITY_RANK = {"critical": 4, "high": 3, "medium": 2, "low": 1}
+
+
+def _severity_rank(value: Optional[str]) -> int:
+    return _SEVERITY_RANK.get((value or "").lower(), 0)
+
+
+def _date_sort_key(value: Optional[str]) -> date:
+    parsed = parse_report_date(value)
+    return parsed or date.min
+
+
+def _rank_safety_events(events: list[SafetyEvent]) -> list[SafetyEvent]:
+    return sorted(
+        events,
+        key=lambda e: (_severity_rank(e.severity), _date_sort_key(e.event_date)),
+        reverse=True,
+    )[:_MAX_SAFETY_EVIDENCE]
+
+
+def _rank_ncrs(ncrs: list[NCR]) -> list[NCR]:
+    def _key(n: NCR):
+        unresolved = (n.status or "").lower() not in ("closed", "resolved")
+        return (unresolved, _date_sort_key(n.issue_date))
+    return sorted(ncrs, key=_key, reverse=True)[:_MAX_NCR_EVIDENCE]
+
+
+def _rank_procurement(
+    purchase_orders: list[PurchaseOrder], purchase_requests: list[PurchaseRequest]
+) -> tuple[list[PurchaseOrder], list[PurchaseRequest]]:
+    """Late POs and pending PRs are what a reviewer needs to see first —
+    ranked together, then split back into their own lists, capped at a
+    combined total of _MAX_PROCUREMENT_EVIDENCE."""
+    po_scored = [(po, (1 if po.is_late else 0, po.delay_days or 0)) for po in purchase_orders]
+    po_scored.sort(key=lambda t: t[1], reverse=True)
+    pr_pending_statuses = {"pending clarification", "under review", "needs rework", "returned to requester"}
+    pr_scored = [(pr, 1 if (pr.status or "").lower() in pr_pending_statuses else 0) for pr in purchase_requests]
+    pr_scored.sort(key=lambda t: t[1], reverse=True)
+
+    kept_pos: list[PurchaseOrder] = []
+    kept_prs: list[PurchaseRequest] = []
+    remaining = _MAX_PROCUREMENT_EVIDENCE
+    for po, _ in po_scored:
+        if remaining <= 0:
+            break
+        kept_pos.append(po)
+        remaining -= 1
+    for pr, _ in pr_scored:
+        if remaining <= 0:
+            break
+        kept_prs.append(pr)
+        remaining -= 1
+    return kept_pos, kept_prs
+
+
+def _rank_meetings(meetings: list[Meeting]) -> list[Meeting]:
+    return sorted(meetings, key=lambda m: _date_sort_key(m.meeting_date), reverse=True)[:_MAX_MEETING_EVIDENCE]
+
+
+def build_trend_snapshot(prior_reports: list[PriorReportSnapshot]) -> Optional[str]:
+    """One compact trend line summarizing however many prior reports exist,
+    replacing what used to be one full line PER prior report (up to
+    SITE_REPORT_TREND_LOOKBACK_REPORTS separate lines) — same information
+    density for trend reasoning, far fewer prompt characters. Returns None
+    when there are no prior reports (first report for the project)."""
+    if not prior_reports:
+        return None
+    # prior_reports is already ordered most-recent-first (see the query in
+    # gather_report_evidence) — reverse to oldest-first so a reader sees
+    # the trend running left-to-right in chronological order.
+    ordered = list(reversed(prior_reports))
+    safety = ",".join(str(p.safety_event_count) for p in ordered)
+    ncr = ",".join(str(p.open_ncr_count) for p in ordered)
+    late_po = ",".join(str(p.late_po_count) for p in ordered)
+    blocked = ",".join(str(p.blocked_activity_count) for p in ordered)
+    dates = ",".join(p.report_date or "undated" for p in ordered)
+    return (
+        f"Trend across last {len(ordered)} prior report(s) ({dates}, oldest first): "
+        f"safety events [{safety}], open NCRs [{ncr}], late POs [{late_po}], "
+        f"blocked activities [{blocked}]."
+    )
+
+
+def _rank_documents(
+    documents_with_ocr: list[tuple[Document, Optional[DocumentOCRResult]]]
+) -> list[tuple[Document, Optional[DocumentOCRResult]]]:
+    """Documents with real, completed OCR text are more useful to reasoning
+    than ones with only a stored summary or a failed extraction — ranked
+    ahead, then by recency."""
+    def _key(pair):
+        doc, ocr = pair
+        has_text = 1 if (ocr is not None and ocr.status == "completed" and ocr.extracted_text) else 0
+        return (has_text, _date_sort_key(doc.doc_date))
+    return sorted(documents_with_ocr, key=_key, reverse=True)[:_MAX_DOCUMENT_EVIDENCE]
+
+
 def gather_report_evidence(db: Session, project_id: int, report_id: int) -> ReportEvidence:
     report = (
         db.query(SiteReport)
@@ -330,6 +447,22 @@ def gather_report_evidence(db: Session, project_id: int, report_id: int) -> Repo
             ocr_by_doc[ocr.document_id] = ocr
     documents_with_ocr = [(d, ocr_by_doc.get(d.id)) for d in documents]
 
+    # Instrumentation: total in-window rows before per-domain ranking/caps.
+    evidence_before_count = (
+        len(safety_events) + len(ncrs) + len(purchase_orders) + len(purchase_requests)
+        + len(meetings) + len(documents_with_ocr)
+    )
+
+    # Compaction: rank each domain and cap to a strict limit BEFORE building
+    # EvidenceItems, so the prompt Hermes receives is bounded regardless of
+    # how many rows a busy report's window contains — see the ranking
+    # helpers above (_rank_safety_events etc.) for the per-domain criteria.
+    safety_events = _rank_safety_events(safety_events)
+    ncrs = _rank_ncrs(ncrs)
+    purchase_orders, purchase_requests = _rank_procurement(purchase_orders, purchase_requests)
+    meetings = _rank_meetings(meetings)
+    documents_with_ocr = _rank_documents(documents_with_ocr)
+
     open_project_risks = (
         db.query(ProjectRisk).filter(ProjectRisk.project_id == project_id, ProjectRisk.status != "closed").limit(5).all()
     )
@@ -366,6 +499,7 @@ def gather_report_evidence(db: Session, project_id: int, report_id: int) -> Repo
         open_project_risks=open_project_risks,
         open_project_issues=open_project_issues,
         prior_reports=prior_reports,
+        evidence_before_count=evidence_before_count,
     )
     _build_evidence_items(evidence)
     return evidence
@@ -439,7 +573,7 @@ def _build_evidence_items(ev: ReportEvidence) -> None:
 
     for doc, ocr in ev.documents_with_ocr:
         if ocr is not None and ocr.status == "completed" and ocr.extracted_text:
-            excerpt = ocr.extracted_text[:600]
+            excerpt = ocr.extracted_text[:300]
             items.append(EvidenceItem(
                 code=f"DOC-{doc.id}",
                 category="document",

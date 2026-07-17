@@ -1,4 +1,5 @@
 import { useQuery } from "@tanstack/react-query";
+import { Link } from "wouter";
 import { Brain, AlertTriangle } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -12,15 +13,26 @@ export default function RecentMemoriesPanel({ className }: { className?: string 
     queryFn: getMemory,
   });
 
-  const allItems = data
-    ? [...data.groups.meeting, ...data.groups.project, ...data.groups.decision, ...data.groups.supplier].slice(0, 5)
-    : [];
+  // Prefer the structured memory store (real title/summary/date per row,
+  // includes user-saved "remember..." memories) — fall back to the legacy
+  // note-blob groups only when nothing structured exists yet.
+  const structuredItems = data?.structured_memories ?? [];
+  const allItems = structuredItems.length > 0
+    ? structuredItems.slice(0, 5).map((m) => ({ title: m.title, date: m.created_at?.slice(0, 10) ?? null, summary: m.summary }))
+    : data
+      ? [...data.groups.meeting, ...data.groups.project, ...data.groups.decision, ...data.groups.supplier].slice(0, 5)
+      : [];
 
   return (
     <Card className={cn("flex flex-col", className)}>
-      <CardHeader className="flex flex-row items-center gap-2 space-y-0 shrink-0">
-        <Brain className="w-4 h-4 text-primary" />
-        <CardTitle className="text-sm">Recent Memories</CardTitle>
+      <CardHeader className="flex flex-row items-center justify-between gap-2 space-y-0 shrink-0">
+        <div className="flex items-center gap-2">
+          <Brain className="w-4 h-4 text-primary" />
+          <CardTitle className="text-sm">Recent Memories</CardTitle>
+        </div>
+        <Link href="/ai-center/memory" className="text-xs font-medium text-primary hover:underline">
+          View all
+        </Link>
       </CardHeader>
       <CardContent className="flex-1 overflow-y-auto space-y-3">
         {isLoading ? (

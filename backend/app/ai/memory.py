@@ -13,9 +13,14 @@ accidentally storing retrieved evidence/records — this layer is never a
 substitute for PostgreSQL's domain tables, which remain the sole source of
 truth for project data.
 
-Not yet called from app/ai/pipeline.py or any retrieval module — wiring
-these into prompt construction / evidence resolution is a deliberately
-separate, future change. This module is infrastructure only.
+Read by app/ai/pipeline.py on every Copilot turn (via app/ai/memory_reader.py's
+relevance/ranking helpers) and spliced into the system prompt as a clearly-
+labelled, non-authoritative context block — see pipeline.py's memory_block
+construction. Written automatically from app/ai/meeting_memory.py after a
+meeting's decisions/action items are recorded, and by the other domain
+writers alongside app/ai/memory_records.py's structured AIMemoryRecord
+store (see that module for memories with real project/category/citation
+fields, as opposed to the bounded per-user note blob here).
 """
 from __future__ import annotations
 

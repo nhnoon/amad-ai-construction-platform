@@ -456,8 +456,14 @@ function EmptyState({ onPrompt, lang }: { onPrompt: (q: string) => void; lang: s
 
 // ── Main page ─────────────────────────────────────────────────────────────
 // `compact` is opt-in only (AI Center's Copilot tab passes it) — default
-// behavior at the standalone /copilot route is unchanged.
-export default function CopilotPage({ compact = false }: { compact?: boolean } = {}) {
+// behavior at the standalone /copilot route is unchanged. `projectId` is
+// opt-in too (Project Workspace's "Ask Hermes" tab passes it) — when set,
+// every query is scoped server-side via CopilotQueryRequest.project_id
+// (already supported by /copilot/query; just never sent from the UI
+// before this).
+export default function CopilotPage({
+  compact = false, projectId, projectLabel,
+}: { compact?: boolean; projectId?: number; projectLabel?: string } = {}) {
   const { i18n } = useTranslation();
   const lang = i18n.language ?? "en";
   const isRTL = lang === "ar";
@@ -528,6 +534,7 @@ export default function CopilotPage({ compact = false }: { compact?: boolean } =
         body: JSON.stringify({
           question: q.trim(),
           conversation_id: conversationId ?? undefined,
+          project_id: projectId,
         }),
       });
 
@@ -727,9 +734,11 @@ export default function CopilotPage({ compact = false }: { compact?: boolean } =
               {isRTL ? "مساعد عَمَد الذكي" : "Amad Copilot"}
             </h1>
             <p className="text-xs text-muted-foreground">
-              {isRTL
-                ? "استخبارات البناء متعدد الأدوار · قراءة فقط"
-                : "Multi-turn Construction Intelligence · Read-only"}
+              {projectLabel
+                ? `${isRTL ? "نطاق المشروع" : "Scoped to"}: ${projectLabel}`
+                : isRTL
+                  ? "استخبارات البناء متعدد الأدوار · قراءة فقط"
+                  : "Multi-turn Construction Intelligence · Read-only"}
             </p>
           </div>
           <Button

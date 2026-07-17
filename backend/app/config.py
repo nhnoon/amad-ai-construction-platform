@@ -81,8 +81,8 @@ class Settings(BaseSettings):
     # requires no authentication (Hermes's own config.yaml uses the Ollama
     # convention of a dummy placeholder key).
 
-    # ── Copilot Memory Layer (bounded, per-user; not yet read/written by
-    # the pipeline — see app/ai/memory.py) ─────────────────────────────
+    # ── Copilot Memory Layer (bounded, per-user; read/written by the
+    # pipeline — see app/ai/memory.py) ─────────────────────────────────
     # Mirrors Hermes's own memory.user_char_limit / memory.memory_char_limit.
     AI_USER_PROFILE_CHAR_LIMIT: int = 1375
     AI_MEMORY_NOTE_CHAR_LIMIT: int = 2200
@@ -106,24 +106,31 @@ class Settings(BaseSettings):
     CONTRACT_EXTRACTION_MAX_RAW_RESPONSE_CHARS: int = 20_000
 
     # ── Site Report Intelligence (app/ai/site_report_reasoning.py) — one
-    # Hermes reasoning call per /analyze request, over report-scoped evidence.
-    SITE_REPORT_MAX_EVIDENCE_CHARS: int = 14_000
+    # Hermes reasoning call per /analyze request, over report-scoped,
+    # per-domain-capped evidence (see site_report_evidence.py's ranking/
+    # compaction). Reduced from 14,000/480s (AMAD AI Stabilization) once
+    # the evidence builder started enforcing strict per-domain caps and the
+    # output contract shrank from 14 narrative sections to 7 compact
+    # fields — both cut the tokens Hermes needs to read AND generate.
+    SITE_REPORT_MAX_EVIDENCE_CHARS: int = 6_000
     SITE_REPORT_MAX_RAW_RESPONSE_CHARS: int = 20_000
     # When a report has no prior report to anchor its evidence window to
     # (the project's first report), how many days back to look for safety/
     # NCR/procurement/meeting/document evidence.
     SITE_REPORT_DEFAULT_LOOKBACK_DAYS: int = 14
-    # A full 14-section structured report is a much larger generation task
-    # than other Hermes call sites in this app (measured during
-    # implementation: ~117s for a 2-field ask against real evidence, on the
-    # same qwen2.5:7b/Ollama setup that answers simple Copilot questions in
-    # well under HERMES_TIMEOUT_SECONDS). A dedicated, longer timeout for
-    # this one pipeline avoids raising the shared HERMES_TIMEOUT_SECONDS
-    # (which would affect every other Hermes call in the app, including
-    # fast ones with no need for the extra budget).
-    SITE_REPORT_HERMES_TIMEOUT_SECONDS: int = 480
+    # Hard user-facing wait ceiling is 60s total (AMAD AI Stabilization).
+    # Evidence gathering + risk scoring is sub-second (pure DB + Python);
+    # this leaves Hermes ~45s of budget before response serialization and
+    # network overhead, with headroom under the 60s ceiling. A single
+    # bounded LOCAL JSON repair (see site_report_reasoning.py) replaces
+    # what used to be a full second Hermes call on validation failure, so
+    # this is now a true ceiling, not one of two sequential budgets.
+    SITE_REPORT_HERMES_TIMEOUT_SECONDS: int = 45
     # How many prior reports' evidence windows to summarize for trend
-    # comparison (repeated/escalating/resolved/new issues).
+    # comparison (repeated/escalating/resolved/new issues) — now compacted
+    # into ONE trend snapshot line (build_trend_snapshot) rather than one
+    # full line per prior report, so this can stay at 3 without bloating
+    # the prompt.
     SITE_REPORT_TREND_LOOKBACK_REPORTS: int = 3
 
     # ── Knowledge Access Layer (AI-003) — multi-domain Copilot questions

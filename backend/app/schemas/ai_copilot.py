@@ -31,16 +31,68 @@ class MemoryGroups(BaseModel):
     other: list[MemoryGroupItem] = Field(default_factory=list)
 
 
+class StructuredMemoryOut(BaseModel):
+    """One AIMemoryRecord row (app/ai/memory_records.py) — the durable,
+    cross-conversation knowledge store, distinct from the bounded note-
+    blob groups above."""
+
+    id: int
+    source: str
+    category: str
+    title: str
+    summary: str
+    keywords: list[str] = Field(default_factory=list)
+    project_id: Optional[int] = None
+    project_code: Optional[str] = None
+    citation: Optional[str] = None
+    confidence: int
+    # Deterministic, computed from category/source/confidence — not a
+    # stored column (Product UX Phase 1 explicitly avoids a schema
+    # change). See app/ai/memory_records.py::derive_priority.
+    priority: str
+    created_at: str
+    can_delete: bool
+    can_edit: bool
+
+
+class MemoryCreateRequest(BaseModel):
+    """Body for POST /ai/memory — the Memory Center's "Add Memory" form.
+    Structured counterpart to the free-form "remember that..." chat
+    command; always writes source="user"."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    title: str = Field(..., min_length=1, max_length=255)
+    summary: str = Field(..., min_length=1, max_length=1000)
+    category: str = Field(...)
+    project_code: Optional[str] = None
+
+
+class MemoryUpdateRequest(BaseModel):
+    """Body for PATCH /ai/memory/{id} — the Memory Center's "Edit Memory"
+    form. All fields optional; only provided fields are changed."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    title: Optional[str] = Field(default=None, min_length=1, max_length=255)
+    summary: Optional[str] = Field(default=None, min_length=1, max_length=1000)
+    category: Optional[str] = None
+
+
 class MemoryOut(BaseModel):
-    """Read-only view of the authenticated user's bounded Copilot memory
-    (app/ai/memory.py). No new business logic — a thin HTTP read wrapper
-    around get_memory_notes()/get_user_profile_memory(), plus deterministic
-    marker-based grouping (app/ai/memory_reader.py) for the AI Center's
-    Memory Viewer."""
+    """The authenticated user's Copilot memory. memory_notes/profile_memory/
+    groups are the original read-only view of the bounded per-user blobs
+    (app/ai/memory.py); structured_memories/category_counts are additive —
+    real AIMemoryRecord rows (app/ai/memory_records.py), RBAC-scoped to
+    this caller's organization/projects, not just this one user's own
+    writes. Existing consumers reading only the original three fields are
+    unaffected."""
 
     memory_notes: str
     profile_memory: str
     groups: MemoryGroups
+    structured_memories: list[StructuredMemoryOut] = Field(default_factory=list)
+    category_counts: dict[str, int] = Field(default_factory=dict)
 
 
 class ProcurementAgentRequest(BaseModel):

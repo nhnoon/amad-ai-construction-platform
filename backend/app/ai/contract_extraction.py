@@ -401,7 +401,33 @@ def process_contract_extraction(
         "validation_status=%s provider=%s",
         document_id, row.status, row.validation_status, row.provider,
     )
+    if row.status == "completed":
+        _record_contract_extraction_memory(db, scope, document, row)
     return row
+
+
+def _record_contract_extraction_memory(db: Session, scope: AIAuthScope, document, row: ContractExtraction) -> None:
+    """Best-effort — a memory write must never fail the extraction request
+    that produced it. Only called for a completed extraction, so memory
+    never records a failed/partial attempt as if it were a real result."""
+    try:
+        from app.ai.memory_records import record_memory
+        fields = row.extracted_fields or {}
+        summary_parts = [f"{k}={v}" for k, v in list(fields.items())[:8]]
+        summary = f"Contract extraction for {document.title} (validation={row.validation_status}): " + ", ".join(summary_parts)
+        keywords = ["contract", f"DOC-{document.id}"] + [str(k) for k in list(fields.keys())[:6]]
+        record_memory(
+            db, scope,
+            source="contract", category="contract_extraction",
+            title=f"Contract extraction — {document.title}",
+            summary=summary,
+            keywords=keywords,
+            citation=f"DOC-{document.id}",
+            confidence=100 if row.validation_status == "valid" else 60,
+            project_id=document.project_id,
+        )
+    except Exception as exc:
+        logger.warning("contract_extraction_memory_write_failed document_id=%s error=%s", document.id, exc)
 
 
 def get_contract_extraction(

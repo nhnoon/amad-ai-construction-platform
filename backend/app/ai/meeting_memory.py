@@ -1,13 +1,16 @@
 """Meeting Memory Writer — Phase 2 of the Copilot Memory Layer.
 
 Converts one authorized, real meeting record into a single bounded memory
-note and appends it via the existing app/ai/memory.py service (never a
-direct write to the memory tables). Deterministic and database-backed only
-— no LLM/Hermes call is made anywhere in this module.
+note (app/ai/memory.py's per-user blob) AND a structured AIMemoryRecord
+(app/ai/memory_records.py) — never a direct write to either memory table.
+Deterministic and database-backed only — no LLM/Hermes call anywhere in
+this module.
 
-Not wired into app/ai/pipeline.py, the Copilot API, or retrieval routing.
-Calling write_meeting_memory() is the only way this code runs; nothing
-calls it automatically yet.
+Called automatically from app/api/v1/meetings.py whenever a meeting is
+created or a decision/action item is added to one (see that router) — a
+meeting's memory is only ever as complete as its record was at write time,
+so this upserts (replaces its own prior note/record) rather than skipping
+once written, keeping it current as decisions/action items are added.
 """
 from __future__ import annotations
 
@@ -16,10 +19,12 @@ from typing import Optional
 
 from sqlalchemy.orm import Session
 
-from app.ai.memory import append_memory_note, get_memory_notes
+from app.ai.memory import _guard_not_evidence_dump, _write_memory_notes, append_memory_note, get_memory_notes
+from app.config import settings as _settings
+from app.ai.memory_records import record_memory
 from app.ai.retrieval.meetings import get_meeting_detail
 from app.ai.scope import AIAuthScope
-from app.models.copilot_memory import AIMemoryNote
+from app.models.copilot_memory import AIMemoryNote, AIMemoryRecord
 from app.models.projects import Project
 
 _NOT_RECORDED = "not recorded"
@@ -114,14 +119,25 @@ def write_meeting_memory(
     db: Session,
     scope: AIAuthScope,
     meeting_id: int,
+    upsert: bool = True,
 ) -> MeetingMemoryResult:
-    """Convert one authorized meeting into a bounded memory note.
+    """Convert one authorized meeting into a bounded memory note AND a
+    structured AIMemoryRecord.
 
     Raises the same exceptions get_meeting_detail() would (404 if the
     meeting doesn't exist, 403 if the caller's scope can't access its
     project) — this function does not swallow authorization errors into a
-    soft "skipped" result. Returns created=False with a reason only for
-    the legitimate no-op case: the meeting was already recorded.
+    soft "skipped" result.
+
+    upsert=True (default, and what every automatic call site uses):
+    replaces this meeting's own prior note/record if one exists, since a
+    meeting's decisions/action items are commonly added after its initial
+    creation — a meeting recorded once and never refreshed would silently
+    go stale the moment a decision is added, defeating the point of
+    "persistent memory". upsert=False preserves the original skip-if-
+    already-recorded behavior for callers that want a strict one-time
+    write (e.g. a manual/administrative re-seed that must not clobber
+    anything already written by normal traffic).
     """
     detail = get_meeting_detail(db, scope, meeting_id)
     data = detail.data
@@ -129,7 +145,8 @@ def write_meeting_memory(
     marker = f"[MEETING_MEMORY:{meeting_code}]"
 
     existing = get_memory_notes(db, scope)
-    if marker in existing:
+    already_exists = marker in existing
+    if already_exists and not upsert:
         return MeetingMemoryResult(
             created=False, meeting_code=meeting_code, reason="already_recorded"
         )
@@ -138,7 +155,48 @@ def write_meeting_memory(
     project_code = project.project_code if project else _NOT_RECORDED
 
     note = _build_meeting_note(data, meeting_code, marker, project_code)
-    append_memory_note(db, scope, note)
+
+    if already_exists:
+        # Guard only the NEW note being written in, same discipline as
+        # append_memory_note() — the accumulated blob (old lines PLUS this
+        # one) legitimately exceeds the evidence-dump guard's entity-code
+        # threshold over time as more meetings/reports accumulate; only a
+        # single fresh note looking like a raw records dump should ever be
+        # rejected. Calling set_memory_notes() here instead (which guards
+        # the WHOLE blob on every write) was a real bug — it started
+        # rejecting legitimate upserts once enough meetings had
+        # accumulated distinct entity codes across their own notes.
+        _guard_not_evidence_dump(note)
+        remaining = "\n".join(
+            ln for ln in existing.splitlines() if not ln.startswith(marker)
+        )
+        combined = (remaining + "\n" + note).strip() if remaining else note
+        bounded = combined[: _settings.AI_MEMORY_NOTE_CHAR_LIMIT]
+        _write_memory_notes(db, scope, bounded)
+    else:
+        append_memory_note(db, scope, note)
+
+    # Structured record: same upsert semantics, keyed on citation+source
+    # rather than a text marker, since AIMemoryRecord is a real table.
+    db.query(AIMemoryRecord).filter(
+        AIMemoryRecord.source == "meeting",
+        AIMemoryRecord.citation == meeting_code,
+        AIMemoryRecord.organization_id == scope.organization_id,
+    ).delete()
+    decisions = data.get("decisions") or []
+    action_items = data.get("action_items") or []
+    keywords = ["meeting", meeting_code, project_code] + [
+        _short(d.get("decision_text"), 30) for d in decisions[:_MAX_ITEMS_PER_SECTION]
+    ]
+    record_memory(
+        db, scope,
+        source="meeting", category="meeting_summary",
+        title=f"{meeting_code}: {data.get('meeting_title') or _NOT_RECORDED}",
+        summary=note,
+        keywords=[k for k in keywords if k],
+        citation=meeting_code,
+        project_id=data["project_id"],
+    )
 
     row = (
         db.query(AIMemoryNote)

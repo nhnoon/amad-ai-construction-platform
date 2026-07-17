@@ -33,9 +33,19 @@ from app.ai.conversation_state import ConversationState
 # and which project is it linked to?"). Weak patterns are only treated as
 # anaphoric when the question does not already contain an explicit entity
 # code of its own — see is_anaphoric() below.
+# "that project"/"this project"/"the project" is checked SEPARATELY from
+# the rest of the strong patterns (see is_anaphoric) — unlike "them"/"tell
+# me more"/etc., this one collides with ordinary English grammar: "Remember
+# THAT Project PRJ-001 has..." uses "that" as a subordinating conjunction,
+# not a demonstrative pointing at prior conversation. When the sentence
+# already names an explicit entity code (PRJ-/MTG-/NCR-/etc.), it is
+# self-contained and this pattern must not fire — mirrors the existing
+# self-containment carve-out already applied to the weak "it/its" patterns
+# below, extended to this one strong pattern specifically.
+_PROJECT_REFERENCE_PATTERN = re.compile(r"\b(that project|this project|the project)\b", re.IGNORECASE)
+
 _STRONG_ANAPHORIC_PATTERNS: list[re.Pattern[str]] = [
     re.compile(r"\b(them|they|those|these)\b", re.IGNORECASE),
-    re.compile(r"\b(that project|this project|the project)\b", re.IGNORECASE),
     re.compile(r"\bwhich (one|ones)\b", re.IGNORECASE),
     re.compile(r"\bone of (them|those|these)\b", re.IGNORECASE),
     re.compile(r"\bthe (same|above|mentioned|previous|earlier)\b", re.IGNORECASE),
@@ -131,11 +141,18 @@ def is_anaphoric(question: str) -> bool:
     Weak pronoun patterns ("it"/"its") are only counted when the question
     does not already name the entity they refer to in the same sentence
     (e.g. "NCR-2 ... is it linked to?" is self-contained, not a follow-up).
+    The "that/this/the project" pattern gets the same self-containment
+    carve-out — see _PROJECT_REFERENCE_PATTERN's own comment for why.
     """
     for pattern in _STRONG_ANAPHORIC_PATTERNS:
         if pattern.search(question):
             return True
-    if _ENTITY_CODE_RE.search(question) or _SELF_CONTAINED_WHICH_RE.search(question):
+
+    has_entity_code = bool(_ENTITY_CODE_RE.search(question))
+    if not has_entity_code and _PROJECT_REFERENCE_PATTERN.search(question):
+        return True
+
+    if has_entity_code or _SELF_CONTAINED_WHICH_RE.search(question):
         return False
     for pattern in _WEAK_ANAPHORIC_PATTERNS:
         if pattern.search(question):
