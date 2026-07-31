@@ -3,9 +3,11 @@ import { useListPurchaseRequests, useListPurchaseOrders } from "@workspace/api-c
 import { useTranslation } from "react-i18next";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Input } from "@/components/ui/input";
-import { Search, AlertOctagon, Info, ClipboardList, Truck } from "lucide-react";
-import { BackToOperations } from "@/components/back-to-operations";
+import { Search, Info, ClipboardList, Truck } from "lucide-react";
+import { WorkspaceLayout } from "@/components/workspace-layout";
+import { PageTabs } from "@/components/page-tabs";
 import { EmptyState } from "@/components/ui/empty-state";
+import { ErrorState } from "@/components/ui/error-state";
 import { TableSkeletonRows } from "@/components/ui/table-skeleton";
 
 type Tab = "requests" | "orders";
@@ -61,22 +63,18 @@ export default function Procurement() {
   const isError   = tab === "requests" ? prsError   : posError;
 
   return (
-    <div className="space-y-6">
-      <BackToOperations />
-
-      {/* Header */}
-      <div className="page-header">
-        <div>
-          <h1 className="page-title">{t("Procurement")}</h1>
-          <p className="page-subtitle">
-            {prs ? `${prs.length.toLocaleString()} ${t("Purchase Requests")} loaded` : "—"}
-            {pos ? ` · ${pos.length.toLocaleString()} ${t("Purchase Orders")} loaded` : ""}
-            {lateCount > 0 && (
-              <span className="ms-2 badge badge-danger">{lateCount} late</span>
-            )}
-          </p>
-        </div>
-      </div>
+    <WorkspaceLayout
+        title={t("Procurement")}
+        subtitle={`${prs ? `${prs.length.toLocaleString()} ${t("Purchase Requests")} loaded` : "—"}${pos ? ` · ${pos.length.toLocaleString()} ${t("Purchase Orders")} loaded` : ""}`}
+        backLabel="Back to Operations"
+        backHref="/operations"
+        breadcrumbs={[
+          { label: "Dashboard", href: "/" },
+          { label: "Operations", href: "/operations" },
+          { label: t("Procurement") },
+        ]}
+        toolbar={lateCount > 0 ? <span className="badge badge-danger">{lateCount} late</span> : undefined}
+      >
 
       {/* Pagination notice */}
       <div className="flex items-start gap-2 rounded-lg border border-border bg-muted/40 px-4 py-3 text-xs text-muted-foreground">
@@ -88,27 +86,16 @@ export default function Procurement() {
       </div>
 
       {/* Tabs + search */}
-      <div className="flex flex-wrap items-center justify-between gap-3 border-b border-border pb-0">
-        <div className="flex gap-0">
-          {(["requests", "orders"] as Tab[]).map((id) => (
-            <button
-              key={id}
-              onClick={() => { setTab(id); setSearch(""); }}
-              data-testid={`tab-${id}`}
-              className={`px-4 py-2.5 text-sm font-medium border-b-2 -mb-px transition-colors ${
-                tab === id
-                  ? "border-primary text-primary"
-                  : "border-transparent text-muted-foreground hover:text-foreground"
-              }`}
-            >
-              {id === "requests" ? t("Purchase Requests") : t("Purchase Orders")}
-              <span className="ms-2 text-xs text-muted-foreground">
-                {id === "requests" ? (prs?.length ?? "…") : (pos?.length ?? "…")}
-              </span>
-            </button>
-          ))}
-        </div>
-        <div className="relative mb-px">
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <PageTabs
+          tabs={[
+            { id: "requests", label: t("Purchase Requests"), count: prs?.length },
+            { id: "orders", label: t("Purchase Orders"), count: pos?.length },
+          ]}
+          value={tab}
+          onChange={(id) => { setTab(id); setSearch(""); }}
+        />
+        <div className="relative">
           <Search className="absolute start-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground pointer-events-none" />
           <Input
             placeholder="Search…"
@@ -120,15 +107,7 @@ export default function Procurement() {
       </div>
 
       {/* Error state */}
-      {isError && (
-        <div className="panel panel-body flex items-center justify-center h-36">
-          <div className="text-center text-muted-foreground">
-            <AlertOctagon className="w-7 h-7 mx-auto mb-2 text-destructive opacity-60" />
-            <p className="text-sm font-medium">Failed to load procurement data</p>
-            <p className="text-xs mt-1">Check your connection or permissions and try again.</p>
-          </div>
-        </div>
-      )}
+      {isError && <ErrorState title="Failed to load procurement data" />}
 
       {/* Purchase Requests table */}
       {!isError && tab === "requests" && (
@@ -235,6 +214,6 @@ export default function Procurement() {
           </div>
         </div>
       )}
-    </div>
+    </WorkspaceLayout>
   );
 }

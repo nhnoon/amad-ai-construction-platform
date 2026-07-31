@@ -64,6 +64,7 @@ class UserOut(BaseModel):
     organization_id: Optional[int] = None
     created_at: datetime
     last_login: Optional[datetime] = None
+    must_change_password: bool = False
 
     model_config = {"from_attributes": True}
 
@@ -72,3 +73,15 @@ class TokenResponse(BaseModel):
     access_token: str
     token_type: str = "bearer"
     user: UserOut
+
+
+class ChangePasswordRequest(BaseModel):
+    current_password: str
+    new_password: str
+
+    @field_validator("new_password")
+    @classmethod
+    def password_strength(cls, v: str) -> str:
+        if len(v) < 8:
+            raise ValueError("Password must be at least 8 characters")
+        return v

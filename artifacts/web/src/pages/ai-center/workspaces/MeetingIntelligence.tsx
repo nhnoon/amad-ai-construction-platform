@@ -74,7 +74,7 @@ export default function MeetingIntelligence() {
                 <Link
                   key={m.id}
                   href={`/meetings/${m.project_id}/${m.id}`}
-                  className="flex items-center justify-between gap-3 rounded-xl border border-border bg-card p-3 hover:border-primary/30 transition-colors group"
+                  className="flex items-center justify-between gap-3 panel px-3 py-3 hover:border-primary/30 hover:-translate-y-0.5 transition-all duration-150 group"
                 >
                   <div className="min-w-0">
                     <p className="text-sm font-medium text-foreground truncate">{m.title}</p>
@@ -95,7 +95,7 @@ export default function MeetingIntelligence() {
               <EmptyState icon={Gavel} title="No decisions logged" />
             ) : (
               decisions.map((d) => (
-                <div key={d.id} className="rounded-xl border border-border bg-card p-3">
+                <div key={d.id} className="panel px-3 py-3">
                   <p className="text-sm text-foreground">{d.decision_text}</p>
                   <p className="text-xs text-muted-foreground mt-1">{d.decision_date} &middot; {d.owner}</p>
                 </div>

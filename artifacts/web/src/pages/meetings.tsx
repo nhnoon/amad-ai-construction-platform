@@ -9,7 +9,8 @@ import {
 } from "@workspace/api-client-react";
 import { useTranslation } from "react-i18next";
 import { CalendarDays, AlertOctagon, Plus, Gavel } from "lucide-react";
-import { BackToOperations } from "@/components/back-to-operations";
+import { WorkspaceLayout } from "@/components/workspace-layout";
+import { PageTabs } from "@/components/page-tabs";
 import { EmptyState } from "@/components/ui/empty-state";
 import { TableSkeletonRows } from "@/components/ui/table-skeleton";
 import { Button } from "@/components/ui/button";
@@ -19,6 +20,7 @@ import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter,
 } from "@/components/ui/dialog";
 import { createMeeting, listActionItems, MeetingsApiError } from "@/lib/meetingsClient";
+import { FilterSelect } from "@/components/filter-select";
 
 type Tab = "meetings" | "decisions";
 
@@ -110,18 +112,14 @@ function CreateMeetingDialog({
         <div className="space-y-4 py-2">
           <div className="space-y-1.5">
             <label className="text-sm font-medium">{t("Project")}</label>
-            <select
-              className="w-full border rounded-lg px-3 py-2 text-sm bg-background text-foreground h-10"
-              value={projectId ?? ""}
-              onChange={(e) => setProjectId(Number(e.target.value))}
-            >
+            <FilterSelect className="w-full" value={String(projectId ?? "")} onChange={(v) => setProjectId(Number(v))}>
               <option value="" disabled>{t("Select Project")}</option>
               {projects.map((p) => (
                 <option key={p.id} value={p.id}>
                   {p.project_code} — {p.project_name}
                 </option>
               ))}
-            </select>
+            </FilterSelect>
           </div>
 
           <div className="space-y-1.5">
@@ -142,15 +140,11 @@ function CreateMeetingDialog({
 
           <div className="space-y-1.5">
             <label className="text-sm font-medium">{t("Meeting Type")}</label>
-            <select
-              className="w-full border rounded-lg px-3 py-2 text-sm bg-background text-foreground h-10"
-              value={meetingType}
-              onChange={(e) => setMeetingType(e.target.value)}
-            >
+            <FilterSelect className="w-full" value={meetingType} onChange={setMeetingType}>
               {MEETING_TYPES.map((mt) => (
                 <option key={mt} value={mt}>{mt}</option>
               ))}
-            </select>
+            </FilterSelect>
           </div>
 
           <div className="space-y-1.5">
@@ -230,49 +224,38 @@ export default function Meetings() {
   const selectedProject = projects?.find((p) => p.id === selectedProjectId);
 
   return (
-    <div className="space-y-6">
-      <BackToOperations />
-
-      {/* Header */}
-      <div className="page-header">
-        <div>
-          <h1 className="page-title">{t("Meetings")}</h1>
-          <p className="page-subtitle">
-            {selectedProject
-              ? `${selectedProject.project_code} — ${selectedProject.project_name}`
-              : t("Select a project")}
-            {meetings || decisions ? (
-              <>
-                {meetings ? ` · ${meetings.length} ${t("Meetings")}` : ""}
-                {decisions ? ` · ${decisions.length} ${t("Decisions")}` : ""}
-              </>
-            ) : null}
-          </p>
-        </div>
-
-        <div className="flex items-center gap-2">
-          <label className="text-sm font-medium text-muted-foreground whitespace-nowrap shrink-0">
-            {t("Select Project")}
-          </label>
-          <select
-            className="border rounded-lg px-3 py-2 text-sm bg-background text-foreground min-w-52 h-10"
-            value={selectedProjectId ?? ""}
-            onChange={(e) => setSelectedProjectId(Number(e.target.value))}
-            data-testid="project-selector"
-          >
-            <option value="" disabled>{t("Select Project")}</option>
-            {projects?.map((p) => (
-              <option key={p.id} value={p.id}>
-                {p.project_code} — {p.project_name}
-              </option>
-            ))}
-          </select>
-          <Button onClick={() => setCreateOpen(true)} className="gap-1.5 whitespace-nowrap">
-            <Plus className="w-4 h-4" />
-            {t("Create Meeting")}
-          </Button>
-        </div>
-      </div>
+    <WorkspaceLayout
+        title={t("Meetings")}
+        subtitle={`${selectedProject ? `${selectedProject.project_code} — ${selectedProject.project_name}` : t("Select a project")}${meetings ? ` · ${meetings.length} ${t("Meetings")}` : ""}${decisions ? ` · ${decisions.length} ${t("Decisions")}` : ""}`}
+        backLabel="Back to Operations"
+        backHref="/operations"
+        breadcrumbs={[
+          { label: "Dashboard", href: "/" },
+          { label: "Operations", href: "/operations" },
+          { label: t("Meetings") },
+        ]}
+        toolbar={
+          <>
+            <FilterSelect
+              className="min-w-52"
+              value={String(selectedProjectId ?? "")}
+              onChange={(v) => setSelectedProjectId(Number(v))}
+              testId="project-selector"
+            >
+              <option value="" disabled>{t("Select Project")}</option>
+              {projects?.map((p) => (
+                <option key={p.id} value={p.id}>
+                  {p.project_code} — {p.project_name}
+                </option>
+              ))}
+            </FilterSelect>
+            <Button onClick={() => setCreateOpen(true)} className="gap-1.5 whitespace-nowrap">
+              <Plus className="w-4 h-4" />
+              {t("Create Meeting")}
+            </Button>
+          </>
+        }
+      >
 
       <CreateMeetingDialog
         open={createOpen}
@@ -287,26 +270,14 @@ export default function Meetings() {
         }}
       />
 
-      {/* Tabs */}
-      <div className="flex gap-0 border-b border-border">
-        {(["meetings", "decisions"] as Tab[]).map((id) => (
-          <button
-            key={id}
-            onClick={() => setTab(id)}
-            data-testid={`tab-${id}`}
-            className={`px-4 py-2.5 text-sm font-medium border-b-2 -mb-px transition-colors ${
-              tab === id
-                ? "border-primary text-primary"
-                : "border-transparent text-muted-foreground hover:text-foreground"
-            }`}
-          >
-            {id === "meetings" ? t("Meetings") : t("Decisions")}
-            <span className="ms-2 text-xs text-muted-foreground">
-              {id === "meetings" ? (meetings?.length ?? "…") : (decisions?.length ?? "…")}
-            </span>
-          </button>
-        ))}
-      </div>
+      <PageTabs<Tab>
+        tabs={[
+          { id: "meetings", label: t("Meetings"), count: meetings?.length },
+          { id: "decisions", label: t("Decisions"), count: decisions?.length },
+        ]}
+        value={tab}
+        onChange={setTab}
+      />
 
       {!selectedProjectId ? (
         <div className="panel">
@@ -414,6 +385,6 @@ export default function Meetings() {
           </div>
         </div>
       )}
-    </div>
+    </WorkspaceLayout>
   );
 }

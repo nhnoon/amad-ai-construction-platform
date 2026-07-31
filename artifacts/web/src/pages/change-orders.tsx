@@ -1,10 +1,13 @@
 import { useEffect, useMemo, useState } from "react";
 import { useListProjects } from "@workspace/api-client-react";
-import { AlertOctagon, FileEdit } from "lucide-react";
+import { AlertOctagon, FileEdit, ClipboardList, CircleDot, CheckCircle2, DollarSign } from "lucide-react";
 import { getToken } from "@/lib/auth";
-import { PageContextHeader } from "@/components/page-context-header";
+import { WorkspaceLayout } from "@/components/workspace-layout";
 import { EmptyState } from "@/components/ui/empty-state";
 import { TableSkeletonRows } from "@/components/ui/table-skeleton";
+import { StatTile } from "@/components/stat-tile";
+import { Alert, AlertDescription } from "@/components/ui/alert";
+import { FilterSelect } from "@/components/filter-select";
 
 type ChangeOrderRow = {
   id: number;
@@ -101,8 +104,7 @@ export default function ChangeOrders() {
   }, [rows]);
 
   return (
-    <div className="space-y-6">
-      <PageContextHeader
+    <WorkspaceLayout
         title="Change Orders"
         subtitle="Track scope/value adjustments and current approval status"
         backLabel="Back to Operations"
@@ -112,51 +114,37 @@ export default function ChangeOrders() {
           { label: "Operations", href: "/operations" },
           { label: "Change Orders" },
         ]}
-      />
-
-      <div className="panel panel-body flex flex-wrap items-center gap-3">
-        <label className="text-sm font-medium text-muted-foreground">Project</label>
-        <select
-          className="h-10 min-w-64 rounded-lg border border-border bg-background px-3 text-sm"
-          value={selectedProjectId ?? ""}
-          onChange={(e) => setSelectedProjectId(Number(e.target.value))}
-          data-testid="project-selector"
-        >
-          <option value="" disabled>
-            Select Project
-          </option>
-          {projects?.map((p) => (
-            <option key={p.id} value={p.id}>
-              {p.project_code} - {p.project_name}
+        toolbar={
+          <FilterSelect
+            className="min-w-64"
+            value={String(selectedProjectId ?? "")}
+            onChange={(v) => setSelectedProjectId(Number(v))}
+            testId="project-selector"
+          >
+            <option value="" disabled>
+              Select Project
             </option>
-          ))}
-        </select>
-      </div>
+            {projects?.map((p) => (
+              <option key={p.id} value={p.id}>
+                {p.project_code} - {p.project_name}
+              </option>
+            ))}
+          </FilterSelect>
+        }
+      >
 
-      <div className="grid grid-cols-1 gap-4 md:grid-cols-4">
-        <div className="panel panel-body">
-          <p className="text-xs uppercase tracking-wide text-muted-foreground">Total COs</p>
-          <p className="mt-2 text-2xl font-bold text-foreground">{summary.total}</p>
-        </div>
-        <div className="panel panel-body">
-          <p className="text-xs uppercase tracking-wide text-muted-foreground">Open</p>
-          <p className="mt-2 text-2xl font-bold text-foreground">{summary.open}</p>
-        </div>
-        <div className="panel panel-body">
-          <p className="text-xs uppercase tracking-wide text-muted-foreground">Approved</p>
-          <p className="mt-2 text-2xl font-bold text-foreground">{summary.approved}</p>
-        </div>
-        <div className="panel panel-body">
-          <p className="text-xs uppercase tracking-wide text-muted-foreground">Total Value</p>
-          <p className="mt-2 text-2xl font-bold text-foreground">{summary.totalValue.toLocaleString()}</p>
-        </div>
+      <div className="grid grid-cols-1 gap-2.5 md:grid-cols-4">
+        <StatTile icon={ClipboardList} label="Total COs" description="All change orders on record" value={summary.total} />
+        <StatTile icon={CircleDot} label="Open" description="Awaiting approval" value={summary.open} tone={summary.open > 0 ? "warning" : "neutral"} />
+        <StatTile icon={CheckCircle2} label="Approved" description="Cleared for execution" value={summary.approved} tone="success" />
+        <StatTile icon={DollarSign} label="Total Value" description="Combined scope adjustment" value={summary.totalValue.toLocaleString()} />
       </div>
 
       {isError && (
-        <div className="rounded-xl border border-destructive/30 bg-destructive/5 p-4 text-sm text-destructive inline-flex items-center gap-2">
+        <Alert variant="destructive">
           <AlertOctagon className="h-4 w-4" />
-          {isError}
-        </div>
+          <AlertDescription>{isError}</AlertDescription>
+        </Alert>
       )}
 
       <div className="panel overflow-hidden">
@@ -200,6 +188,6 @@ export default function ChangeOrders() {
           </table>
         </div>
       </div>
-    </div>
+    </WorkspaceLayout>
   );
 }

@@ -4,7 +4,7 @@ from fastapi import APIRouter, HTTPException, Query
 from typing import Optional
 from ...ai.meeting_memory import write_meeting_memory
 from ...ai.scope import build_ai_scope
-from ...core.deps import CurrentUser, DbSession
+from ...core.deps import CurrentScope, CurrentUser, DbSession
 from ...models.meetings import Meeting, ProjectDecision, MeetingActionItem, MeetingAttendee
 from ...schemas.meetings import (
     MeetingOut, MeetingCreate, ProjectDecisionOut, MeetingActionItemOut, MeetingActionItemCreate,
@@ -28,10 +28,12 @@ def _write_meeting_memory_best_effort(db, current_user, meeting_id: int) -> None
 def list_meetings(
     project_id: int,
     db: DbSession,
+    scope: CurrentScope,
     meeting_type: Optional[str] = None,
     skip: int = Query(0, ge=0),
     limit: int = Query(20, ge=1, le=100),
 ):
+    scope.enforce_project_access(project_id)
     q = db.query(Meeting).filter(Meeting.project_id == project_id)
     if meeting_type:
         q = q.filter(Meeting.meeting_type == meeting_type)
@@ -39,7 +41,8 @@ def list_meetings(
 
 
 @router.post("/projects/{project_id}/meetings", response_model=MeetingOut, status_code=201)
-def create_meeting(project_id: int, body: MeetingCreate, db: DbSession, current_user: CurrentUser):
+def create_meeting(project_id: int, body: MeetingCreate, db: DbSession, current_user: CurrentUser, scope: CurrentScope):
+    scope.enforce_project_access(project_id)
     meeting = Meeting(
         project_id=project_id,
         title=body.title,
@@ -59,7 +62,8 @@ def create_meeting(project_id: int, body: MeetingCreate, db: DbSession, current_
 
 
 @router.get("/projects/{project_id}/meetings/{meeting_id}", response_model=MeetingOut)
-def get_meeting(project_id: int, meeting_id: int, db: DbSession):
+def get_meeting(project_id: int, meeting_id: int, db: DbSession, scope: CurrentScope):
+    scope.enforce_project_access(project_id)
     meeting = (
         db.query(Meeting)
         .filter(Meeting.id == meeting_id, Meeting.project_id == project_id)
@@ -74,9 +78,11 @@ def get_meeting(project_id: int, meeting_id: int, db: DbSession):
 def list_project_decisions(
     project_id: int,
     db: DbSession,
+    scope: CurrentScope,
     skip: int = Query(0, ge=0),
     limit: int = Query(50, ge=1, le=200),
 ):
+    scope.enforce_project_access(project_id)
     return (
         db.query(ProjectDecision)
         .filter(ProjectDecision.project_id == project_id)
@@ -85,7 +91,8 @@ def list_project_decisions(
 
 
 @router.get("/projects/{project_id}/meetings/{meeting_id}/decisions", response_model=list[ProjectDecisionOut])
-def list_meeting_decisions(project_id: int, meeting_id: int, db: DbSession):
+def list_meeting_decisions(project_id: int, meeting_id: int, db: DbSession, scope: CurrentScope):
+    scope.enforce_project_access(project_id)
     return (
         db.query(ProjectDecision)
         .filter(
@@ -100,11 +107,13 @@ def list_meeting_decisions(project_id: int, meeting_id: int, db: DbSession):
 def list_action_items(
     project_id: int,
     db: DbSession,
+    scope: CurrentScope,
     meeting_id: Optional[int] = None,
     status: Optional[str] = None,
     skip: int = Query(0, ge=0),
     limit: int = Query(50, ge=1, le=200),
 ):
+    scope.enforce_project_access(project_id)
     q = db.query(MeetingActionItem).filter(MeetingActionItem.project_id == project_id)
     if meeting_id is not None:
         q = q.filter(MeetingActionItem.meeting_id == meeting_id)
@@ -114,7 +123,8 @@ def list_action_items(
 
 
 @router.post("/projects/{project_id}/action-items", response_model=MeetingActionItemOut, status_code=201)
-def create_action_item(project_id: int, body: MeetingActionItemCreate, db: DbSession, current_user: CurrentUser):
+def create_action_item(project_id: int, body: MeetingActionItemCreate, db: DbSession, current_user: CurrentUser, scope: CurrentScope):
+    scope.enforce_project_access(project_id)
     item = MeetingActionItem(project_id=project_id, **body.model_dump())
     db.add(item)
     db.commit()

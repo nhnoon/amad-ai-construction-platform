@@ -7,10 +7,11 @@ source of truth for per-document authorization reused here.
 
 Follows the same RBAC + bounded-query conventions as the other retrieval
 modules (see app/ai/retrieval/site_reports.py): explicit project_id ->
-enforce_project_access; otherwise accessible_project_ids/has_global_read.
-General Library documents (project_id IS NULL) are only included when the
-caller's organization matches, mirroring list_all_documents() in
-app/api/v1/documents.py.
+enforce_project_access; otherwise accessible_project_ids (which already
+reflects the caller's own organization for global-read roles — see
+app/ai/scope.py). General Library documents (project_id IS NULL) are only
+included when the caller's organization matches, mirroring
+list_all_documents() in app/api/v1/documents.py.
 """
 from __future__ import annotations
 
@@ -74,9 +75,7 @@ def get_recent_documents(
     else:
         project_ids = list(scope.accessible_project_ids)
         conditions = []
-        if scope.has_global_read:
-            conditions.append(Document.project_id.isnot(None))
-        elif project_ids:
+        if project_ids:
             conditions.append(Document.project_id.in_(project_ids))
         if scope.organization_id is not None:
             conditions.append(

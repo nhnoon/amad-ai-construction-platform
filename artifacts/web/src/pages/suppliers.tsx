@@ -2,10 +2,12 @@ import { useState } from "react";
 import { useListSuppliers } from "@workspace/api-client-react";
 import { useTranslation } from "react-i18next";
 import { Skeleton } from "@/components/ui/skeleton";
-import { Input } from "@/components/ui/input";
-import { Search, AlertOctagon, Truck } from "lucide-react";
-import { PageContextHeader } from "@/components/page-context-header";
+import { Truck } from "lucide-react";
+import { WorkspaceLayout } from "@/components/workspace-layout";
 import { EmptyState } from "@/components/ui/empty-state";
+import { ErrorState } from "@/components/ui/error-state";
+import { SearchInput } from "@/components/search-input";
+import { FilterSelect } from "@/components/filter-select";
 
 function statusBadge(status: string) {
   const m: Record<string, string> = {
@@ -41,15 +43,7 @@ export default function Suppliers() {
   }
 
   if (isError) {
-    return (
-      <div className="panel panel-body flex items-center justify-center h-48">
-        <div className="text-center text-muted-foreground">
-          <AlertOctagon className="w-8 h-8 mx-auto mb-2 text-destructive opacity-60" />
-          <p className="text-sm font-medium">Failed to load suppliers</p>
-          <p className="text-xs mt-1">Check your connection or permissions and try again.</p>
-        </div>
-      </div>
-    );
+    return <ErrorState title="Failed to load suppliers" />;
   }
 
   const categories = Array.from(new Set(suppliers?.map((s) => s.category).filter(Boolean) ?? [])).sort();
@@ -68,9 +62,7 @@ export default function Suppliers() {
   const activeCount = suppliers?.filter((s) => s.status === "Active").length ?? 0;
 
   return (
-    <div className="space-y-6">
-      {/* Header */}
-      <PageContextHeader
+    <WorkspaceLayout
         title={t("Suppliers")}
         subtitle={`${suppliers?.length ?? 0} registered · ${activeCount} active`}
         backLabel="Back to Operations"
@@ -80,42 +72,22 @@ export default function Suppliers() {
           { label: "Operations", href: "/operations" },
           { label: "Suppliers" },
         ]}
-      />
-
+      >
       {/* Filters */}
       <div className="flex flex-wrap gap-3">
-        <div className="relative flex-1 min-w-52 max-w-sm">
-          <Search className="absolute start-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground pointer-events-none" />
-          <Input
-            placeholder={t("Search suppliers...")}
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            className="ps-9 h-10"
-            data-testid="search-suppliers"
-          />
-        </div>
-        <select
-          className="border rounded-lg px-3 py-2 text-sm h-10 bg-background text-foreground"
-          value={categoryFilter}
-          onChange={(e) => setCategoryFilter(e.target.value)}
-          data-testid="filter-category"
-        >
+        <SearchInput value={search} onChange={setSearch} placeholder={t("Search suppliers...")} testId="search-suppliers" />
+        <FilterSelect className="min-w-40" value={categoryFilter} onChange={setCategoryFilter} testId="filter-category">
           <option value="all">{t("All Categories")}</option>
           {categories.map((c) => (
             <option key={c} value={c}>{c}</option>
           ))}
-        </select>
-        <select
-          className="border rounded-lg px-3 py-2 text-sm h-10 bg-background text-foreground"
-          value={statusFilter}
-          onChange={(e) => setStatusFilter(e.target.value)}
-          data-testid="filter-status"
-        >
+        </FilterSelect>
+        <FilterSelect className="min-w-40" value={statusFilter} onChange={setStatusFilter} testId="filter-status">
           <option value="all">{t("All Statuses")}</option>
           {statuses.map((s) => (
             <option key={s} value={s}>{s}</option>
           ))}
-        </select>
+        </FilterSelect>
       </div>
 
       {/* Table */}
@@ -163,6 +135,6 @@ export default function Suppliers() {
           </table>
         </div>
       </div>
-    </div>
+    </WorkspaceLayout>
   );
 }

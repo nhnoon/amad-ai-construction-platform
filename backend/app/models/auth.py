@@ -20,6 +20,13 @@ class UserAccount(Base):
     )
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     last_login = Column(DateTime(timezone=True), nullable=True)
+    # Phase 2 — Security & Authentication Hardening (see migration 0014).
+    # Defaults to False so existing users are never retroactively forced
+    # into this flow — application code (register/admin-create-user)
+    # explicitly sets it True for newly provisioned accounts only.
+    must_change_password = Column(Boolean, nullable=False, default=False)
+    failed_login_attempts = Column(Integer, nullable=False, default=0)
+    locked_until = Column(DateTime(timezone=True), nullable=True)
 
     organization = relationship("Organization", back_populates="users")
     memberships = relationship("ProjectMembership", back_populates="user")

@@ -1,17 +1,34 @@
 import { useTranslation } from "react-i18next";
+import { Link } from "wouter";
 import {
-  FileText, Printer, AlertOctagon, ShieldAlert, ShoppingCart,
+  Printer, AlertOctagon, ShieldAlert, ShoppingCart,
   ClipboardCheck, CalendarDays, HeartPulse, TrendingDown,
   Trophy, Target, Zap, BarChart2, CheckCircle, Clock,
   Database, ChevronRight,
 } from "lucide-react";
 import { Skeleton } from "@/components/ui/skeleton";
+import { ErrorState } from "@/components/ui/error-state";
+import { PageHero } from "@/components/PageHero";
+import { KpiStat } from "@/components/KpiStat";
+import { InsightPanel } from "@/components/InsightPanel";
 import { useExecutiveWeeklyReport } from "../lib/useReports";
 import type {
   ReportAlert, ProcurementBlocker, SafetyHighlight,
   QualityHighlight, RecommendedAction, SourceReference,
 } from "../lib/useReports";
 import type { ProjectBrief, RiskCategory } from "../lib/useExecutive";
+
+// ── AMAD v2 — Reports (Executive Weekly Report) ─────────────────────────────
+// Same executive tier as Dashboard and AI Center Overview, so the screen-only
+// header uses the same PageHero primitive. Report Period + Portfolio Score +
+// Executive Summary — previously two separate bespoke panels — are now one
+// InsightPanel "brief", matching the single-dominant-panel pattern the other
+// two executive pages already use. Every section below it keeps its exact
+// original data/props; only the header chrome moves from an inline
+// icon+rule-line to the shared `.panel-header` bar so hierarchy reads the
+// same way it does everywhere else in the app. Print output (the separate
+// print-only header, print:hidden/print:block classes, window.print()) is
+// completely untouched — this is a screen-view redesign only.
 
 // ── Severity config ────────────────────────────────────────────────────────────
 
@@ -52,16 +69,48 @@ function SevBadge({ severity }: { severity: string }) {
   );
 }
 
-function SectionHeader({ icon: Icon, title, subtitle, color = "text-muted-foreground" }: {
+// The one section header every panel below uses — AMAD v2's shared
+// `.panel-header` bar (border-b separator, consistent px-4 py-3) instead of
+// this page's previous bespoke icon + bold title + thin rule line, embedded
+// inside `.panel-body` with no separator at all.
+function PanelHeader({ icon: Icon, title, subtitle, color = "text-muted-foreground" }: {
   icon: React.ElementType; title: string; subtitle?: string; color?: string;
 }) {
   return (
-    <div className="flex items-center gap-2 mb-3">
-      <Icon className={`w-4 h-4 shrink-0 ${color}`} />
-      <span className="text-sm font-bold text-foreground">{title}</span>
-      {subtitle && <span className="text-[10px] text-muted-foreground">{subtitle}</span>}
-      <div className="flex-1 h-px bg-border/40 ms-1" />
+    <div className="panel-header">
+      <span className="flex items-center gap-2 min-w-0">
+        <Icon className={`w-4 h-4 shrink-0 ${color}`} />
+        <span className="panel-title truncate">{title}</span>
+      </span>
+      {subtitle && <span className="text-[10px] text-muted-foreground shrink-0">{subtitle}</span>}
     </div>
+  );
+}
+
+// Stabilization pass — the four executive pages (Dashboard, Reports,
+// Executive Intelligence, Executive Decision Center) previously had no
+// link to one another anywhere; a user had to already know all four
+// existed and go back to the sidebar every time. This wayfinding strip
+// makes them read as one connected suite. Defined identically (and
+// intentionally duplicated, not extracted — out of scope for this pass)
+// in all four pages; a real candidate for a shared primitive later.
+const EXECUTIVE_SUITE_LINKS: { key: string; label: string; href: string }[] = [
+  { key: "dashboard", label: "Dashboard", href: "/" },
+  { key: "reports", label: "Reports", href: "/reports" },
+  { key: "executive-intelligence", label: "Executive Intelligence", href: "/ai-center/executive" },
+  { key: "decision-center", label: "Decision Center", href: "/ai-center/executive-decision-center" },
+];
+
+function ExecutiveSuiteNav({ current }: { current: string }) {
+  return (
+    <nav aria-label="Executive Suite" className="flex flex-wrap items-center gap-1.5">
+      <span className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground me-0.5">Executive Suite</span>
+      {EXECUTIVE_SUITE_LINKS.map((p) => p.key === current ? (
+        <span key={p.key} className="badge badge-brand text-[11px] cursor-default" aria-current="page">{p.label}</span>
+      ) : (
+        <Link key={p.key} href={p.href} className="badge badge-neutral text-[11px] hover:bg-muted transition-colors">{p.label}</Link>
+      ))}
+    </nav>
   );
 }
 
@@ -90,8 +139,8 @@ function AlertsSection({ alerts }: { alerts: ReportAlert[] }) {
   if (!alerts.length) return null;
   return (
     <div className="panel">
+      <PanelHeader icon={AlertOctagon} title="Critical Alerts" subtitle={`${alerts.length} items`} color="text-destructive" />
       <div className="panel-body">
-        <SectionHeader icon={AlertOctagon} title="Critical Alerts" subtitle={`${alerts.length} items`} color="text-destructive" />
         <div className="space-y-2">
           {alerts.map((a, i) => {
             const cfg = SEV_CFG[a.severity] ?? SEV_CFG["medium"];
@@ -125,8 +174,8 @@ function PrioritiesSection({ priorities }: { priorities: ProjectBrief[] }) {
   if (!priorities.length) return null;
   return (
     <div className="panel">
+      <PanelHeader icon={Target} title="Top Priorities" subtitle="Worst-performing active projects" color="text-amber-500" />
       <div className="panel-body">
-        <SectionHeader icon={Target} title="Top Priorities" subtitle="Worst-performing active projects" color="text-amber-500" />
         <div className="space-y-0 divide-y divide-border/40">
           {priorities.map((p, i) => {
             const cfg = LEVEL_CFG[p.level] ?? LEVEL_CFG["Unknown"];
@@ -160,8 +209,8 @@ function RisksSection({ risks }: { risks: RiskCategory[] }) {
   const maxCount = Math.max(...risks.map(r => r.count), 1);
   return (
     <div className="panel">
+      <PanelHeader icon={BarChart2} title="Biggest Risks" subtitle="Ranked by severity" color="text-rose-500" />
       <div className="panel-body">
-        <SectionHeader icon={BarChart2} title="Biggest Risks" subtitle="Ranked by severity" color="text-rose-500" />
         <div className="space-y-3.5">
           {risks.map(risk => {
             const CatIcon = CAT_ICON[risk.category] ?? ShieldAlert;
@@ -191,9 +240,9 @@ function RisksSection({ risks }: { risks: RiskCategory[] }) {
 function ProcurementSection({ blockers }: { blockers: ProcurementBlocker[] }) {
   if (!blockers.length) return (
     <div className="panel">
+      <PanelHeader icon={ShoppingCart} title="Procurement" />
       <div className="panel-body">
-        <SectionHeader icon={ShoppingCart} title="Procurement" />
-        <div className="flex items-center gap-2 py-3">
+        <div className="flex items-center gap-2 py-1">
           <CheckCircle className="w-4 h-4 text-emerald-500" />
           <span className="text-xs text-muted-foreground">No procurement blockers detected</span>
         </div>
@@ -202,8 +251,8 @@ function ProcurementSection({ blockers }: { blockers: ProcurementBlocker[] }) {
   );
   return (
     <div className="panel">
+      <PanelHeader icon={ShoppingCart} title="Procurement Blockers" subtitle={`${blockers.length} issues`} color="text-blue-500" />
       <div className="panel-body">
-        <SectionHeader icon={ShoppingCart} title="Procurement Blockers" subtitle={`${blockers.length} issues`} color="text-blue-500" />
         <div className="space-y-3">
           {blockers.map((b, i) => {
             const cfg = SEV_CFG[b.severity] ?? SEV_CFG["medium"];
@@ -230,10 +279,10 @@ function ProcurementSection({ blockers }: { blockers: ProcurementBlocker[] }) {
 function SafetySection({ highlights }: { highlights: SafetyHighlight[] }) {
   return (
     <div className="panel">
+      <PanelHeader icon={ShieldAlert} title="Safety Highlights" color="text-orange-500" />
       <div className="panel-body">
-        <SectionHeader icon={ShieldAlert} title="Safety Highlights" color="text-orange-500" />
         {!highlights.length ? (
-          <div className="flex items-center gap-2 py-3">
+          <div className="flex items-center gap-2 py-1">
             <CheckCircle className="w-4 h-4 text-emerald-500" />
             <span className="text-xs text-muted-foreground">No safety concerns</span>
           </div>
@@ -265,10 +314,10 @@ function SafetySection({ highlights }: { highlights: SafetyHighlight[] }) {
 function QualitySection({ highlights }: { highlights: QualityHighlight[] }) {
   return (
     <div className="panel">
+      <PanelHeader icon={ClipboardCheck} title="Quality / NCR Highlights" color="text-violet-500" />
       <div className="panel-body">
-        <SectionHeader icon={ClipboardCheck} title="Quality / NCR Highlights" color="text-violet-500" />
         {!highlights.length ? (
-          <div className="flex items-center gap-2 py-3">
+          <div className="flex items-center gap-2 py-1">
             <CheckCircle className="w-4 h-4 text-emerald-500" />
             <span className="text-xs text-muted-foreground">No quality issues</span>
           </div>
@@ -297,6 +346,10 @@ function QualitySection({ highlights }: { highlights: QualityHighlight[] }) {
   );
 }
 
+// Recommended Executive Actions — the page's one decision-oriented section,
+// so it uses InsightPanel's variant="decision" (action-oriented content)
+// instead of a generic `.panel`, the same way Predictive Intelligence-style
+// AI recommendation panels elsewhere in AMAD v2 are treated.
 function ActionsSection({ actions }: { actions: RecommendedAction[] }) {
   if (!actions.length) return null;
   const areaCfg: Record<string, { color: string; bg: string }> = {
@@ -308,35 +361,37 @@ function ActionsSection({ actions }: { actions: RecommendedAction[] }) {
     "Governance":         { color: "#6b7280", bg: "rgba(107,114,128,0.08)" },
   };
   return (
-    <div className="panel">
-      <div className="panel-body">
-        <SectionHeader icon={Zap} title="Recommended Executive Actions" subtitle={`${actions.length} actions`} color="text-amber-500" />
-        <div className="space-y-3">
-          {actions.map(a => {
-            const cfg = areaCfg[a.area] ?? { color: "#6b7280", bg: "rgba(107,114,128,0.08)" };
-            return (
-              <div key={a.priority} className="flex items-start gap-3 p-3 rounded-lg"
-                style={{ backgroundColor: cfg.bg }}>
-                <div className="w-6 h-6 rounded-full flex items-center justify-center text-xs font-black shrink-0"
-                  style={{ backgroundColor: cfg.color, color: "#fff" }}>
-                  {a.priority}
-                </div>
-                <div className="flex-1 min-w-0">
-                  <div className="flex items-center gap-2 mb-0.5">
-                    <span className="text-[10px] font-bold uppercase tracking-wide"
-                      style={{ color: cfg.color }}>
-                      {a.area}
-                    </span>
-                  </div>
-                  <p className="text-xs font-semibold text-foreground mb-1">{a.action}</p>
-                  <p className="text-[11px] text-muted-foreground">{a.rationale}</p>
-                </div>
+    <InsightPanel
+      icon={Zap}
+      title="Recommended Executive Actions"
+      variant="decision"
+      badge={<span className="text-[10px] text-muted-foreground">{actions.length} actions</span>}
+    >
+      <div className="space-y-3">
+        {actions.map(a => {
+          const cfg = areaCfg[a.area] ?? { color: "#6b7280", bg: "rgba(107,114,128,0.08)" };
+          return (
+            <div key={a.priority} className="flex items-start gap-3 p-3 rounded-lg"
+              style={{ backgroundColor: cfg.bg }}>
+              <div className="w-6 h-6 rounded-full flex items-center justify-center text-xs font-black shrink-0"
+                style={{ backgroundColor: cfg.color, color: "#fff" }}>
+                {a.priority}
               </div>
-            );
-          })}
-        </div>
+              <div className="flex-1 min-w-0">
+                <div className="flex items-center gap-2 mb-0.5">
+                  <span className="text-[10px] font-bold uppercase tracking-wide"
+                    style={{ color: cfg.color }}>
+                    {a.area}
+                  </span>
+                </div>
+                <p className="text-xs font-semibold text-foreground mb-1">{a.action}</p>
+                <p className="text-[11px] text-muted-foreground">{a.rationale}</p>
+              </div>
+            </div>
+          );
+        })}
       </div>
-    </div>
+    </InsightPanel>
   );
 }
 
@@ -344,8 +399,8 @@ function SourcesSection({ sources }: { sources: SourceReference[] }) {
   if (!sources.length) return null;
   return (
     <div className="panel">
+      <PanelHeader icon={Database} title="Data Sources" subtitle="Report citations" />
       <div className="panel-body">
-        <SectionHeader icon={Database} title="Data Sources" subtitle="Report citations" />
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2">
           {sources.map((s, i) => (
             <div key={i} className="flex items-start gap-2 p-2 rounded-lg bg-muted/40">
@@ -374,24 +429,13 @@ export default function Reports() {
 
   if (isError) {
     return (
-      <div className="space-y-4">
-        <div className="flex items-center justify-between">
-          <h1 className="text-xl font-bold">{t("Reports")}</h1>
-        </div>
-        <div className="panel">
-          <div className="panel-body flex flex-col items-center gap-3 py-12 text-center">
-            <AlertOctagon className="w-8 h-8 text-destructive opacity-70" />
-            <p className="text-sm font-semibold text-foreground">Failed to load report</p>
-            <p className="text-xs text-muted-foreground">Could not retrieve data from the server</p>
-            <button
-              onClick={() => refetch()}
-              className="mt-2 px-4 py-2 rounded-lg bg-primary text-primary-foreground text-xs font-semibold hover:opacity-90 transition-opacity"
-            >
-              Retry
-            </button>
-          </div>
-        </div>
-      </div>
+      <ErrorState
+        title="Failed to load report"
+        description="Could not retrieve data from the server."
+        action={
+          <button className="text-xs font-medium text-primary hover:underline" onClick={() => refetch()}>Retry</button>
+        }
+      />
     );
   }
 
@@ -399,34 +443,32 @@ export default function Reports() {
 
   return (
     <div className="space-y-6 print:space-y-4">
-      {/* ── Page header ─────────────────────────────────────────────── */}
-      <div className="flex items-start justify-between gap-4 flex-wrap print:hidden">
-        <div>
-          <div className="flex items-center gap-2 mb-1">
-            <FileText className="w-5 h-5 text-primary shrink-0" />
-            <h1 className="text-xl font-bold text-foreground">{t("Reports")}</h1>
-          </div>
-          <p className="text-xs text-muted-foreground">
-            Executive Weekly Report · Deterministic · Live Data
-          </p>
-        </div>
-        <div className="flex items-center gap-2">
-          <button
-            onClick={() => refetch()}
-            disabled={isFetching}
-            className="flex items-center gap-1.5 px-3 py-2 rounded-lg border border-border text-xs font-medium text-muted-foreground hover:bg-muted transition-colors disabled:opacity-50"
-          >
-            <Clock className={`w-3.5 h-3.5 ${isFetching ? "animate-spin" : ""}`} />
-            {isFetching ? "Refreshing…" : "Refresh"}
-          </button>
-          <button
-            onClick={handlePrint}
-            className="flex items-center gap-1.5 px-4 py-2 rounded-lg bg-primary text-primary-foreground text-xs font-semibold hover:opacity-90 transition-opacity"
-          >
-            <Printer className="w-3.5 h-3.5" />
-            Print / Export PDF
-          </button>
-        </div>
+      {/* ── Page header (screen only — a separate print-only header follows) ── */}
+      <div className="print:hidden">
+        <PageHero
+          eyebrow={t("Reports")}
+          title="Executive Weekly Report"
+          description="Deterministic, source-cited portfolio report generated from live operational data."
+          primaryAction={
+            <div className="flex items-center gap-2">
+              <button
+                onClick={() => refetch()}
+                disabled={isFetching}
+                className="inline-flex items-center gap-1.5 h-9 px-3.5 rounded-lg border border-sidebar-border text-sidebar-foreground/70 text-xs font-semibold hover:bg-sidebar-accent/50 hover:text-sidebar-foreground transition-colors disabled:opacity-50 disabled:pointer-events-none"
+              >
+                <Clock className={`w-3.5 h-3.5 ${isFetching ? "animate-spin" : ""}`} />
+                {isFetching ? "Refreshing…" : "Refresh"}
+              </button>
+              <button
+                onClick={handlePrint}
+                className="inline-flex items-center gap-1.5 h-9 px-4 rounded-lg border border-sidebar-primary/50 text-sidebar-primary text-xs font-semibold hover:bg-sidebar-primary/10 transition-colors"
+              >
+                <Printer className="w-3.5 h-3.5" /> Print / Export PDF
+              </button>
+            </div>
+          }
+        />
+        <div className="mt-3"><ExecutiveSuiteNav current="reports" /></div>
       </div>
 
       {/* ── Print header (visible only on print) ──────────────────── */}
@@ -440,79 +482,58 @@ export default function Reports() {
         )}
       </div>
 
-      {/* ── Report period + portfolio status ─────────────────────── */}
+      {/* ── Report brief: period + portfolio score/status + summary ─ */}
       {isLoading ? (
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
-          {[...Array(3)].map((_, i) => <Skeleton key={i} className="h-32 rounded-xl" />)}
-        </div>
+        <>
+          <Skeleton className="h-40 w-full rounded-xl" />
+          <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+            {[...Array(4)].map((_, i) => <Skeleton key={i} className="h-24 rounded-xl" />)}
+          </div>
+          <Skeleton className="h-32 w-full rounded-xl" />
+        </>
       ) : data && (
         <>
-          {/* Report period banner */}
-          <div className="panel overflow-hidden" style={{ borderLeft: `3px solid ${statusCfg.color}` }}>
-            <div className="panel-body flex items-center justify-between gap-4 flex-wrap py-4">
-              <div>
-                <p className="text-xs font-semibold text-muted-foreground uppercase tracking-widest mb-1">
-                  Report Period
-                </p>
-                <p className="text-base font-bold text-foreground">{data.report_period.label}</p>
-                <p className="text-[11px] text-muted-foreground mt-0.5">
-                  Generated {new Date(data.generated_at).toLocaleString()} UTC
+          <InsightPanel
+            icon={HeartPulse}
+            title="Portfolio Status"
+            variant="brief"
+            badge={
+              <span
+                className="px-3 py-1 rounded-full text-xs font-bold shrink-0"
+                style={{ backgroundColor: statusCfg.bg, border: `1px solid ${statusCfg.border}`, color: statusCfg.color }}
+              >
+                {data.portfolio_status}
+              </span>
+            }
+          >
+            <div className="grid sm:grid-cols-[auto_1fr] gap-4 items-start">
+              <div className="text-center shrink-0">
+                <div className="text-4xl font-black leading-none" style={{ color: statusCfg.color }}>
+                  {data.portfolio_score}
+                </div>
+                <div className="text-[10px] text-muted-foreground mt-1">/100 avg</div>
+              </div>
+              <div className="space-y-1.5 min-w-0">
+                <p className="text-[13px] text-muted-foreground leading-normal">{data.portfolio_summary}</p>
+                <p className="text-[11px] text-muted-foreground/70">
+                  {data.report_period.label} · Generated {new Date(data.generated_at).toLocaleString()} UTC
                 </p>
               </div>
-              <div className="flex items-center gap-4">
-                <div className="text-center">
-                  <div className="text-4xl font-black leading-none" style={{ color: statusCfg.color }}>
-                    {data.portfolio_score}
-                  </div>
-                  <div className="text-[10px] text-muted-foreground">/100 avg</div>
-                </div>
-                <div
-                  className="px-4 py-2 rounded-full text-sm font-bold"
-                  style={{
-                    backgroundColor: statusCfg.bg,
-                    border: `1px solid ${statusCfg.border}`,
-                    color: statusCfg.color,
-                  }}
-                >
-                  {data.portfolio_status}
-                </div>
-              </div>
             </div>
-          </div>
-
-          {/* Executive summary */}
-          <div className="panel">
-            <div className="panel-body">
-              <p className="text-xs font-semibold text-muted-foreground uppercase tracking-widest mb-2">
-                Executive Summary
-              </p>
-              <p className="text-sm text-foreground leading-relaxed">{data.portfolio_summary}</p>
-            </div>
-          </div>
+          </InsightPanel>
 
           {/* ── KPI row ──────────────────────────────────────────── */}
           <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
-            {[
-              { label: "Critical Projects", value: data.health_distribution.critical, color: "#dc2626" },
-              { label: "At Risk Projects",  value: data.health_distribution.at_risk,  color: "#d97706" },
-              { label: "Good Projects",     value: data.health_distribution.good,     color: "#2563eb" },
-              { label: "Excellent Projects",value: data.health_distribution.excellent,color: "#16a34a" },
-            ].map(({ label, value, color }) => (
-              <div key={label} className="panel">
-                <div className="panel-body text-center py-4">
-                  <div className="text-3xl font-black leading-none" style={{ color }}>{value}</div>
-                  <div className="text-[10px] text-muted-foreground mt-1">{label}</div>
-                </div>
-              </div>
-            ))}
+            <KpiStat icon={AlertOctagon} label="Critical Projects" value={data.health_distribution.critical} tone="danger" />
+            <KpiStat icon={TrendingDown} label="At Risk Projects" value={data.health_distribution.at_risk} tone="warning" />
+            <KpiStat icon={CheckCircle} label="Good Projects" value={data.health_distribution.good} tone="neutral" />
+            <KpiStat icon={Trophy} label="Excellent Projects" value={data.health_distribution.excellent} tone="success" />
           </div>
 
           {/* ── Health distribution bars ───────────────────────── */}
           <div className="panel">
+            <PanelHeader icon={BarChart2} title="Health Distribution" subtitle={`${data.health_distribution.total} projects`} />
             <div className="panel-body">
-              <p className="text-xs font-semibold text-muted-foreground uppercase tracking-widest mb-3">
-                Health Distribution — {data.health_distribution.total} Projects
-              </p>
               <div className="space-y-2">
                 <HealthKPIBar label="Critical"  value={data.health_distribution.critical}  total={data.health_distribution.total} color="#dc2626" />
                 <HealthKPIBar label="At Risk"   value={data.health_distribution.at_risk}   total={data.health_distribution.total} color="#d97706" />

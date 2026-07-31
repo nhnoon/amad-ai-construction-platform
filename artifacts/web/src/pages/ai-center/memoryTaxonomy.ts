@@ -59,6 +59,48 @@ export const PRIORITY_TONE: Record<string, string> = {
   Low:    "text-slate-600 border-slate-400/30 bg-slate-400/10 dark:text-slate-400",
 };
 
+// Pinned Memories (Phase 2 §5) — purely a personal UI preference, not
+// organizational data, so it's kept client-side (localStorage) rather than
+// adding a backend column. Scoped per browser/user profile, same tradeoff
+// already made for other local-only preferences in this app (theme,
+// language). Not shared across devices — that would need a real backend
+// field, out of scope for a client-side-only phase.
+const PINNED_STORAGE_KEY = "amad_pinned_memories";
+
+function readPinnedIds(): Set<number> {
+  try {
+    const raw = window.localStorage.getItem(PINNED_STORAGE_KEY);
+    return new Set(raw ? (JSON.parse(raw) as number[]) : []);
+  } catch {
+    return new Set();
+  }
+}
+
+function writePinnedIds(ids: Set<number>): void {
+  try {
+    window.localStorage.setItem(PINNED_STORAGE_KEY, JSON.stringify(Array.from(ids)));
+  } catch {
+    // localStorage unavailable (private browsing, quota) — pinning silently
+    // becomes a no-op for this session rather than throwing.
+  }
+}
+
+export function isMemoryPinned(id: number): boolean {
+  return readPinnedIds().has(id);
+}
+
+export function toggleMemoryPinned(id: number): boolean {
+  const ids = readPinnedIds();
+  const nowPinned = !ids.has(id);
+  if (nowPinned) ids.add(id); else ids.delete(id);
+  writePinnedIds(ids);
+  return nowPinned;
+}
+
+export function getPinnedIds(): Set<number> {
+  return readPinnedIds();
+}
+
 export function matchesSearch(item: StructuredMemory, query: string): boolean {
   if (!query.trim()) return true;
   const q = query.trim().toLowerCase();

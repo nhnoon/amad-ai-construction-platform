@@ -6,14 +6,18 @@ No AI, no LLM, no predictions. All metrics derived from operational records.
 """
 from __future__ import annotations
 
+from datetime import date as date_cls
+
 from fastapi import APIRouter
 from pydantic import BaseModel
 from sqlalchemy import func
 
-from ...core.deps import DbSession
+from ...ai.scope import AIAuthScope
+from ...core.deps import CurrentScope, DbSession
 from ...models.projects import Project
 from ...models.safety import SafetyEvent, NCR
 from ...models.procurement import PurchaseOrder
+from ...models.executive import PortfolioScoreSnapshot
 from ...ai.health_score import get_all_projects_health, HealthScoreResult
 
 router = APIRouter(prefix="/executive", tags=["executive"])
@@ -36,6 +40,12 @@ class RiskCategory(BaseModel):
     severity: str          # critical | high | medium | low
     count: int
     detail: str
+
+
+class PortfolioTrendPoint(BaseModel):
+    date: str    # ISO date (YYYY-MM-DD)
+    score: int
+    status: str
 
 
 class ExecutiveIntelligence(BaseModel):
@@ -97,9 +107,12 @@ def _brief(hs: HealthScoreResult) -> ProjectBrief:
 
 # ── Intelligence computation ───────────────────────────────────────────────────
 
-def _compute_executive_intelligence(db) -> ExecutiveIntelligence:  # type: ignore[type-arg]
+def _compute_executive_intelligence(db, scope: AIAuthScope) -> ExecutiveIntelligence:  # type: ignore[type-arg]
     # ── 1. Health scores (sorted worst-first by get_all_projects_health) ──────
-    health_scores = get_all_projects_health(db)
+    # Filtered to the caller's own organization (Phase 1 production-
+    # hardening) without touching get_all_projects_health's scoring logic.
+    ids = list(scope.accessible_project_ids)
+    health_scores = [h for h in get_all_projects_health(db) if h.project_id in scope.accessible_project_ids]
 
     if not health_scores:
         return ExecutiveIntelligence(
@@ -126,28 +139,55 @@ def _compute_executive_intelligence(db) -> ExecutiveIntelligence:  # type: ignor
     avg_score      = round(sum(h.score for h in health_scores) / total)
     portfolio_level = _score_to_level(avg_score)
 
-    # ── 2. Operational counts from live DB ────────────────────────────────────
+    # ── 1b. Record today's snapshot for the Portfolio Trend chart ─────────────
+    # No cron/scheduler in this app — recorded as a side effect of computing
+    # executive intelligence (also reached via /reports/executive-weekly,
+    # which reuses this function), upserted so re-computing later the same
+    # day updates today's point instead of duplicating it. Scoped per
+    # organization (Phase 1) — a user with no organization has nothing
+    # meaningful to snapshot, so the write is skipped in that case.
+    if scope.organization_id is not None:
+        today = date_cls.today()
+        snapshot = (
+            db.query(PortfolioScoreSnapshot)
+            .filter(
+                PortfolioScoreSnapshot.snapshot_date == today,
+                PortfolioScoreSnapshot.organization_id == scope.organization_id,
+            )
+            .first()
+        )
+        if snapshot is None:
+            db.add(PortfolioScoreSnapshot(
+                snapshot_date=today, organization_id=scope.organization_id,
+                portfolio_score=avg_score, portfolio_status=portfolio_level,
+            ))
+        else:
+            snapshot.portfolio_score = avg_score
+            snapshot.portfolio_status = portfolio_level
+        db.commit()
+
+    # ── 2. Operational counts from live DB (scoped to accessible projects) ────
     critical_safety: int = (
         db.query(func.count(SafetyEvent.id))
-        .filter(SafetyEvent.severity.in_(["Critical", "High"]))
+        .filter(SafetyEvent.severity.in_(["Critical", "High"]), SafetyEvent.project_id.in_(ids))
         .scalar()
         or 0
     )
     open_ncrs: int = (
         db.query(func.count(NCR.id))
-        .filter(NCR.status != "Closed")
+        .filter(NCR.status != "Closed", NCR.project_id.in_(ids))
         .scalar()
         or 0
     )
     late_pos: int = (
         db.query(func.count(PurchaseOrder.id))
-        .filter(PurchaseOrder.is_late.is_(True))
+        .filter(PurchaseOrder.is_late.is_(True), PurchaseOrder.project_id.in_(ids))
         .scalar()
         or 0
     )
     delayed_projects: int = (
         db.query(func.count(Project.id))
-        .filter(Project.status.in_(["Delayed", "On Hold", "Suspended"]))
+        .filter(Project.status.in_(["Delayed", "On Hold", "Suspended"]), Project.id.in_(ids))
         .scalar()
         or 0
     )
@@ -303,9 +343,37 @@ def _compute_executive_intelligence(db) -> ExecutiveIntelligence:  # type: ignor
 # ── Route ──────────────────────────────────────────────────────────────────────
 
 @router.get("", response_model=ExecutiveIntelligence)
-def get_executive_intelligence(db: DbSession) -> ExecutiveIntelligence:
+def get_executive_intelligence(db: DbSession, scope: CurrentScope) -> ExecutiveIntelligence:
     """
-    Return deterministic executive portfolio intelligence.
+    Return deterministic executive portfolio intelligence, scoped to the
+    caller's own organization (Phase 1 production-hardening).
     Derived entirely from live project, safety, procurement, and quality data.
     """
-    return _compute_executive_intelligence(db)
+    return _compute_executive_intelligence(db, scope)
+
+
+@router.get("/trend", response_model=list[PortfolioTrendPoint])
+def get_portfolio_trend(db: DbSession, scope: CurrentScope) -> list[PortfolioTrendPoint]:
+    """
+    Daily portfolio score history for the Executive Dashboard's trend chart,
+    scoped to the caller's own organization. Points only exist from
+    whichever day this table first got written to for that organization
+    (see _compute_executive_intelligence) — there is no backfilled history.
+    """
+    if scope.organization_id is None:
+        return []
+    snapshots = (
+        db.query(PortfolioScoreSnapshot)
+        .filter(PortfolioScoreSnapshot.organization_id == scope.organization_id)
+        .order_by(PortfolioScoreSnapshot.snapshot_date.asc())
+        .limit(180)
+        .all()
+    )
+    return [
+        PortfolioTrendPoint(
+            date=s.snapshot_date.isoformat(),
+            score=s.portfolio_score,
+            status=s.portfolio_status,
+        )
+        for s in snapshots
+    ]

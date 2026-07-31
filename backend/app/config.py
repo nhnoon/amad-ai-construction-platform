@@ -45,6 +45,19 @@ class Settings(BaseSettings):
 
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 480
 
+    # ── Login brute-force protection (Phase 2 — Security & Authentication
+    # Hardening) ────────────────────────────────────────────────────────
+    # Per-IP sliding-window throttle on POST /auth/login, checked before
+    # any credential/lockout logic (see app/core/login_security.py).
+    LOGIN_RATE_LIMIT_MAX_ATTEMPTS: int = 10
+    LOGIN_RATE_LIMIT_WINDOW_SECONDS: int = 60
+    # Per-account lockout (DB-persisted on UserAccount — survives restarts,
+    # unlike the IP throttle above) after this many consecutive failed
+    # attempts, for this many minutes, then auto-unlocks (see
+    # app/api/v1/auth.py::login).
+    LOGIN_MAX_FAILED_ATTEMPTS: int = 5
+    LOGIN_LOCKOUT_MINUTES: int = 15
+
     LLM_PROVIDER: str = "mock"
     LLM_MODEL: str = "mock-model"
     LLM_API_KEY: Optional[str] = None
@@ -90,7 +103,16 @@ class Settings(BaseSettings):
     DEFAULT_PAGE_SIZE: int = 20
     MAX_PAGE_SIZE: int = 100
 
-    ALLOWED_ORIGINS: list[str] = ["*"]
+    # Phase 2 — Security & Authentication Hardening: the previous default
+    # ("*") combined with the CORSMiddleware's allow_credentials=True in
+    # app/main.py is the exact "wildcard origin + credentials" anti-pattern
+    # (Starlette reflects the request's Origin header back when "*" is
+    # paired with credentials, which is equivalent in practice to trusting
+    # every origin). Real deployments must set ALLOWED_ORIGINS explicitly
+    # via env var; this default only covers the local Vite dev server.
+    # See app/main.py for the startup guard that enforces this in
+    # non-development environments.
+    ALLOWED_ORIGINS: list[str] = ["http://localhost:5173", "http://127.0.0.1:5173"]
 
     # ── Document OCR Foundation (app/ai/document_ocr.py) — local disk only,
     # not object storage. Files are stored under a UUID-derived name, never

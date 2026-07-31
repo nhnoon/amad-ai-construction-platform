@@ -6,12 +6,14 @@ import { TooltipProvider } from "@/components/ui/tooltip";
 import NotFound from "@/pages/not-found";
 import { AuthProvider, useAuth } from "./context/AuthContext";
 import { ThemeProvider } from "./context/ThemeContext";
+import { CurrentEntityProvider } from "./context/CurrentEntityContext";
 import { Layout } from "./components/layout";
 import { ErrorBoundary } from "./components/ErrorBoundary";
 import { setAuthTokenGetter } from "@workspace/api-client-react";
 import { getToken } from "./lib/auth";
 
 import Login from "./pages/login";
+import ChangePassword from "./pages/change-password";
 
 // Route-level code splitting — each page (and everything it imports) only
 // ships to the browser once its route is actually visited, instead of every
@@ -37,6 +39,16 @@ const Copilot = lazy(() => import("./pages/copilot"));
 const Alerts = lazy(() => import("./pages/alerts"));
 const Reports = lazy(() => import("./pages/reports"));
 const AICenter = lazy(() => import("./pages/ai-center"));
+const Tasks = lazy(() => import("./pages/tasks"));
+const Requests = lazy(() => import("./pages/requests"));
+const Risks = lazy(() => import("./pages/risks"));
+const Notifications = lazy(() => import("./pages/notifications"));
+const AdminAuditLog = lazy(() => import("./pages/admin-audit-log"));
+const AdminIntegrations = lazy(() => import("./pages/admin-integrations"));
+const AdminBilling = lazy(() => import("./pages/admin-billing"));
+const ClientPortalOverview = lazy(() => import("./pages/client-portal/index"));
+const ClientPortalRequests = lazy(() => import("./pages/client-portal/requests"));
+const ClientPortalDocuments = lazy(() => import("./pages/client-portal/documents"));
 
 import "./lib/i18n";
 
@@ -60,8 +72,16 @@ function ProtectedRoute({ component: Component }: { component: ComponentType<unk
   const [location, setLocation] = useLocation();
 
   useEffect(() => {
-    if (!isLoading && !user) {
+    if (isLoading) return;
+    if (!user) {
       setLocation("/login");
+    } else if (user.must_change_password) {
+      // Phase 2 — Security & Authentication Hardening: block access to
+      // every protected page until the mandatory first-login/reset
+      // password change is complete. The server enforces this too (see
+      // app/core/deps.py + app/core/password_gate_middleware.py) — this
+      // redirect is purely for a clean UX, not the actual security boundary.
+      setLocation("/change-password");
     }
   }, [isLoading, user, setLocation]);
 
@@ -76,7 +96,7 @@ function ProtectedRoute({ component: Component }: { component: ComponentType<unk
     );
   }
 
-  if (!user) return null;
+  if (!user || user.must_change_password) return null;
 
   return (
     <Layout>
@@ -97,9 +117,12 @@ function AdminRoute({ component: Component }: { component: ComponentType<unknown
   const [location, setLocation] = useLocation();
 
   useEffect(() => {
-    if (!isLoading && !user) {
+    if (isLoading) return;
+    if (!user) {
       setLocation("/login");
-    } else if (!isLoading && user && user.role !== "admin") {
+    } else if (user.must_change_password) {
+      setLocation("/change-password");
+    } else if (user.role !== "admin") {
       setLocation("/");
     }
   }, [isLoading, user, setLocation]);
@@ -115,7 +138,7 @@ function AdminRoute({ component: Component }: { component: ComponentType<unknown
     );
   }
 
-  if (!user || user.role !== "admin") return null;
+  if (!user || user.must_change_password || user.role !== "admin") return null;
 
   return (
     <Layout>
@@ -128,10 +151,30 @@ function AdminRoute({ component: Component }: { component: ComponentType<unknown
   );
 }
 
+function ChangePasswordRoute() {
+  const { user, isLoading } = useAuth();
+  const [, setLocation] = useLocation();
+
+  useEffect(() => {
+    if (isLoading) return;
+    if (!user) {
+      setLocation("/login");
+    } else if (!user.must_change_password) {
+      // Already changed (or never required) — nothing to do here.
+      setLocation("/");
+    }
+  }, [isLoading, user, setLocation]);
+
+  if (isLoading || !user || !user.must_change_password) return null;
+
+  return <ChangePassword />;
+}
+
 function Router() {
   return (
     <Switch>
       <Route path="/login" component={Login} />
+      <Route path="/change-password" component={ChangePasswordRoute} />
       <Route path="/" component={() => <ProtectedRoute component={Dashboard} />} />
       <Route path="/operations" component={() => <ProtectedRoute component={Operations} />} />
       <Route path="/documents" component={() => <ProtectedRoute component={Documents} />} />
@@ -149,11 +192,21 @@ function Router() {
       <Route path="/claims" component={() => <ProtectedRoute component={Claims} />} />
       <Route path="/admin/users" component={() => <AdminRoute component={AdminUsers} />} />
       <Route path="/admin/organization" component={() => <AdminRoute component={AdminOrganization} />} />
+      <Route path="/admin/audit-log" component={() => <AdminRoute component={AdminAuditLog} />} />
+      <Route path="/admin/integrations" component={() => <AdminRoute component={AdminIntegrations} />} />
+      <Route path="/admin/billing" component={() => <AdminRoute component={AdminBilling} />} />
       <Route path="/admin" component={() => <AdminRoute component={AdminUsers} />} />
       <Route path="/copilot" component={() => <ProtectedRoute component={Copilot} />} />
       <Route path="/ai-center/:workspace?" component={() => <ProtectedRoute component={AICenter} />} />
       <Route path="/alerts" component={() => <ProtectedRoute component={Alerts} />} />
       <Route path="/reports" component={() => <ProtectedRoute component={Reports} />} />
+      <Route path="/tasks" component={() => <ProtectedRoute component={Tasks} />} />
+      <Route path="/requests" component={() => <ProtectedRoute component={Requests} />} />
+      <Route path="/risks" component={() => <ProtectedRoute component={Risks} />} />
+      <Route path="/notifications" component={() => <ProtectedRoute component={Notifications} />} />
+      <Route path="/client-portal" component={() => <ProtectedRoute component={ClientPortalOverview} />} />
+      <Route path="/client-portal/requests" component={() => <ProtectedRoute component={ClientPortalRequests} />} />
+      <Route path="/client-portal/documents" component={() => <ProtectedRoute component={ClientPortalDocuments} />} />
       <Route component={NotFound} />
     </Switch>
   );
@@ -166,9 +219,11 @@ function App() {
         <QueryClientProvider client={queryClient}>
           <TooltipProvider>
             <AuthProvider>
-              <WouterRouter base={import.meta.env.BASE_URL.replace(/\/$/, "")}>
-                <Router />
-              </WouterRouter>
+              <CurrentEntityProvider>
+                <WouterRouter base={import.meta.env.BASE_URL.replace(/\/$/, "")}>
+                  <Router />
+                </WouterRouter>
+              </CurrentEntityProvider>
             </AuthProvider>
             <Toaster />
           </TooltipProvider>

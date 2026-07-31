@@ -1,7 +1,6 @@
 import { useQuery } from "@tanstack/react-query";
 import { Link } from "wouter";
 import { Brain, AlertTriangle } from "lucide-react";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
@@ -24,17 +23,17 @@ export default function RecentMemoriesPanel({ className }: { className?: string 
       : [];
 
   return (
-    <Card className={cn("flex flex-col", className)}>
-      <CardHeader className="flex flex-row items-center justify-between gap-2 space-y-0 shrink-0">
+    <div className={cn("panel flex flex-col", className)}>
+      <div className="panel-header shrink-0">
         <div className="flex items-center gap-2">
           <Brain className="w-4 h-4 text-primary" />
-          <CardTitle className="text-sm">Recent Memories</CardTitle>
+          <span className="panel-title">Recent Memories</span>
         </div>
         <Link href="/ai-center/memory" className="text-xs font-medium text-primary hover:underline">
           View all
         </Link>
-      </CardHeader>
-      <CardContent className="flex-1 overflow-y-auto space-y-3">
+      </div>
+      <div className="panel-body flex-1 overflow-y-auto space-y-3">
         {isLoading ? (
           <div className="space-y-2">
             <Skeleton className="h-10 w-full rounded-md" />
@@ -62,7 +61,7 @@ export default function RecentMemoriesPanel({ className }: { className?: string 
             </div>
           ))
         )}
-      </CardContent>
-    </Card>
+      </div>
+    </div>
   );
 }

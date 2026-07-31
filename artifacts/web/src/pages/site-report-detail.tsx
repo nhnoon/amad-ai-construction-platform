@@ -1,13 +1,19 @@
 import { useEffect, useState } from "react";
-import { useLocation, useParams } from "wouter";
-import { ArrowLeft, Sparkles, RotateCcw } from "lucide-react";
+import { useParams } from "wouter";
+import { Sparkles, RotateCcw, AlertOctagon } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { ErrorBoundary } from "@/components/ErrorBoundary";
+import { EmptyState } from "@/components/ui/empty-state";
+import { BackButton } from "@/components/back-button";
 import SiteReportAnalysisPanel, { AnalysisHeader, type SiteReportAnalysis } from "@/components/site-report-analysis-panel";
 import { SiteReportStageProgress, useAnalysisStages, type Stage } from "@/components/site-report-stage-progress";
 import { getToken } from "@/lib/auth";
+import { useRegisterCurrentEntity } from "@/context/CurrentEntityContext";
+import { CurrentlyAnalyzing } from "@/components/CurrentlyAnalyzing";
+import { AIActionPanel } from "@/components/AIActionPanel";
+import { WorkspaceLayout } from "@/components/workspace-layout";
 
 // The backend enforces its own hard 60s wall-clock ceiling for /analyze
 // (evidence gathering + risk score is sub-second; Hermes gets ~45s — see
@@ -81,7 +87,7 @@ async function apiRequest<T>(path: string, method: "GET" | "POST", signal?: Abor
 
 function SectionCard({ title, items }: { title: string; items: string[] }) {
   return (
-    <section className="rounded-xl border border-border/50 bg-card/70 p-4">
+    <section className="panel panel-body">
       <h3 className="mb-3 text-sm font-semibold text-foreground">{title}</h3>
       <ul className="space-y-2">
         {items.map((item, idx) => (
@@ -104,28 +110,27 @@ function AnalysisPrompt({ onAnalyze, analyzing }: { onAnalyze: () => void; analy
     );
   }
   return (
-    <div className="rounded-xl border border-dashed border-border p-8 text-center space-y-3">
-      <Sparkles className="h-6 w-6 text-primary mx-auto" />
-      <p className="text-sm font-medium text-foreground">Run AI analysis to see this section</p>
-      <p className="text-xs text-muted-foreground max-w-sm mx-auto">
-        Executive summary, findings, risk scoring, and recommendations are generated together in one AI reasoning pass.
-      </p>
-      <Button size="sm" onClick={onAnalyze} className="gap-1.5">
-        <Sparkles className="h-3.5 w-3.5" />
-        Analyze with AMAD AI
-      </Button>
-    </div>
+    <EmptyState
+      icon={Sparkles}
+      title="Run AI analysis to see this section"
+      description="Executive summary, findings, risk scoring, and recommendations are generated together in one AI reasoning pass."
+      action={
+        <Button size="sm" onClick={onAnalyze} className="gap-1.5">
+          <Sparkles className="h-3.5 w-3.5" />
+          Analyze with AMAD AI
+        </Button>
+      }
+    />
   );
 }
 
-const REASONING_STATUS_PILL: Record<string, { label: string; className: string }> = {
-  completed: { label: "AI analysis complete", className: "bg-emerald-500/10 text-emerald-600 dark:text-emerald-400" },
-  timed_out: { label: "AI reasoning timed out — evidence shown", className: "bg-amber-500/10 text-amber-600 dark:text-amber-400" },
-  unavailable: { label: "AI reasoning unavailable — evidence shown", className: "bg-amber-500/10 text-amber-600 dark:text-amber-400" },
+const REASONING_STATUS_PILL: Record<string, { label: string; badgeClass: string }> = {
+  completed: { label: "AI analysis complete", badgeClass: "badge-success" },
+  timed_out: { label: "AI reasoning timed out — evidence shown", badgeClass: "badge-warning" },
+  unavailable: { label: "AI reasoning unavailable — evidence shown", badgeClass: "badge-warning" },
 };
 
 export default function SiteReportDetail() {
-  const [, setLocation] = useLocation();
   const { projectId, reportId } = useParams<{ projectId: string; reportId: string }>();
 
   const projectIdNum = Number(projectId);
@@ -138,6 +143,12 @@ export default function SiteReportDetail() {
   const [error, setError] = useState<string | null>(null);
   const [tab, setTab] = useState("overview");
   const [stage, setStage] = useAnalysisStages(analyzing);
+
+  useRegisterCurrentEntity(
+    report
+      ? { kind: "site_report", code: `SR-${report.report_id}`, label: `${report.project_code} · ${report.report_date}`, projectId: report.project_id }
+      : null,
+  );
 
   useEffect(() => {
     let mounted = true;
@@ -209,12 +220,9 @@ export default function SiteReportDetail() {
   if (!report) {
     return (
       <div className="space-y-4">
-        <Button variant="ghost" className="gap-2" onClick={() => setLocation("/site-reports")}>
-          <ArrowLeft className="h-4 w-4" />
-          Back to Site Reports
-        </Button>
-        <div className="rounded-xl border border-destructive/30 bg-destructive/5 p-4 text-sm text-destructive">
-          {error || "Site report not found."}
+        <BackButton to="/site-reports" label="Back to Site Reports" />
+        <div className="panel">
+          <EmptyState icon={AlertOctagon} title={error || "Site report not found."} />
         </div>
       </div>
     );
@@ -223,29 +231,28 @@ export default function SiteReportDetail() {
   const statusPill = analysis ? REASONING_STATUS_PILL[analysis.reasoning_status] : null;
 
   return (
-    <div className="space-y-6">
-      <div className="flex items-start justify-between gap-4 flex-wrap">
-        <div>
-          <Button variant="ghost" className="mb-2 h-auto p-0 text-muted-foreground hover:text-foreground" onClick={() => setLocation("/site-reports")}>
-            <ArrowLeft className="mr-1 h-4 w-4" />
-            Back to Site Reports
-          </Button>
-          <h1 className="text-2xl font-bold text-foreground">{report.project_name}</h1>
-          <p className="text-sm text-muted-foreground">{report.project_code} - Site Report {report.report_date}</p>
-        </div>
-
-        <div className="flex flex-col items-end gap-2">
-          {statusPill && (
-            <span className={`inline-flex items-center px-2.5 py-1 rounded-full text-xs font-medium ${statusPill.className}`}>
-              {statusPill.label}
-            </span>
-          )}
+    <WorkspaceLayout
+        title={report.project_name}
+        subtitle={`${report.project_code} · Site Report ${report.report_date}`}
+        backLabel="Back to Site Reports"
+        backHref="/site-reports"
+        breadcrumbs={[
+          { label: "Dashboard", href: "/" },
+          { label: "Site Reports", href: "/site-reports" },
+          { label: report.report_date },
+        ]}
+        badge={statusPill && <span className={`badge ${statusPill.badgeClass}`}>{statusPill.label}</span>}
+        toolbar={
           <Button size="sm" onClick={handleAnalyze} disabled={analyzing} className="gap-1.5">
             {analysis ? <RotateCcw className="h-3.5 w-3.5" /> : <Sparkles className="h-3.5 w-3.5" />}
             {analyzing ? "Analyzing..." : analysis ? "Re-analyze" : "Analyze with AMAD AI"}
           </Button>
-        </div>
-      </div>
+        }
+      >
+
+      <CurrentlyAnalyzing />
+
+      <AIActionPanel entityKind="site_report" projectId={report.project_id} reportLabel={`${report.project_code} · ${report.report_date}`} />
 
       {error && (
         <div className="rounded-xl border border-destructive/30 bg-destructive/5 p-3 text-sm text-destructive">
@@ -281,15 +288,15 @@ export default function SiteReportDetail() {
           ) : (
             <div className="space-y-4">
               <section className="grid grid-cols-1 gap-4 md:grid-cols-3">
-                <div className="rounded-xl border border-border/50 bg-card/70 p-4">
+                <div className="panel panel-body">
                   <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Engineer</p>
                   <p className="mt-1 text-sm font-semibold text-foreground">{report.engineer?.full_name || "Not assigned"}</p>
                 </div>
-                <div className="rounded-xl border border-border/50 bg-card/70 p-4">
+                <div className="panel panel-body">
                   <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Weather</p>
                   <p className="mt-1 text-sm font-semibold text-foreground">{report.weather}</p>
                 </div>
-                <div className="rounded-xl border border-border/50 bg-card/70 p-4">
+                <div className="panel panel-body">
                   <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Total Workforce</p>
                   <p className="mt-1 text-sm font-semibold text-foreground">{report.manpower.total_workers}</p>
                 </div>
@@ -310,35 +317,35 @@ export default function SiteReportDetail() {
         <TabsContent value="evidence">
           <div className="space-y-4">
             <section className="grid grid-cols-1 gap-4 md:grid-cols-2">
-              <div className="rounded-xl border border-border/50 bg-card/70 p-4">
+              <div className="panel panel-body">
                 <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Project</p>
                 <p className="mt-1 text-sm font-semibold text-foreground">{report.project_code} - {report.project_name}</p>
               </div>
-              <div className="rounded-xl border border-border/50 bg-card/70 p-4">
+              <div className="panel panel-body">
                 <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Engineer</p>
                 <p className="mt-1 text-sm font-semibold text-foreground">{report.engineer?.full_name || "Not assigned"}</p>
                 {report.engineer?.email && <p className="text-xs text-muted-foreground">{report.engineer.email}</p>}
               </div>
-              <div className="rounded-xl border border-border/50 bg-card/70 p-4">
+              <div className="panel panel-body">
                 <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Supervisor</p>
                 <p className="mt-1 text-sm font-semibold text-foreground">{report.supervisor?.full_name || "Not assigned"}</p>
                 {report.supervisor?.email && <p className="text-xs text-muted-foreground">{report.supervisor.email}</p>}
               </div>
-              <div className="rounded-xl border border-border/50 bg-card/70 p-4">
+              <div className="panel panel-body">
                 <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Report Date</p>
                 <p className="mt-1 text-sm font-semibold text-foreground">{report.report_date}</p>
               </div>
-              <div className="rounded-xl border border-border/50 bg-card/70 p-4">
+              <div className="panel panel-body">
                 <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Weather</p>
                 <p className="mt-1 text-sm font-semibold text-foreground">{report.weather}</p>
               </div>
-              <div className="rounded-xl border border-border/50 bg-card/70 p-4">
+              <div className="panel panel-body">
                 <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Temperature</p>
                 <p className="mt-1 text-sm font-semibold text-foreground">{report.temperature || "No temperature data stored"}</p>
               </div>
             </section>
 
-            <section className="rounded-xl border border-border/50 bg-card/70 p-4">
+            <section className="panel panel-body">
               <h3 className="mb-3 text-sm font-semibold text-foreground">Manpower</h3>
               <p className="mb-3 text-sm font-semibold text-foreground">Total Workforce: {report.manpower.total_workers}</p>
               <div className="space-y-2">
@@ -364,7 +371,7 @@ export default function SiteReportDetail() {
             <SectionCard title="Safety Observations" items={report.safety_observations} />
             <SectionCard title="Quality Observations" items={report.quality_observations} />
 
-            <section className="rounded-xl border border-border/50 bg-card/70 p-4">
+            <section className="panel panel-body">
               <h3 className="mb-3 text-sm font-semibold text-foreground">Photos</h3>
               {report.photos.length === 0 ? (
                 <p className="text-sm text-muted-foreground">No photo records stored for this report scope.</p>
@@ -380,7 +387,7 @@ export default function SiteReportDetail() {
               )}
             </section>
 
-            <section className="rounded-xl border border-border/50 bg-card/70 p-4">
+            <section className="panel panel-body">
               <h3 className="mb-3 text-sm font-semibold text-foreground">Attachments</h3>
               {report.attachments.length === 0 ? (
                 <p className="text-sm text-muted-foreground">No attachments linked to this report.</p>
@@ -396,7 +403,7 @@ export default function SiteReportDetail() {
               )}
             </section>
 
-            <section className="rounded-xl border border-border/50 bg-card/70 p-4">
+            <section className="panel panel-body">
               <h3 className="mb-3 text-sm font-semibold text-foreground">Document References</h3>
               {report.document_references.length === 0 ? (
                 <p className="text-sm text-muted-foreground">No document references linked to this report.</p>
@@ -438,6 +445,6 @@ export default function SiteReportDetail() {
           )}
         </TabsContent>
       </Tabs>
-    </div>
+    </WorkspaceLayout>
   );
 }

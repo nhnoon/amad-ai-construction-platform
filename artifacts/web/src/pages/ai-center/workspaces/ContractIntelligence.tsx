@@ -44,7 +44,7 @@ export default function ContractIntelligence() {
       ) : (
         <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
           {contracts.map((c) => (
-            <div key={c.id} className="rounded-xl border border-border bg-card p-4 space-y-2">
+            <div key={c.id} className="panel panel-body space-y-2">
               <div className="flex items-start gap-2.5">
                 <div className="w-8 h-8 rounded-lg bg-primary/10 flex items-center justify-center shrink-0">
                   <FileSignature className="w-4 h-4 text-primary" />

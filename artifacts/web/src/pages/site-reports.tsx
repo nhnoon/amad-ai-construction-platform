@@ -4,9 +4,10 @@ import { Link } from "wouter";
 import { useTranslation } from "react-i18next";
 import { CloudSun, AlertOctagon, ChevronRight, FileStack } from "lucide-react";
 import { getToken } from "@/lib/auth";
-import { PageContextHeader } from "@/components/page-context-header";
+import { WorkspaceLayout } from "@/components/workspace-layout";
 import { EmptyState } from "@/components/ui/empty-state";
 import { Skeleton } from "@/components/ui/skeleton";
+import { FilterSelect } from "@/components/filter-select";
 
 const WEATHER_BADGE: Record<string, string> = {
   Clear:        "badge-success",
@@ -85,33 +86,26 @@ export default function SiteReports() {
   const selectedProject = projects?.find((p) => p.id === selectedProjectId);
 
   return (
-    <div className="space-y-6">
-      {/* Header */}
-      <div className="space-y-4">
-        <PageContextHeader
-          title={t("Site Reports")}
-          subtitle={`${
-            selectedProject
-              ? `${selectedProject.project_code} — ${selectedProject.project_name}`
-              : "Select a project to begin"
-          }${cards ? ` · ${cards.length} reports` : ""}`}
-          backLabel="Back to Operations"
-          backHref="/operations"
-          breadcrumbs={[
-            { label: "Dashboard", href: "/" },
-            { label: "Operations", href: "/operations" },
-            { label: "Site Reports" },
-          ]}
-        />
-        <div className="flex items-center gap-2">
-          <label className="text-sm font-medium text-muted-foreground whitespace-nowrap shrink-0">
-            {t("Select Project")}
-          </label>
-          <select
-            className="border rounded-lg px-3 py-2 text-sm bg-background text-foreground min-w-52 h-10"
-            value={selectedProjectId ?? ""}
-            onChange={(e) => setSelectedProjectId(Number(e.target.value))}
-            data-testid="project-selector"
+    <WorkspaceLayout
+        title={t("Site Reports")}
+        subtitle={`${
+          selectedProject
+            ? `${selectedProject.project_code} — ${selectedProject.project_name}`
+            : "Select a project to begin"
+        }${cards ? ` · ${cards.length} reports` : ""}`}
+        backLabel="Back to Operations"
+        backHref="/operations"
+        breadcrumbs={[
+          { label: "Dashboard", href: "/" },
+          { label: "Operations", href: "/operations" },
+          { label: "Site Reports" },
+        ]}
+        toolbar={
+          <FilterSelect
+            className="min-w-52"
+            value={String(selectedProjectId ?? "")}
+            onChange={(v) => setSelectedProjectId(Number(v))}
+            testId="project-selector"
           >
             <option value="" disabled>{t("Select Project")}</option>
             {projects?.map((p) => (
@@ -119,9 +113,9 @@ export default function SiteReports() {
                 {p.project_code} — {p.project_name}
               </option>
             ))}
-          </select>
-        </div>
-      </div>
+          </FilterSelect>
+        }
+      >
 
       {!selectedProjectId ? (
         <div className="panel">
@@ -177,6 +171,6 @@ export default function SiteReports() {
           </div>
         </div>
       )}
-    </div>
+    </WorkspaceLayout>
   );
 }

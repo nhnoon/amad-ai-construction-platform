@@ -1,22 +1,25 @@
 import type { ElementType, ReactNode } from "react";
-import { Link } from "wouter";
-import { ArrowDown, ArrowUp } from "lucide-react";
-import { Skeleton } from "@/components/ui/skeleton";
 
-// ── Visual system (Dashboard-only — no shared CSS touched) ─────────────────
+// ── Visual system ────────────────────────────────────────────────────────
 // One accent color (gold) governs all neutral chrome: icon chips, CTA,
 // highlights. Semantic color (severity/status) is reserved for data
-// encoding — KPI tone, donut segments, status cards, risk bars — where
-// dropping it would make the number/chart unreadable at a glance.
+// encoding — donut segments, tone-colored icon chips — where dropping it
+// would make the number/chart unreadable at a glance.
+//
+// GLASS/GLASS_HEADER used to be a Dashboard-only card system (rounded-3xl,
+// a bespoke dark-mode backdrop-blur/inset-shadow combo) — a second,
+// independently-maintained implementation of the exact same concept as the
+// app-wide `.panel`/`.panel-header` classes (index.css), just with a
+// different corner radius and shadow treatment. Every Dashboard card still
+// reads `GLASS`/`GLASS_HEADER` (Charts, QuickActions) — redefining them here
+// to build on `.panel`/`.panel-header` converges all of it onto the one
+// shared card language in a single place, with no per-usage edits.
 
 export const ACCENT = "#eab308";
 
-export const GLASS =
-  "relative overflow-hidden rounded-3xl border border-border/70 bg-card shadow-sm " +
-  "dark:border-white/[0.07] dark:bg-white/[0.03] dark:backdrop-blur-xl dark:shadow-[0_1px_0_0_rgba(255,255,255,0.05)_inset,0_24px_60px_-32px_rgba(0,0,0,0.9)]";
+export const GLASS = "panel relative overflow-hidden";
 
-export const GLASS_HEADER =
-  "relative flex items-center gap-3 border-b border-border/60 dark:border-white/[0.05] px-5 py-4";
+export const GLASS_HEADER = "panel-header relative justify-start! gap-3 px-4 py-3";
 
 export const CHART_TOOLTIP_STYLE = {
   backgroundColor: "hsl(var(--card))",
@@ -40,7 +43,7 @@ export const EXEC_SEV_COLOR: Record<string, string> = {
   low: "#16a34a",
 };
 
-// ── Tone — the only place severity color is allowed to touch a KPI tile ────
+// ── Tone — the only place severity color is allowed to touch an icon chip ──
 
 export type Tone = "neutral" | "success" | "warning" | "danger";
 
@@ -87,61 +90,7 @@ export function SectionLabel({
   );
 }
 
-// ── KPI tile ─────────────────────────────────────────────────────────────
-
-export interface KpiTrend {
-  direction: "up" | "down";
-  label: string;
-  positive?: boolean;
-}
-
-export function KpiTile({
-  icon: Icon, label, value, sub, trend, tone = "neutral", isLoading, href,
-}: {
-  icon: ElementType;
-  label: string;
-  value: number | string;
-  sub?: string;
-  trend?: KpiTrend;
-  tone?: Tone;
-  isLoading?: boolean;
-  href?: string;
-}) {
-  if (isLoading) return <Skeleton className={`${GLASS} min-h-[100px] w-full`} />;
-
-  const body = (
-    <div
-      className={`${GLASS} p-4 min-h-[100px] flex flex-col justify-between transition-all duration-200 hover:shadow-md hover:-translate-y-0.5 ${
-        href ? "cursor-pointer" : ""
-      }`}
-    >
-      <div className="relative flex items-start justify-between gap-2">
-        <div className="flex items-center gap-2.5 min-w-0">
-          <IconChip icon={Icon} className="h-7 w-7" tone={tone} />
-          <p className="text-[9px] font-semibold uppercase tracking-wider text-muted-foreground truncate">{label}</p>
-        </div>
-        {trend && (
-          <span
-            className={`shrink-0 flex items-center gap-0.5 text-[10px] font-semibold ${
-              trend.positive ? "text-emerald-500" : "text-red-500"
-            }`}
-          >
-            {trend.direction === "up" ? <ArrowUp className="w-3 h-3" /> : <ArrowDown className="w-3 h-3" />}
-            {trend.label}
-          </span>
-        )}
-      </div>
-      <div className="relative mt-3">
-        <p className="text-[26px] font-bold text-foreground leading-tight tabular-nums">{value}</p>
-        {sub && <p className="text-[10px] text-muted-foreground/70 truncate mt-0.5">{sub}</p>}
-      </div>
-    </div>
-  );
-
-  return href ? <Link href={href}>{body}</Link> : body;
-}
-
-// ── Relative time — shared by Activity Timeline and Alerts panel ───────────
+// ── Relative time — shared by Activity Timeline ─────────────────────────────
 
 export function formatRelativeTime(iso: string): string {
   const then = new Date(iso).getTime();

@@ -13,8 +13,6 @@ class AdminUserCreate(BaseModel):
     email: str
     full_name: Optional[str] = None
     role: str = "site_engineer"
-    organization_id: Optional[int] = None
-    temporary_password: str = "Welcome123!"
 
     @field_validator("email")
     @classmethod
@@ -29,13 +27,6 @@ class AdminUserCreate(BaseModel):
     def role_valid(cls, v: str) -> str:
         if v not in VALID_ROLES:
             raise ValueError(f"Role must be one of: {', '.join(sorted(VALID_ROLES))}")
-        return v
-
-    @field_validator("temporary_password")
-    @classmethod
-    def password_strength(cls, v: str) -> str:
-        if len(v) < 8:
-            raise ValueError("Password must be at least 8 characters")
         return v
 
 
@@ -62,8 +53,18 @@ class AdminUserOut(BaseModel):
     organization_id: Optional[int] = None
     created_at: datetime
     last_login: Optional[datetime] = None
+    must_change_password: bool = False
 
     model_config = {"from_attributes": True}
+
+
+class AdminUserCreateResponse(BaseModel):
+    """Distinct from AdminUserOut — includes the one-time generated
+    temporary password (Phase 2 — Security & Authentication Hardening).
+    The caller (admin UI) must show/copy this once; it is never
+    retrievable again since only its bcrypt hash is stored."""
+    user: AdminUserOut
+    temporary_password: str
 
 
 class PasswordResetResponse(BaseModel):

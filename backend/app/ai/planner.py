@@ -274,14 +274,15 @@ def execute_executive_summary(
 
     # Portfolio-wide dashboard KPIs (deterministic COUNT/SUM aggregates —
     # not a retrieval sample) as one extra evidence item. The dashboard
-    # endpoint (app/api/v1/dashboard.py) has no project/org scoping by
-    # design — it is a true cross-portfolio total — so only inject it for
-    # roles that already have global read access; a project-scoped caller
-    # would otherwise see numbers spanning projects they cannot access.
+    # endpoint (app/api/v1/dashboard.py) is scoped to the caller's own
+    # organization (Phase 1 production-hardening) — still only injected for
+    # roles that already have global read access, matching this feature's
+    # original "portfolio view" intent; a project-scoped caller would
+    # otherwise see totals spanning projects outside their memberships.
     if scope.has_global_read:
         try:
             from app.api.v1.dashboard import get_dashboard_summary
-            kpis = get_dashboard_summary(db=db)
+            kpis = get_dashboard_summary(db=db, scope=scope)
             result.evidence.append(Evidence(
                 source_type="dashboard_kpi",
                 source_id="portfolio",

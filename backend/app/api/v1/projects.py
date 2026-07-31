@@ -1,7 +1,8 @@
 from fastapi import APIRouter, HTTPException, Query
 from sqlalchemy.orm import Session
 from typing import Optional
-from ...core.deps import DbSession
+from ...ai.scope import get_project_or_404
+from ...core.deps import CurrentScope, DbSession
 from ...models.projects import Project, ProjectRisk, ProjectIssue
 from ...schemas.projects import (
     ProjectOut, ProjectCreate, ProjectUpdate, ProjectSummary,
@@ -16,9 +17,14 @@ router = APIRouter(prefix="/projects", tags=["projects"])
 # ── Health score endpoints (before /{project_id} to avoid route shadowing) ───
 
 @router.get("/health-scores", response_model=list[HealthScoreOut])
-def list_project_health_scores(db: DbSession):
-    """Return health scores for all projects, sorted by score ascending (worst first)."""
-    results = get_all_projects_health(db)
+def list_project_health_scores(db: DbSession, scope: CurrentScope):
+    """Return health scores for the caller's accessible projects, sorted by
+    score ascending (worst first). Does not change the scoring formula
+    (see app/ai/health_score.py) — only filters which projects' scores the
+    caller may see, same organization/membership boundary as everywhere
+    else (Phase 1 production-hardening)."""
+    accessible = set(scope.accessible_project_ids)
+    results = [r for r in get_all_projects_health(db) if r.project_id in accessible]
     return [
         HealthScoreOut(
             project_id=r.project_id,
@@ -39,8 +45,9 @@ def list_project_health_scores(db: DbSession):
 
 
 @router.get("/{project_id}/health", response_model=HealthScoreOut)
-def get_health_score(project_id: int, db: DbSession):
+def get_health_score(project_id: int, db: DbSession, scope: CurrentScope):
     """Return the health score for a single project."""
+    get_project_or_404(db, scope, project_id)
     result = get_project_health(project_id, db)
     if not result:
         raise HTTPException(status_code=404, detail="Project not found")
@@ -65,13 +72,17 @@ def get_health_score(project_id: int, db: DbSession):
 @router.get("", response_model=list[ProjectSummary])
 def list_projects(
     db: DbSession,
+    scope: CurrentScope,
     status: Optional[str] = None,
     city: Optional[str] = None,
     project_type: Optional[str] = None,
     skip: int = Query(0, ge=0),
     limit: int = Query(20, ge=1, le=100),
 ):
-    q = db.query(Project)
+    ids = list(scope.accessible_project_ids)
+    if not ids:
+        return []
+    q = db.query(Project).filter(Project.id.in_(ids))
     if status:
         q = q.filter(Project.status == status)
     if city:
@@ -82,16 +93,21 @@ def list_projects(
 
 
 @router.get("/{project_id}", response_model=ProjectOut)
-def get_project(project_id: int, db: DbSession):
-    project = db.query(Project).filter(Project.id == project_id).first()
-    if not project:
-        raise HTTPException(status_code=404, detail="Project not found")
-    return project
+def get_project(project_id: int, db: DbSession, scope: CurrentScope):
+    return get_project_or_404(db, scope, project_id)
 
 
 @router.post("", response_model=ProjectOut, status_code=201)
-def create_project(body: ProjectCreate, db: DbSession):
-    project = Project(**body.model_dump())
+def create_project(body: ProjectCreate, db: DbSession, scope: CurrentScope):
+    # organization_id is never client-supplied — always the authenticated
+    # caller's own organization, determined server-side (Phase 1
+    # production-hardening quality constraint).
+    if scope.organization_id is None:
+        raise HTTPException(
+            status_code=400,
+            detail="Your account is not associated with an organization; cannot create a project.",
+        )
+    project = Project(organization_id=scope.organization_id, **body.model_dump())
     db.add(project)
     db.commit()
     db.refresh(project)
@@ -99,10 +115,8 @@ def create_project(body: ProjectCreate, db: DbSession):
 
 
 @router.patch("/{project_id}", response_model=ProjectOut)
-def update_project(project_id: int, body: ProjectUpdate, db: DbSession):
-    project = db.query(Project).filter(Project.id == project_id).first()
-    if not project:
-        raise HTTPException(status_code=404, detail="Project not found")
+def update_project(project_id: int, body: ProjectUpdate, db: DbSession, scope: CurrentScope):
+    project = get_project_or_404(db, scope, project_id)
     for key, value in body.model_dump(exclude_none=True).items():
         setattr(project, key, value)
     db.commit()
@@ -111,12 +125,14 @@ def update_project(project_id: int, body: ProjectUpdate, db: DbSession):
 
 
 @router.get("/{project_id}/risks", response_model=list[ProjectRiskOut])
-def list_project_risks(project_id: int, db: DbSession):
+def list_project_risks(project_id: int, db: DbSession, scope: CurrentScope):
+    scope.enforce_project_access(project_id)
     return db.query(ProjectRisk).filter(ProjectRisk.project_id == project_id).all()
 
 
 @router.post("/{project_id}/risks", response_model=ProjectRiskOut, status_code=201)
-def create_project_risk(project_id: int, body: ProjectRiskCreate, db: DbSession):
+def create_project_risk(project_id: int, body: ProjectRiskCreate, db: DbSession, scope: CurrentScope):
+    scope.enforce_project_access(project_id)
     risk = ProjectRisk(project_id=project_id, **body.model_dump())
     db.add(risk)
     db.commit()
@@ -125,12 +141,14 @@ def create_project_risk(project_id: int, body: ProjectRiskCreate, db: DbSession)
 
 
 @router.get("/{project_id}/issues", response_model=list[ProjectIssueOut])
-def list_project_issues(project_id: int, db: DbSession):
+def list_project_issues(project_id: int, db: DbSession, scope: CurrentScope):
+    scope.enforce_project_access(project_id)
     return db.query(ProjectIssue).filter(ProjectIssue.project_id == project_id).all()
 
 
 @router.post("/{project_id}/issues", response_model=ProjectIssueOut, status_code=201)
-def create_project_issue(project_id: int, body: ProjectIssueCreate, db: DbSession):
+def create_project_issue(project_id: int, body: ProjectIssueCreate, db: DbSession, scope: CurrentScope):
+    scope.enforce_project_access(project_id)
     issue = ProjectIssue(project_id=project_id, **body.model_dump())
     db.add(issue)
     db.commit()

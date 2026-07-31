@@ -2,9 +2,8 @@ import { useMemo, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   Search, Plus, RotateCcw, Trash2, Pencil, Loader2, AlertTriangle, LayoutGrid, ListTree, Brain,
-  ChevronDown, ChevronRight,
+  ChevronDown, ChevronRight, Pin,
 } from "lucide-react";
-import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
@@ -19,24 +18,29 @@ import {
 } from "@/lib/aiCenterClient";
 import {
   BUCKET_META, BUCKET_ORDER, PRIORITY_TONE, bucketFor, matchesSearch, type MemoryBucket,
+  toggleMemoryPinned, getPinnedIds,
 } from "./memoryTaxonomy";
 import { MemoryFormDialog } from "./MemoryFormDialog";
+import { useToast } from "@/hooks/use-toast";
+import { FilterChip } from "@/components/filter-chip";
 
 type ViewMode = "grid" | "timeline";
 type PriorityFilter = "all" | "High" | "Medium" | "Low";
 
 function MemoryCard({
-  item, onEdit, onDelete, deleting,
+  item, onEdit, onDelete, deleting, pinned, onTogglePin,
 }: {
   item: StructuredMemory;
   onEdit: (item: StructuredMemory) => void;
   onDelete: (id: number) => void;
   deleting: boolean;
+  pinned: boolean;
+  onTogglePin: (id: number) => void;
 }) {
   const bucket = bucketFor(item.source, item.category);
   const Icon = BUCKET_META[bucket].icon;
   return (
-    <div className="rounded-xl border border-border bg-card p-4 space-y-2.5 hover:border-primary/30 transition-colors">
+    <div className={`panel panel-body space-y-2.5 hover:border-primary/30 transition-colors ${pinned ? "!border-amber-400/60 dark:!border-amber-500/40" : ""}`}>
       <div className="flex items-start justify-between gap-2">
         <div className="flex items-start gap-2.5 min-w-0">
           <div className="w-8 h-8 rounded-lg bg-primary/10 flex items-center justify-center shrink-0 mt-0.5">
@@ -49,20 +53,27 @@ function MemoryCard({
             </p>
           </div>
         </div>
-        {(item.can_edit || item.can_delete) && (
-          <div className="flex items-center gap-0.5 shrink-0">
-            {item.can_edit && (
-              <Button size="sm" variant="ghost" className="h-7 w-7 p-0 text-muted-foreground hover:text-foreground" onClick={() => onEdit(item)} aria-label="Edit memory">
-                <Pencil className="h-3.5 w-3.5" />
-              </Button>
-            )}
-            {item.can_delete && (
-              <Button size="sm" variant="ghost" className="h-7 w-7 p-0 text-muted-foreground hover:text-destructive" onClick={() => onDelete(item.id)} disabled={deleting} aria-label="Delete memory">
-                {deleting ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Trash2 className="h-3.5 w-3.5" />}
-              </Button>
-            )}
-          </div>
-        )}
+        <div className="flex items-center gap-0.5 shrink-0">
+          <Button
+            size="sm" variant="ghost"
+            className={`h-7 w-7 p-0 ${pinned ? "text-amber-500 hover:text-amber-600" : "text-muted-foreground hover:text-foreground"}`}
+            onClick={() => onTogglePin(item.id)}
+            aria-label={pinned ? "Unpin memory" : "Pin memory"}
+            title={pinned ? "Unpin" : "Pin"}
+          >
+            {pinned ? <Pin className="h-3.5 w-3.5 fill-current" /> : <Pin className="h-3.5 w-3.5" />}
+          </Button>
+          {item.can_edit && (
+            <Button size="sm" variant="ghost" className="h-7 w-7 p-0 text-muted-foreground hover:text-foreground" onClick={() => onEdit(item)} aria-label="Edit memory">
+              <Pencil className="h-3.5 w-3.5" />
+            </Button>
+          )}
+          {item.can_delete && (
+            <Button size="sm" variant="ghost" className="h-7 w-7 p-0 text-muted-foreground hover:text-destructive" onClick={() => onDelete(item.id)} disabled={deleting} aria-label="Delete memory">
+              {deleting ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Trash2 className="h-3.5 w-3.5" />}
+            </Button>
+          )}
+        </div>
       </div>
 
       <p className="text-sm text-muted-foreground leading-relaxed line-clamp-3">{item.summary}</p>
@@ -94,6 +105,7 @@ function MemoryCenterSkeleton() {
 
 export default function MemoryCenter({ projectCodeFilter }: { projectCodeFilter?: string } = {}) {
   const queryClient = useQueryClient();
+  const { toast } = useToast();
   const [search, setSearch] = useState("");
   const [bucketFilter, setBucketFilter] = useState<MemoryBucket | "all">("all");
   const [priorityFilter, setPriorityFilter] = useState<PriorityFilter>("all");
@@ -103,6 +115,13 @@ export default function MemoryCenter({ projectCodeFilter }: { projectCodeFilter?
   const [formOpen, setFormOpen] = useState(false);
   const [editingRecord, setEditingRecord] = useState<StructuredMemory | null>(null);
   const [legacyOpen, setLegacyOpen] = useState(false);
+  const [pinnedOnly, setPinnedOnly] = useState(false);
+  const [pinnedIds, setPinnedIds] = useState<Set<number>>(() => getPinnedIds());
+
+  const togglePin = (id: number) => {
+    toggleMemoryPinned(id);
+    setPinnedIds(getPinnedIds());
+  };
 
   const { data, isLoading, isError, refetch, isRefetching } = useQuery({
     queryKey: ["ai-center-memory"],
@@ -124,13 +143,19 @@ export default function MemoryCenter({ projectCodeFilter }: { projectCodeFilter?
   }, [scopedRecords]);
 
   const filtered = scopedRecords.filter((r) => {
+    if (pinnedOnly && !pinnedIds.has(r.id)) return false;
     if (bucketFilter !== "all" && bucketFor(r.source, r.category) !== bucketFilter) return false;
     if (priorityFilter !== "all" && r.priority !== priorityFilter) return false;
     if (!matchesSearch(r, search)) return false;
     return true;
   });
 
-  const sorted = [...filtered].sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
+  const sorted = [...filtered].sort((a, b) => {
+    const pinDiff = Number(pinnedIds.has(b.id)) - Number(pinnedIds.has(a.id));
+    if (pinDiff !== 0) return pinDiff;
+    return new Date(b.created_at).getTime() - new Date(a.created_at).getTime();
+  });
+  const pinnedCount = scopedRecords.filter((r) => pinnedIds.has(r.id)).length;
 
   const timelineGroups = useMemo(() => {
     const groups = new Map<string, StructuredMemory[]>();
@@ -149,6 +174,7 @@ export default function MemoryCenter({ projectCodeFilter }: { projectCodeFilter?
     try {
       await deleteMemoryRecord(id);
       await queryClient.invalidateQueries({ queryKey: ["ai-center-memory"] });
+      toast({ title: "Memory deleted" });
     } catch (err) {
       setActionError(err instanceof Error ? err.message : "Failed to delete memory.");
     } finally {
@@ -206,29 +232,30 @@ export default function MemoryCenter({ projectCodeFilter }: { projectCodeFilter?
 
       {/* Category quick-filter chips */}
       <div className="flex flex-wrap gap-1.5">
-        <button
-          onClick={() => setBucketFilter("all")}
-          className={`px-3 py-1.5 rounded-full text-xs font-medium border transition-colors ${
-            bucketFilter === "all" ? "bg-primary text-primary-foreground border-primary" : "border-border text-muted-foreground hover:text-foreground hover:border-primary/40"
-          }`}
-        >
+        <FilterChip active={bucketFilter === "all"} onClick={() => setBucketFilter("all")}>
           All ({scopedRecords.length})
-        </button>
-        {BUCKET_ORDER.filter((b) => (bucketCounts[b] ?? 0) > 0).map((b) => {
-          const Icon = BUCKET_META[b].icon;
-          return (
-            <button
-              key={b}
-              onClick={() => setBucketFilter(bucketFilter === b ? "all" : b)}
-              className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium border transition-colors ${
-                bucketFilter === b ? "bg-primary text-primary-foreground border-primary" : "border-border text-muted-foreground hover:text-foreground hover:border-primary/40"
-              }`}
-            >
-              <Icon className="w-3 h-3" />
-              {BUCKET_META[b].label} ({bucketCounts[b]})
-            </button>
-          );
-        })}
+        </FilterChip>
+        {pinnedCount > 0 && (
+          <FilterChip
+            active={pinnedOnly}
+            onClick={() => setPinnedOnly((p) => !p)}
+            icon={Pin}
+            iconClassName="w-3 h-3 fill-current"
+            tone="amber"
+          >
+            Pinned ({pinnedCount})
+          </FilterChip>
+        )}
+        {BUCKET_ORDER.filter((b) => (bucketCounts[b] ?? 0) > 0).map((b) => (
+          <FilterChip
+            key={b}
+            active={bucketFilter === b}
+            onClick={() => setBucketFilter(bucketFilter === b ? "all" : b)}
+            icon={BUCKET_META[b].icon}
+          >
+            {BUCKET_META[b].label} ({bucketCounts[b]})
+          </FilterChip>
+        ))}
       </div>
 
       {/* Search + filters + view toggle */}
@@ -273,26 +300,24 @@ export default function MemoryCenter({ projectCodeFilter }: { projectCodeFilter?
 
       {/* Content */}
       {sorted.length === 0 ? (
-        <Card>
-          <CardContent className="py-4">
-            <EmptyState
-              icon={Brain}
-              title={scopedRecords.length === 0 ? "Nothing saved yet" : "No memories match your filters"}
-              description={
-                scopedRecords.length === 0
-                  ? "Add a memory, or let it build automatically from meetings, site report analyses, and contract extractions."
-                  : "Try a different search term, category, or priority."
-              }
-              action={scopedRecords.length === 0 ? (
-                <Button size="sm" onClick={openAdd} className="gap-1.5"><Plus className="w-3.5 h-3.5" />Add Memory</Button>
-              ) : undefined}
-            />
-          </CardContent>
-        </Card>
+        <div className="panel">
+          <EmptyState
+            icon={Brain}
+            title={scopedRecords.length === 0 ? "Nothing saved yet" : "No memories match your filters"}
+            description={
+              scopedRecords.length === 0
+                ? "Add a memory, or let it build automatically from meetings, site report analyses, and contract extractions."
+                : "Try a different search term, category, or priority."
+            }
+            action={scopedRecords.length === 0 ? (
+              <Button size="sm" onClick={openAdd} className="gap-1.5"><Plus className="w-3.5 h-3.5" />Add Memory</Button>
+            ) : undefined}
+          />
+        </div>
       ) : view === "grid" ? (
         <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
           {sorted.map((item) => (
-            <MemoryCard key={item.id} item={item} onEdit={openEdit} onDelete={handleDelete} deleting={deletingId === item.id} />
+            <MemoryCard key={item.id} item={item} onEdit={openEdit} onDelete={handleDelete} deleting={deletingId === item.id} pinned={pinnedIds.has(item.id)} onTogglePin={togglePin} />
           ))}
         </div>
       ) : (
@@ -303,7 +328,7 @@ export default function MemoryCenter({ projectCodeFilter }: { projectCodeFilter?
               <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground mb-3">{dateLabel}</p>
               <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
                 {items.map((item) => (
-                  <MemoryCard key={item.id} item={item} onEdit={openEdit} onDelete={handleDelete} deleting={deletingId === item.id} />
+                  <MemoryCard key={item.id} item={item} onEdit={openEdit} onDelete={handleDelete} deleting={deletingId === item.id} pinned={pinnedIds.has(item.id)} onTogglePin={togglePin} />
                 ))}
               </div>
             </div>

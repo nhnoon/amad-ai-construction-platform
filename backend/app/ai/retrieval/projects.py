@@ -21,11 +21,10 @@ def get_project_overview(
         scope.enforce_project_access(project_id)
         q = q.filter(Project.id == project_id)
     else:
-        if not scope.has_global_read:
-            ids = list(scope.accessible_project_ids)
-            if not ids:
-                return RetrievalResult(data={}, evidence=[])
-            q = q.filter(Project.id.in_(ids))
+        ids = list(scope.accessible_project_ids)
+        if not ids:
+            return RetrievalResult(data={}, evidence=[])
+        q = q.filter(Project.id.in_(ids))
 
     projects = q.order_by(Project.id).limit(limit).all()
     if not projects:
@@ -81,7 +80,7 @@ def get_project_status_counts(
     if project_id is not None:
         scope.enforce_project_access(project_id)
         q = q.filter(Project.id == project_id)
-    elif not scope.has_global_read:
+    else:
         ids = list(scope.accessible_project_ids)
         if not ids:
             return {"total": 0, "active": 0, "delayed": 0}
@@ -115,11 +114,10 @@ def get_additional_project_for_comparison(
     Returns an Evidence item or None if no additional project can be found.
     """
     q = db.query(Project)
-    if not scope.has_global_read:
-        ids = list(scope.accessible_project_ids)
-        if not ids:
-            return None
-        q = q.filter(Project.id.in_(ids))
+    ids = list(scope.accessible_project_ids)
+    if not ids:
+        return None
+    q = q.filter(Project.id.in_(ids))
 
     if exclude_codes:
         q = q.filter(~Project.project_code.in_(exclude_codes))
@@ -160,11 +158,10 @@ def get_project_risks(
         scope.enforce_project_access(project_id)
         q = q.filter(ProjectRisk.project_id == project_id)
     else:
-        if not scope.has_global_read:
-            ids = list(scope.accessible_project_ids)
-            if not ids:
-                return RetrievalResult(data={}, evidence=[])
-            q = q.filter(ProjectRisk.project_id.in_(ids))
+        ids = list(scope.accessible_project_ids)
+        if not ids:
+            return RetrievalResult(data={}, evidence=[])
+        q = q.filter(ProjectRisk.project_id.in_(ids))
 
     risks = q.order_by(ProjectRisk.id.desc()).limit(limit).all()
     if not risks:
@@ -221,11 +218,10 @@ def get_health_overview(
         scope.enforce_project_access(project_id)
         q = q.filter(Project.id == project_id)
     else:
-        if not scope.has_global_read:
-            ids = list(scope.accessible_project_ids)
-            if not ids:
-                return RetrievalResult(data={}, evidence=[])
-            q = q.filter(Project.id.in_(ids))
+        ids = list(scope.accessible_project_ids)
+        if not ids:
+            return RetrievalResult(data={}, evidence=[])
+        q = q.filter(Project.id.in_(ids))
 
     projects = q.limit(limit).all()
     if not projects:

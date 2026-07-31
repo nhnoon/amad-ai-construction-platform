@@ -14,6 +14,7 @@ import {
   createMemoryRecord, updateMemoryRecord, AICenterApiError,
   USER_MEMORY_CATEGORIES, type UserMemoryCategory, type StructuredMemory,
 } from "@/lib/aiCenterClient";
+import { useToast } from "@/hooks/use-toast";
 
 // Add/Edit Memory — the Memory Center's professional replacement for the
 // old "Remember that..." chat command (Product UX Phase 1 §2). Same
@@ -56,6 +57,7 @@ export function MemoryFormDialog({
   }, [open, editingRecord, defaultProjectCode]);
 
   const canSubmit = title.trim().length > 0 && summary.trim().length > 0 && !submitting;
+  const { toast } = useToast();
 
   const handleSubmit = async () => {
     if (!canSubmit) return;
@@ -68,6 +70,7 @@ export function MemoryFormDialog({
           summary: summary.trim(),
           category,
         });
+        toast({ title: "Memory updated", description: title.trim() });
       } else {
         await createMemoryRecord({
           title: title.trim(),
@@ -75,6 +78,7 @@ export function MemoryFormDialog({
           category,
           projectCode: projectCode === "none" ? null : projectCode,
         });
+        toast({ title: "Memory saved", description: title.trim() });
       }
       onSaved();
       onOpenChange(false);

@@ -36,6 +36,12 @@ export interface ExecutiveIntelligence {
   attention_required: ProjectBrief[];
 }
 
+export interface PortfolioTrendPoint {
+  date: string;   // ISO date (YYYY-MM-DD)
+  score: number;
+  status: string;
+}
+
 // ── Fetch helper ───────────────────────────────────────────────────────────────
 
 async function execFetch<T>(path: string): Promise<T> {
@@ -57,5 +63,19 @@ export function useExecutive(enabled = true) {
     enabled,
     staleTime: 60_000,
     refetchInterval: 120_000,
+  });
+}
+
+// Daily portfolio score history — powers the Executive Dashboard's trend
+// chart. Only has points from whichever day the backend first recorded a
+// snapshot (see backend/app/api/v1/executive.py); there is no backfilled
+// history, so this may return very few points on a fresh install.
+export function usePortfolioTrend(enabled = true) {
+  return useQuery<PortfolioTrendPoint[]>({
+    queryKey: ["portfolio-trend"],
+    queryFn: () =>
+      execFetch<PortfolioTrendPoint[]>("/api/v1/executive/trend"),
+    enabled,
+    staleTime: 60_000,
   });
 }

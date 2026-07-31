@@ -2305,6 +2305,25 @@ export function AIDrawer({ isOpen, onClose }: AIDrawerProps) {
           </div>
         </div>
 
+        {/* ── Contextual Hermes indicator (Phase 2 §2) ─────────────────
+            Prominent, named — "Currently analyzing: Project PRJ-001" —
+            rather than only the small inline "· Context: X" tag in the
+            header above. Same pageContext/contextLabel already computed
+            for that tag and already threaded into postCopilotQuery's
+            project_id below; this is presentation only. */}
+        {(pageContext.kind === "project-detail" || pageContext.kind === "site-report-detail") && contextLabel && (
+          <div className="shrink-0 px-5 py-2 border-b border-white/10 bg-emerald-500/[0.06] flex items-center gap-2">
+            <span className="relative flex h-2 w-2 shrink-0">
+              <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-emerald-400 opacity-50" />
+              <span className="relative inline-flex h-2 w-2 rounded-full bg-emerald-400" />
+            </span>
+            <span className="text-xs text-white/50">{t("Currently analyzing")}:</span>
+            <span className="text-xs font-semibold text-white/90 truncate">
+              {pageContext.kind === "site-report-detail" ? t("Site Report") : t("Project")} {contextLabel}
+            </span>
+          </div>
+        )}
+
         {/* ── Executive Quick Actions ───────────────────────────────── */}
         <ExecutiveQuickActions ar={isRTL} onSelect={handleUserMessage} />
 

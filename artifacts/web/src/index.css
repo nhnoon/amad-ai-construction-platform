@@ -284,19 +284,28 @@
   .badge-gold {
     @apply bg-amber-50 text-amber-700 dark:bg-amber-900/20 dark:text-amber-400;
   }
+  .badge-brand {
+    @apply bg-primary/10 text-primary;
+  }
 
-  /* Page section header */
+  /* Page section header — compact density (enterprise nav redesign) */
   .page-header {
-    @apply flex items-start justify-between gap-4 mb-6 flex-wrap;
+    @apply flex items-start justify-between gap-4 mb-4 flex-wrap;
   }
   .page-title {
-    @apply text-2xl font-bold tracking-tight text-foreground;
+    @apply text-xl font-bold tracking-tight text-foreground;
   }
   .page-subtitle {
-    @apply text-sm text-muted-foreground mt-1;
+    @apply text-sm text-muted-foreground mt-0.5;
   }
 
-  /* Data table */
+  /* Mid-page subsection header — distinct from .page-title, which is
+     reserved for the page-level heading inside PageContextHeader. */
+  .section-title {
+    @apply text-sm font-semibold text-foreground;
+  }
+
+  /* Data table — compact rows */
   .data-table {
     @apply w-full text-sm;
   }
@@ -304,14 +313,14 @@
     @apply bg-muted/50 border-b;
   }
   .data-table thead th {
-    @apply px-4 py-3 text-start font-semibold text-muted-foreground text-xs uppercase tracking-wide;
+    @apply px-3 py-2 text-start font-semibold text-muted-foreground text-xs uppercase tracking-wide;
   }
   .data-table tbody tr {
     @apply border-b last:border-0 hover:bg-muted/30;
     transition: background-color var(--transition-fast);
   }
   .data-table tbody td {
-    @apply px-4 py-3;
+    @apply px-3 py-2;
   }
 
   /* ─── KPI NUMBERS ────────────────────────────── */
@@ -341,7 +350,7 @@
 
   /* ─── EMPTY STATE ─────────────────────────────── */
   .empty-state {
-    @apply flex flex-col items-center justify-center py-16 px-8 text-center;
+    @apply flex flex-col items-center justify-center py-10 px-8 text-center;
   }
   .empty-state-icon {
     @apply w-12 h-12 text-muted-foreground/40 mb-4;
@@ -361,17 +370,19 @@
                 color var(--transition-fast);
   }
 
-  /* Panel card */
+  /* Panel card — compact density (enterprise nav redesign: ~30% tighter
+     than the original p-5/py-4, matching the "reduce card height 40-50%,
+     compact density throughout" directive without cutting readability) */
   .panel {
     @apply rounded-xl border bg-card shadow-sm;
   }
   .panel-header {
-    @apply px-5 py-4 border-b flex items-center justify-between;
+    @apply px-4 py-3 border-b flex items-center justify-between;
   }
   .panel-title {
     @apply font-semibold text-sm text-foreground;
   }
   .panel-body {
-    @apply p-5;
+    @apply p-4;
   }
 }

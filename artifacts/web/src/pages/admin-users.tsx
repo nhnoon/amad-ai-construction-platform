@@ -6,6 +6,7 @@ import {
   XCircle, Copy, Check, Users,
 } from "lucide-react";
 import { EmptyState } from "@/components/ui/empty-state";
+import { WorkspaceLayout } from "@/components/workspace-layout";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
@@ -39,21 +40,14 @@ const ROLES = [
   { value: "viewer", label: "Viewer" },
 ];
 
-const ROLE_COLORS: Record<string, string> = {
-  admin:
-    "bg-[#0D1F3C]/10 text-[#0D1F3C] dark:bg-[#C8953A]/15 dark:text-[#C8953A] border border-[#0D1F3C]/20 dark:border-[#C8953A]/30",
-  executive:
-    "bg-purple-50 text-purple-700 border border-purple-200 dark:bg-purple-900/20 dark:text-purple-300 dark:border-purple-700/30",
-  project_manager:
-    "bg-blue-50 text-blue-700 border border-blue-200 dark:bg-blue-900/20 dark:text-blue-300 dark:border-blue-700/30",
-  site_engineer:
-    "bg-emerald-50 text-emerald-700 border border-emerald-200 dark:bg-emerald-900/20 dark:text-emerald-300 dark:border-emerald-700/30",
-  procurement_officer:
-    "bg-amber-50 text-amber-700 border border-amber-200 dark:bg-amber-900/20 dark:text-amber-300 dark:border-amber-700/30",
-  safety_quality_officer:
-    "bg-red-50 text-red-700 border border-red-200 dark:bg-red-900/20 dark:text-red-300 dark:border-red-700/30",
-  viewer:
-    "bg-zinc-100 text-zinc-600 border border-zinc-200 dark:bg-zinc-800/50 dark:text-zinc-400 dark:border-zinc-700/30",
+const ROLE_BADGE: Record<string, string> = {
+  admin: "badge-brand",
+  executive: "badge-purple",
+  project_manager: "badge-info",
+  site_engineer: "badge-success",
+  procurement_officer: "badge-gold",
+  safety_quality_officer: "badge-danger",
+  viewer: "badge-neutral",
 };
 
 interface User {
@@ -65,6 +59,12 @@ interface User {
   organization_id: number | null;
   created_at: string;
   last_login: string | null;
+  must_change_password: boolean;
+}
+
+interface CreateUserResponse {
+  user: User;
+  temporary_password: string;
 }
 
 async function apiFetch<T>(path: string, options: RequestInit = {}): Promise<T> {
@@ -87,23 +87,17 @@ async function apiFetch<T>(path: string, options: RequestInit = {}): Promise<T> 
 
 function RoleBadge({ role }: { role: string }) {
   const label = ROLES.find((r) => r.value === role)?.label ?? role;
-  return (
-    <span
-      className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium ${ROLE_COLORS[role] ?? ROLE_COLORS.viewer}`}
-    >
-      {label}
-    </span>
-  );
+  return <span className={`badge ${ROLE_BADGE[role] ?? "badge-neutral"}`}>{label}</span>;
 }
 
 function StatusBadge({ active }: { active: boolean }) {
   return active ? (
-    <span className="inline-flex items-center gap-1 text-xs font-medium text-emerald-600 dark:text-emerald-400">
+    <span className="badge badge-success gap-1">
       <CheckCircle2 className="w-3.5 h-3.5" />
       Active
     </span>
   ) : (
-    <span className="inline-flex items-center gap-1 text-xs font-medium text-zinc-400">
+    <span className="badge badge-neutral gap-1">
       <XCircle className="w-3.5 h-3.5" />
       Inactive
     </span>
@@ -127,27 +121,25 @@ function CreateUserDialog({
   onClose: () => void;
 }) {
   const qc = useQueryClient();
-  const { toast } = useToast();
   const [form, setForm] = useState({
     email: "",
     full_name: "",
     role: "site_engineer",
-    temporary_password: "Welcome123!",
   });
   const [error, setError] = useState("");
+  const [created, setCreated] = useState<CreateUserResponse | null>(null);
+  const [copied, setCopied] = useState(false);
 
   const mutation = useMutation({
     mutationFn: (body: typeof form) =>
-      apiFetch<User>("/admin/users", {
+      apiFetch<CreateUserResponse>("/admin/users", {
         method: "POST",
         body: JSON.stringify(body),
       }),
-    onSuccess: () => {
+    onSuccess: (data) => {
       qc.invalidateQueries({ queryKey: ["admin-users"] });
-      toast({ title: "User created", description: `${form.email} was added to the platform.`, variant: "success" });
-      setForm({ email: "", full_name: "", role: "site_engineer", temporary_password: "Welcome123!" });
+      setCreated(data);
       setError("");
-      onClose();
     },
     onError: (err: Error) => setError(err.message),
   });
@@ -158,76 +150,118 @@ function CreateUserDialog({
     mutation.mutate(form);
   };
 
+  const handleClose = () => {
+    setForm({ email: "", full_name: "", role: "site_engineer" });
+    setCreated(null);
+    setCopied(false);
+    onClose();
+  };
+
+  const handleCopy = () => {
+    if (created) {
+      navigator.clipboard.writeText(created.temporary_password);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    }
+  };
+
   return (
-    <Dialog open={open} onOpenChange={(v) => { if (!v) onClose(); }}>
+    <Dialog open={open} onOpenChange={(v) => { if (!v) handleClose(); }}>
       <DialogContent className="sm:max-w-md">
-        <DialogHeader>
-          <DialogTitle className="flex items-center gap-2">
-            <UserPlus className="w-5 h-5 text-primary" />
-            Create New User
-          </DialogTitle>
-          <DialogDescription>
-            Add a team member to the platform. They'll receive the temporary password you set.
-          </DialogDescription>
-        </DialogHeader>
-        <form onSubmit={handleSubmit} className="space-y-4 pt-1">
-          <div className="space-y-1.5">
-            <label className="text-sm font-medium text-foreground">Email *</label>
-            <Input
-              type="email"
-              placeholder="user@company.com"
-              value={form.email}
-              onChange={(e) => setForm({ ...form, email: e.target.value })}
-              required
-              autoFocus
-            />
-          </div>
-          <div className="space-y-1.5">
-            <label className="text-sm font-medium text-foreground">Full Name</label>
-            <Input
-              placeholder="Ahmed Al-Rashidi"
-              value={form.full_name}
-              onChange={(e) => setForm({ ...form, full_name: e.target.value })}
-            />
-          </div>
-          <div className="space-y-1.5">
-            <label className="text-sm font-medium text-foreground">Role *</label>
-            <Select value={form.role} onValueChange={(v) => setForm({ ...form, role: v })}>
-              <SelectTrigger>
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                {ROLES.map((r) => (
-                  <SelectItem key={r.value} value={r.value}>
-                    {r.label}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
-          <div className="space-y-1.5">
-            <label className="text-sm font-medium text-foreground">Temporary Password *</label>
-            <Input
-              type="text"
-              placeholder="Welcome123!"
-              value={form.temporary_password}
-              onChange={(e) => setForm({ ...form, temporary_password: e.target.value })}
-              required
-            />
-            <p className="text-xs text-muted-foreground">Minimum 8 characters. Share this securely with the user.</p>
-          </div>
-          {error && (
-            <p className="text-sm text-destructive bg-destructive/5 rounded-md px-3 py-2">{error}</p>
-          )}
-          <DialogFooter className="pt-2">
-            <Button type="button" variant="outline" onClick={onClose} disabled={mutation.isPending}>
-              Cancel
-            </Button>
-            <Button type="submit" disabled={mutation.isPending}>
-              {mutation.isPending ? "Creating…" : "Create User"}
-            </Button>
-          </DialogFooter>
-        </form>
+        {created ? (
+          <>
+            <DialogHeader>
+              <DialogTitle className="flex items-center gap-2">
+                <CheckCircle2 className="w-5 h-5 text-emerald-500" />
+                User Created
+              </DialogTitle>
+              <DialogDescription>
+                Temporary password for <strong>{created.user.email}</strong>. They'll be required
+                to set their own password the first time they sign in.
+              </DialogDescription>
+            </DialogHeader>
+            <div className="space-y-4">
+              <div className="flex items-center gap-2">
+                <code className="flex-1 px-3 py-2 rounded-md bg-muted text-sm font-mono font-semibold tracking-wider break-all">
+                  {created.temporary_password}
+                </code>
+                <Button
+                  size="icon"
+                  variant="outline"
+                  onClick={handleCopy}
+                  className="shrink-0"
+                  aria-label={copied ? "Password copied" : "Copy temporary password"}
+                >
+                  {copied ? <Check className="w-4 h-4 text-emerald-500" /> : <Copy className="w-4 h-4" />}
+                </Button>
+              </div>
+              <p className="text-xs text-muted-foreground">Share this password securely. It won't be shown again.</p>
+              <DialogFooter>
+                <Button onClick={handleClose}>Done</Button>
+              </DialogFooter>
+            </div>
+          </>
+        ) : (
+          <>
+            <DialogHeader>
+              <DialogTitle className="flex items-center gap-2">
+                <UserPlus className="w-5 h-5 text-primary" />
+                Create New User
+              </DialogTitle>
+              <DialogDescription>
+                Add a team member to the platform. A secure temporary password is generated
+                automatically — you'll see it once, to share with them.
+              </DialogDescription>
+            </DialogHeader>
+            <form onSubmit={handleSubmit} className="space-y-4 pt-1">
+              <div className="space-y-1.5">
+                <label className="text-sm font-medium text-foreground">Email *</label>
+                <Input
+                  type="email"
+                  placeholder="user@company.com"
+                  value={form.email}
+                  onChange={(e) => setForm({ ...form, email: e.target.value })}
+                  required
+                  autoFocus
+                />
+              </div>
+              <div className="space-y-1.5">
+                <label className="text-sm font-medium text-foreground">Full Name</label>
+                <Input
+                  placeholder="Ahmed Al-Rashidi"
+                  value={form.full_name}
+                  onChange={(e) => setForm({ ...form, full_name: e.target.value })}
+                />
+              </div>
+              <div className="space-y-1.5">
+                <label className="text-sm font-medium text-foreground">Role *</label>
+                <Select value={form.role} onValueChange={(v) => setForm({ ...form, role: v })}>
+                  <SelectTrigger>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {ROLES.map((r) => (
+                      <SelectItem key={r.value} value={r.value}>
+                        {r.label}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              {error && (
+                <p className="text-sm text-destructive bg-destructive/5 rounded-md px-3 py-2">{error}</p>
+              )}
+              <DialogFooter className="pt-2">
+                <Button type="button" variant="outline" onClick={handleClose} disabled={mutation.isPending}>
+                  Cancel
+                </Button>
+                <Button type="submit" disabled={mutation.isPending}>
+                  {mutation.isPending ? "Creating…" : "Create User"}
+                </Button>
+              </DialogFooter>
+            </form>
+          </>
+        )}
       </DialogContent>
     </Dialog>
   );
@@ -406,23 +440,23 @@ export default function AdminUsers() {
   }
 
   return (
-    <div className="space-y-6">
-      {/* Header */}
-      <div className="flex items-start justify-between gap-4">
-        <div>
-          <h1 className="text-2xl font-bold text-foreground flex items-center gap-2">
-            <Users className="w-6 h-6 text-primary" />
-            {t("User Management")}
-          </h1>
-          <p className="text-sm text-muted-foreground mt-0.5">
-            Manage platform users, roles, and access.
-          </p>
-        </div>
-        <Button onClick={() => setCreateOpen(true)} className="shrink-0">
-          <UserPlus className="w-4 h-4 me-2" />
-          New User
-        </Button>
-      </div>
+    <WorkspaceLayout
+        title={t("User Management")}
+        subtitle="Manage platform users, roles, and access."
+        backLabel="Back to Dashboard"
+        backHref="/"
+        breadcrumbs={[
+          { label: "Dashboard", href: "/" },
+          { label: "Administration" },
+          { label: "Users" },
+        ]}
+        toolbar={
+          <Button onClick={() => setCreateOpen(true)} className="shrink-0">
+            <UserPlus className="w-4 h-4 me-2" />
+            New User
+          </Button>
+        }
+      >
 
       {/* Stats */}
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
@@ -578,6 +612,6 @@ export default function AdminUsers() {
 
       <CreateUserDialog open={createOpen} onClose={() => setCreateOpen(false)} />
       <ResetPasswordDialog user={resetTarget} onClose={() => setResetTarget(null)} />
-    </div>
+    </WorkspaceLayout>
   );
 }

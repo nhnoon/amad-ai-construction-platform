@@ -16,8 +16,21 @@ depends_on: Union[str, Sequence[str], None] = None
 
 
 def upgrade() -> None:
-    # Enable pgvector extension
-    op.execute("CREATE EXTENSION IF NOT EXISTS vector")
+    # NOTE: this migration used to enable the pgvector extension here and
+    # later ALTER ai_memories.embedding to a real vector(1536) column below.
+    # Removed as part of the Phase 1 production-hardening migration repair:
+    # ai_memories/AIMemory (app/models/ai.py) is confirmed dead code — no
+    # route or AI module anywhere queries it (superseded by the newer
+    # ai_memory_records table) — and requiring the pgvector *server*
+    # extension (a separate binary install, not just the pgvector Python
+    # package) made a clean `alembic upgrade head` fail on any fresh
+    # PostgreSQL instance that doesn't have it installed, including the
+    # very machine this repair was verified on. The embedding column below
+    # is left as plain TEXT, matching app/models/ai.py's own existing
+    # graceful fallback (`Vector(1536) if _PGVECTOR_AVAILABLE else Text`)
+    # for exactly this situation. Safe for any database that already ran
+    # the old version of this migration — already-applied revisions are
+    # never re-executed, so this has no effect on an existing database.
 
     # ── DATASET TABLES ────────────────────────────────────────────────────────
 
@@ -311,17 +324,17 @@ def upgrade() -> None:
         sa.Column("source", sa.String(50), nullable=False, server_default="manual"),
     )
 
-    op.create_table(
-        "user_accounts",
-        sa.Column("id", sa.Integer(), primary_key=True, autoincrement=True),
-        sa.Column("email", sa.String(255), nullable=False, unique=True),
-        sa.Column("hashed_password", sa.String(255), nullable=False),
-        sa.Column("full_name", sa.String(255), nullable=True),
-        sa.Column("role", sa.String(50), nullable=False, server_default="viewer"),
-        sa.Column("is_active", sa.Boolean(), nullable=False, server_default="true"),
-        sa.Column("created_at", sa.DateTime(timezone=True), server_default=sa.text("now()")),
-        sa.Column("last_login", sa.DateTime(timezone=True), nullable=True),
-    )
+    # NOTE: user_accounts is intentionally NOT created here. It is created by
+    # 0002_add_user_accounts.py, which was the original, sole migration for
+    # this table (see that file's docstring). This migration used to also
+    # contain a duplicate, unconditional `op.create_table("user_accounts", ...)`
+    # block here — harmless for any database that had already applied both
+    # 0001 and 0002 (already-applied revisions are never re-run), but fatal
+    # for a brand-new database run from scratch: 0001 would create the table,
+    # then 0002 would immediately fail trying to create it again. Removed as
+    # part of the Phase 1 production-hardening migration repair; see
+    # 0002_add_user_accounts.py for the defensive idempotency guard added
+    # there as a second layer of protection.
 
     op.create_table(
         "ai_memories",
@@ -335,11 +348,6 @@ def upgrade() -> None:
         sa.Column("confidence", sa.Float(), nullable=False, server_default="0.8"),
         sa.Column("created_at", sa.DateTime(timezone=True), server_default=sa.text("now()")),
         sa.Column("created_by", sa.String(100), nullable=False, server_default="ai_agent"),
-    )
-
-    op.execute(
-        "ALTER TABLE ai_memories ALTER COLUMN embedding TYPE vector(1536) "
-        "USING NULL"
     )
 
     op.create_table(
@@ -388,7 +396,7 @@ def upgrade() -> None:
 
 def downgrade() -> None:
     tables = [
-        "approval_requests", "ai_audit_logs", "ai_memories", "user_accounts",
+        "approval_requests", "ai_audit_logs", "ai_memories",
         "meeting_action_items", "meeting_attendees", "project_issues", "project_risks",
         "project_milestones", "project_phases", "claim_evidence", "subcontractor_evaluations",
         "change_orders", "claims", "ncrs", "safety_events", "correspondence",
@@ -398,4 +406,3 @@ def downgrade() -> None:
     ]
     for t in tables:
         op.drop_table(t)
-    op.execute("DROP EXTENSION IF EXISTS vector")

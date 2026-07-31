@@ -12,6 +12,7 @@ from .subcontractors import Subcontractor, SubcontractorEvaluation
 from .ai import AIMemory, AIAuditLog, ApprovalRequest
 from .ai_copilot import AIConversation, AIMessage, AICitation, CopilotAuditLog
 from .copilot_memory import AIUserProfileMemory, AIMemoryNote
+from .executive import PortfolioScoreSnapshot
 
 __all__ = [
     "Base",
@@ -28,4 +29,5 @@ __all__ = [
     "AIMemory", "AIAuditLog", "ApprovalRequest",
     "AIConversation", "AIMessage", "AICitation", "CopilotAuditLog",
     "AIUserProfileMemory", "AIMemoryNote",
+    "PortfolioScoreSnapshot",
 ]

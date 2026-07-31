@@ -238,7 +238,7 @@ def search_memory_records(
         q = q.filter(
             or_(AIMemoryRecord.project_id == project_id, AIMemoryRecord.project_id.is_(None))
         )
-    elif not scope.has_global_read:
+    else:
         ids = list(scope.accessible_project_ids)
         conditions = [AIMemoryRecord.project_id.is_(None)]
         if ids:
@@ -287,12 +287,11 @@ def list_memory_records_for_scope(
     else:
         q = q.filter(AIMemoryRecord.organization_id.is_(None))
 
-    if not scope.has_global_read:
-        ids = list(scope.accessible_project_ids)
-        conditions = [AIMemoryRecord.project_id.is_(None)]
-        if ids:
-            conditions.append(AIMemoryRecord.project_id.in_(ids))
-        q = q.filter(or_(*conditions))
+    ids = list(scope.accessible_project_ids)
+    conditions = [AIMemoryRecord.project_id.is_(None)]
+    if ids:
+        conditions.append(AIMemoryRecord.project_id.in_(ids))
+    q = q.filter(or_(*conditions))
 
     return q.order_by(AIMemoryRecord.created_at.desc()).limit(limit).all()
 

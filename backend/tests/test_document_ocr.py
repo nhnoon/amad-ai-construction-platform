@@ -30,12 +30,25 @@ _USER_A = 1  # admin@construction.ai — global read access
 
 
 def _global_scope(user_id: int = _USER_A, org_id: int = 1) -> AIAuthScope:
-    return AIAuthScope(
-        organization_id=org_id,
-        user_id=user_id,
-        user_role="admin",
-        accessible_project_ids=(),
-    )
+    """Phase 1 regression fix: build via the real build_ai_scope() against
+    a transient admin user linked to org_id, so accessible_project_ids
+    reflects that organization's real seeded projects instead of relying
+    on the since-removed has_global_read bypass."""
+    from datetime import datetime, timezone
+    from app.ai.scope import build_ai_scope
+    from app.models.auth import UserAccount
+    from tests.conftest import TestingSessionLocal
+
+    db = TestingSessionLocal()
+    try:
+        user = UserAccount(
+            id=user_id, email=f"scope-test-{user_id}@test.local", full_name="Scope Test",
+            role="admin", is_active=True, hashed_password="x", organization_id=org_id,
+            created_at=datetime(2026, 1, 1, tzinfo=timezone.utc),
+        )
+        return build_ai_scope(user, db)
+    finally:
+        db.close()
 
 
 def _restricted_scope(user_id: int = _USER_A, org_id: int = 1) -> AIAuthScope:

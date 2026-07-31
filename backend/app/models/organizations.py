@@ -14,6 +14,7 @@ class Organization(Base):
     created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
 
     users = relationship("UserAccount", back_populates="organization")
+    projects = relationship("Project", back_populates="organization")
 
     __table_args__ = (
         Index("ix_organizations_slug", "slug", unique=True),

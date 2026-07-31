@@ -8,7 +8,7 @@ from ...ai.site_report_intelligence import (
     build_site_report_intelligence,
     list_site_report_cards,
 )
-from ...core.deps import CurrentUser, DbSession
+from ...core.deps import CurrentScope, CurrentUser, DbSession
 from ...models.site import SiteReport, DailyActivity
 from ...schemas.site import (
     SiteReportOut,
@@ -27,9 +27,11 @@ router = APIRouter(tags=["site-reports"])
 def list_site_reports(
     project_id: int,
     db: DbSession,
+    scope: CurrentScope,
     skip: int = Query(0, ge=0),
     limit: int = Query(20, ge=1, le=100),
 ):
+    scope.enforce_project_access(project_id)
     return (
         db.query(SiteReport)
         .filter(SiteReport.project_id == project_id)
@@ -42,14 +44,17 @@ def list_site_reports(
 def list_site_report_cards_route(
     project_id: int,
     db: DbSession,
+    scope: CurrentScope,
     skip: int = Query(0, ge=0),
     limit: int = Query(20, ge=1, le=100),
 ):
+    scope.enforce_project_access(project_id)
     return list_site_report_cards(db=db, project_id=project_id, skip=skip, limit=limit)
 
 
 @router.get("/projects/{project_id}/site-reports/{report_id}", response_model=SiteReportOut)
-def get_site_report(project_id: int, report_id: int, db: DbSession):
+def get_site_report(project_id: int, report_id: int, db: DbSession, scope: CurrentScope):
+    scope.enforce_project_access(project_id)
     report = (
         db.query(SiteReport)
         .filter(SiteReport.id == report_id, SiteReport.project_id == project_id)
@@ -61,7 +66,8 @@ def get_site_report(project_id: int, report_id: int, db: DbSession):
 
 
 @router.get("/projects/{project_id}/site-reports/{report_id}/activities", response_model=list[DailyActivityOut])
-def list_report_activities(project_id: int, report_id: int, db: DbSession):
+def list_report_activities(project_id: int, report_id: int, db: DbSession, scope: CurrentScope):
+    scope.enforce_project_access(project_id)
     return (
         db.query(DailyActivity)
         .filter(
@@ -76,10 +82,12 @@ def list_report_activities(project_id: int, report_id: int, db: DbSession):
 def list_daily_activities(
     project_id: int,
     db: DbSession,
+    scope: CurrentScope,
     subcontractor_id: Optional[int] = None,
     skip: int = Query(0, ge=0),
     limit: int = Query(20, ge=1, le=100),
 ):
+    scope.enforce_project_access(project_id)
     q = db.query(DailyActivity).filter(DailyActivity.project_id == project_id)
     if subcontractor_id:
         q = q.filter(DailyActivity.subcontractor_id == subcontractor_id)
@@ -90,7 +98,8 @@ def list_daily_activities(
     "/projects/{project_id}/site-reports/{report_id}/intelligence",
     response_model=SiteReportIntelligenceOut,
 )
-def get_site_report_intelligence(project_id: int, report_id: int, db: DbSession):
+def get_site_report_intelligence(project_id: int, report_id: int, db: DbSession, scope: CurrentScope):
+    scope.enforce_project_access(project_id)
     try:
         result = build_site_report_intelligence(db=db, project_id=project_id, report_id=report_id)
     except ValueError as exc:
@@ -105,6 +114,11 @@ def get_site_report_intelligence(project_id: int, report_id: int, db: DbSession)
 def analyze_site_report_route(project_id: int, report_id: int, db: DbSession, current_user: CurrentUser):
     try:
         scope = build_ai_scope(current_user, db)
+        # analyze_site_report()/gather_report_evidence() perform no
+        # authorization of their own (scope is used there only to
+        # attribute the automatic memory write) — this is the actual
+        # enforcement point (Phase 1 production-hardening).
+        scope.enforce_project_access(project_id)
         return analyze_site_report(db=db, project_id=project_id, report_id=report_id, scope=scope)
     except ValueError as exc:
         raise HTTPException(status_code=404, detail=str(exc))

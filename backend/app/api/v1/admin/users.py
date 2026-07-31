@@ -1,11 +1,11 @@
-import secrets
 from fastapi import APIRouter, HTTPException, status
 
-from ....core.deps import DbSession
-from ....core.security import hash_password
+from ....core.deps import CurrentScope, DbSession
+from ....core.security import generate_temporary_password, hash_password
 from ....models.auth import UserAccount
 from ....schemas.admin import (
     AdminUserCreate,
+    AdminUserCreateResponse,
     AdminUserUpdate,
     AdminUserOut,
     PasswordResetResponse,
@@ -13,48 +13,84 @@ from ....schemas.admin import (
 
 router = APIRouter(prefix="/admin/users", tags=["admin"])
 
+# NOTE (Phase 2 — Security & Authentication Hardening): every handler below
+# is scoped to the calling admin's own organization. Before this fix, none
+# of these routes took the caller's scope into account at all — an admin
+# in one organization could list, view, edit, deactivate, or reset the
+# password of a user in ANY organization platform-wide, purely by knowing
+# or guessing a user id. That is the same class of cross-tenant bug Phase 1
+# fixed for project-scoped resources; "admin" is an organization-scoped
+# role in this app (see app/ai/scope.py) — there is no platform-level
+# super-admin — so this endpoint family needed the identical treatment.
+# 404 (not 403) for a user that exists in another organization, matching
+# the standardized policy from Phase 1 (app/ai/scope.py::get_project_or_404):
+# existence is never revealed across the tenant boundary.
+
+
+def _get_user_or_404(db, scope, user_id: int) -> UserAccount:
+    user = db.query(UserAccount).filter(UserAccount.id == user_id).first()
+    if user is None or user.organization_id != scope.organization_id:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
+    return user
+
 
 @router.get("", response_model=list[AdminUserOut])
-def list_users(db: DbSession):
-    return db.query(UserAccount).order_by(UserAccount.created_at.desc()).all()
+def list_users(db: DbSession, scope: CurrentScope):
+    return (
+        db.query(UserAccount)
+        .filter(UserAccount.organization_id == scope.organization_id)
+        .order_by(UserAccount.created_at.desc())
+        .all()
+    )
 
 
-@router.post("", response_model=AdminUserOut, status_code=201)
-def create_user(body: AdminUserCreate, db: DbSession):
+@router.post("", response_model=AdminUserCreateResponse, status_code=201)
+def create_user(body: AdminUserCreate, db: DbSession, scope: CurrentScope):
+    # organization_id is never client-supplied — always the authenticated
+    # admin's own organization, determined server-side (same rule Phase 1
+    # applied to POST /auth/register and POST /projects).
+    if scope.organization_id is None:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Your account is not associated with an organization; cannot create a user.",
+        )
     existing = db.query(UserAccount).filter(UserAccount.email == body.email).first()
     if existing:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
             detail="Email already registered",
         )
+    temporary_password = generate_temporary_password()
     user = UserAccount(
         email=body.email,
-        hashed_password=hash_password(body.temporary_password),
+        hashed_password=hash_password(temporary_password),
         full_name=body.full_name,
         role=body.role,
-        organization_id=body.organization_id,
+        organization_id=scope.organization_id,
         is_active=True,
+        # Phase 2 — Security & Authentication Hardening: every admin-created
+        # account must set its own password on first login.
+        must_change_password=True,
     )
     db.add(user)
     db.commit()
     db.refresh(user)
-    return user
+    return AdminUserCreateResponse(user=user, temporary_password=temporary_password)
 
 
 @router.get("/{user_id}", response_model=AdminUserOut)
-def get_user(user_id: int, db: DbSession):
-    user = db.query(UserAccount).filter(UserAccount.id == user_id).first()
-    if not user:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
-    return user
+def get_user(user_id: int, db: DbSession, scope: CurrentScope):
+    return _get_user_or_404(db, scope, user_id)
 
 
 @router.patch("/{user_id}", response_model=AdminUserOut)
-def update_user(user_id: int, body: AdminUserUpdate, db: DbSession):
-    user = db.query(UserAccount).filter(UserAccount.id == user_id).first()
-    if not user:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
+def update_user(user_id: int, body: AdminUserUpdate, db: DbSession, scope: CurrentScope):
+    user = _get_user_or_404(db, scope, user_id)
     for field, value in body.model_dump(exclude_unset=True).items():
+        if field == "organization_id":
+            # Never allow reassigning a user out of the admin's own
+            # organization via this endpoint — same rule as creation.
+            continue
         setattr(user, field, value)
     db.commit()
     db.refresh(user)
@@ -62,12 +98,15 @@ def update_user(user_id: int, body: AdminUserUpdate, db: DbSession):
 
 
 @router.post("/{user_id}/reset-password", response_model=PasswordResetResponse)
-def reset_password(user_id: int, db: DbSession):
-    user = db.query(UserAccount).filter(UserAccount.id == user_id).first()
-    if not user:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
-    temp_password = secrets.token_urlsafe(10)
+def reset_password(user_id: int, db: DbSession, scope: CurrentScope):
+    user = _get_user_or_404(db, scope, user_id)
+    temp_password = generate_temporary_password()
     user.hashed_password = hash_password(temp_password)
+    # A reset password is also a temporary one — force a real change on
+    # the next login, same as account creation.
+    user.must_change_password = True
+    user.failed_login_attempts = 0
+    user.locked_until = None
     db.commit()
     return PasswordResetResponse(
         message=f"Password reset for {user.email}",

@@ -1,36 +1,30 @@
-import { Link } from "wouter";
 import { Bell, Building2, BarChart3, Sparkles, UploadCloud, Zap } from "lucide-react";
-import { GLASS, IconChip, SectionLabel } from "./shared";
+import { WorkspaceQuickLink } from "@/components/WorkspaceQuickLink";
+import { SectionLabel } from "./shared";
 
 // Quick Actions — shortcuts into existing pages only (no new routes, no new
 // navigation structure). Icons intentionally match the ones already used for
 // these destinations in the sidebar (AI Center's Sparkles, Reports'
 // BarChart3, Alerts' Bell) so the same destination always reads the same way
-// across the app.
+// across the app. Cards use the shared AMAD v2 WorkspaceQuickLink primitive
+// (the same one AI Center Overview's Quick Access grid uses) instead of a
+// second, Dashboard-local card implementation.
 
 const ACTIONS = [
-  { label: "Upload Document", description: "Add to the document library", icon: UploadCloud, href: "/documents" },
-  { label: "Open Copilot", description: "Ask the AI assistant", icon: Sparkles, href: "/copilot" },
-  { label: "Open Reports", description: "Executive & weekly reports", icon: BarChart3, href: "/reports" },
-  { label: "Manage Projects", description: "View the project portfolio", icon: Building2, href: "/projects" },
-  { label: "View Alerts", description: "Review flagged issues", icon: Bell, href: "/alerts" },
+  { label: "Upload Document", description: "Add to the document library", icon: UploadCloud, href: "/documents", accent: "text-violet-600 dark:text-violet-400" },
+  { label: "Open Copilot", description: "Ask the AI assistant", icon: Sparkles, href: "/copilot", accent: "text-accent" },
+  { label: "Open Reports", description: "Executive & weekly reports", icon: BarChart3, href: "/reports", accent: "text-indigo-600 dark:text-indigo-400" },
+  { label: "Manage Projects", description: "View the project portfolio", icon: Building2, href: "/projects", accent: "text-sky-600 dark:text-sky-400" },
+  { label: "View Alerts", description: "Review flagged issues", icon: Bell, href: "/alerts", accent: "text-rose-600 dark:text-rose-400" },
 ];
 
 export function QuickActions() {
   return (
     <div>
       <SectionLabel icon={Zap} title="Quick Actions" description="Jump straight into what you need next" />
-      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-4">
-        {ACTIONS.map(({ label, description, icon, href }) => (
-          <Link key={href + label} href={href}>
-            <div className={`${GLASS} p-4 h-full flex flex-col items-start gap-3 transition-all duration-200 hover:shadow-md hover:-translate-y-0.5 cursor-pointer`}>
-              <IconChip icon={icon} className="h-9 w-9" />
-              <div className="min-w-0">
-                <p className="text-xs font-semibold text-foreground truncate">{label}</p>
-                <p className="text-[10px] text-muted-foreground truncate">{description}</p>
-              </div>
-            </div>
-          </Link>
+      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-2">
+        {ACTIONS.map(({ label, description, icon, href, accent }) => (
+          <WorkspaceQuickLink key={href + label} icon={icon} title={label} meta={description} href={href} accent={accent} variant="card" />
         ))}
       </div>
     </div>

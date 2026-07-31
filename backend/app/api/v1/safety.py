@@ -1,6 +1,6 @@
 from fastapi import APIRouter, HTTPException, Query
 from typing import Optional
-from ...core.deps import DbSession
+from ...core.deps import CurrentScope, DbSession
 from ...models.safety import SafetyEvent, NCR
 from ...schemas.safety import SafetyEventOut, NCROut
 
@@ -11,10 +11,12 @@ router = APIRouter(tags=["safety-quality"])
 def list_safety_events(
     project_id: int,
     db: DbSession,
+    scope: CurrentScope,
     severity: Optional[str] = None,
     skip: int = Query(0, ge=0),
     limit: int = Query(20, ge=1, le=100),
 ):
+    scope.enforce_project_access(project_id)
     q = db.query(SafetyEvent).filter(SafetyEvent.project_id == project_id)
     if severity:
         q = q.filter(SafetyEvent.severity == severity)
@@ -22,7 +24,8 @@ def list_safety_events(
 
 
 @router.get("/projects/{project_id}/safety-events/{event_id}", response_model=SafetyEventOut)
-def get_safety_event(project_id: int, event_id: int, db: DbSession):
+def get_safety_event(project_id: int, event_id: int, db: DbSession, scope: CurrentScope):
+    scope.enforce_project_access(project_id)
     event = (
         db.query(SafetyEvent)
         .filter(SafetyEvent.id == event_id, SafetyEvent.project_id == project_id)
@@ -37,11 +40,13 @@ def get_safety_event(project_id: int, event_id: int, db: DbSession):
 def list_ncrs(
     project_id: int,
     db: DbSession,
+    scope: CurrentScope,
     status: Optional[str] = None,
     ncr_type: Optional[str] = None,
     skip: int = Query(0, ge=0),
     limit: int = Query(20, ge=1, le=100),
 ):
+    scope.enforce_project_access(project_id)
     q = db.query(NCR).filter(NCR.project_id == project_id)
     if status:
         q = q.filter(NCR.status == status)

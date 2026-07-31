@@ -9,6 +9,11 @@ interface AuthContextType {
   login: (data: LoginInput) => Promise<void>;
   logout: () => void;
   isLoading: boolean;
+  // Phase 2 — Security & Authentication Hardening: the Change Password
+  // screen calls this after a successful change so the app picks up the
+  // fresh token/user (must_change_password now false) without a second
+  // login round-trip.
+  setSession: (token: string, user: UserOut) => void;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -52,8 +57,14 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     setUser(null);
   };
 
+  const setSession = (newToken: string, newUser: UserOut) => {
+    saveToken(newToken);
+    setToken(newToken);
+    setUser(newUser);
+  };
+
   return (
-    <AuthContext.Provider value={{ user, token, login, logout, isLoading }}>
+    <AuthContext.Provider value={{ user, token, login, logout, isLoading, setSession }}>
       {children}
     </AuthContext.Provider>
   );

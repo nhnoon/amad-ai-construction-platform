@@ -1,16 +1,17 @@
 from fastapi import APIRouter, HTTPException, status
 
-from ...core.deps import DbSession
+from ...ai.scope import get_project_or_404
+from ...core.deps import CurrentScope, DbSession
 from ...models.organizations import ProjectMembership
 from ...models.auth import UserAccount
-from ...models.projects import Project
 from ...schemas.admin import ProjectMembershipCreate, ProjectMembershipOut
 
 router = APIRouter(prefix="/projects/{project_id}/memberships", tags=["memberships"])
 
 
 @router.get("", response_model=list[ProjectMembershipOut])
-def list_memberships(project_id: int, db: DbSession):
+def list_memberships(project_id: int, db: DbSession, scope: CurrentScope):
+    get_project_or_404(db, scope, project_id)
     return (
         db.query(ProjectMembership)
         .filter(ProjectMembership.project_id == project_id)
@@ -20,10 +21,8 @@ def list_memberships(project_id: int, db: DbSession):
 
 
 @router.post("", response_model=ProjectMembershipOut, status_code=201)
-def add_membership(project_id: int, body: ProjectMembershipCreate, db: DbSession):
-    project = db.query(Project).filter(Project.id == project_id).first()
-    if not project:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Project not found")
+def add_membership(project_id: int, body: ProjectMembershipCreate, db: DbSession, scope: CurrentScope):
+    get_project_or_404(db, scope, project_id)
     user = db.query(UserAccount).filter(UserAccount.id == body.user_id).first()
     if not user:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
@@ -48,7 +47,8 @@ def add_membership(project_id: int, body: ProjectMembershipCreate, db: DbSession
 
 
 @router.delete("/{user_id}", status_code=204)
-def remove_membership(project_id: int, user_id: int, db: DbSession):
+def remove_membership(project_id: int, user_id: int, db: DbSession, scope: CurrentScope):
+    get_project_or_404(db, scope, project_id)
     membership = db.query(ProjectMembership).filter(
         ProjectMembership.user_id == user_id,
         ProjectMembership.project_id == project_id,

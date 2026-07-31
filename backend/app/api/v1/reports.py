@@ -13,7 +13,8 @@ from fastapi import APIRouter
 from pydantic import BaseModel
 from sqlalchemy import func, distinct
 
-from ...core.deps import DbSession
+from ...ai.scope import AIAuthScope
+from ...core.deps import CurrentScope, DbSession
 from ...models.projects import Project
 from ...models.safety import SafetyEvent, NCR
 from ...models.procurement import PurchaseOrder, PurchaseRequest
@@ -140,12 +141,15 @@ def _severity_badge(sev: str) -> str:
 
 # ── Report computation ────────────────────────────────────────────────────────
 
-def _compute_executive_weekly_report(db) -> ExecutiveWeeklyReport:  # type: ignore[type-arg]
+def _compute_executive_weekly_report(db, scope: AIAuthScope) -> ExecutiveWeeklyReport:  # type: ignore[type-arg]
     now_str = datetime.now(tz=timezone.utc).isoformat()
     period = _current_report_period()
 
     # ── Health scores ─────────────────────────────────────────────────────────
-    health_scores = get_all_projects_health(db)
+    # Filtered to the caller's own organization (Phase 1 production-
+    # hardening) without touching get_all_projects_health's scoring logic.
+    ids = list(scope.accessible_project_ids)
+    health_scores = [h for h in get_all_projects_health(db) if h.project_id in scope.accessible_project_ids]
 
     if not health_scores:
         return _empty_report(period, now_str)
@@ -173,63 +177,63 @@ def _compute_executive_weekly_report(db) -> ExecutiveWeeklyReport:  # type: igno
         average_score=avg_score,
     )
 
-    # ── Operational DB counts ─────────────────────────────────────────────────
+    # ── Operational DB counts (scoped to accessible projects) ─────────────────
     critical_safety: int = (
         db.query(func.count(SafetyEvent.id))
-        .filter(SafetyEvent.severity.in_(["Critical", "High"]))
+        .filter(SafetyEvent.severity.in_(["Critical", "High"]), SafetyEvent.project_id.in_(ids))
         .scalar() or 0
     )
     high_safety: int = (
         db.query(func.count(SafetyEvent.id))
-        .filter(SafetyEvent.severity == "High")
+        .filter(SafetyEvent.severity == "High", SafetyEvent.project_id.in_(ids))
         .scalar() or 0
     )
     medium_safety: int = (
         db.query(func.count(SafetyEvent.id))
-        .filter(SafetyEvent.severity.in_(["Medium", "Low"]))
+        .filter(SafetyEvent.severity.in_(["Medium", "Low"]), SafetyEvent.project_id.in_(ids))
         .scalar() or 0
     )
     open_ncrs: int = (
         db.query(func.count(NCR.id))
-        .filter(NCR.status != "Closed")
+        .filter(NCR.status != "Closed", NCR.project_id.in_(ids))
         .scalar() or 0
     )
     closed_ncrs: int = (
         db.query(func.count(NCR.id))
-        .filter(NCR.status == "Closed")
+        .filter(NCR.status == "Closed", NCR.project_id.in_(ids))
         .scalar() or 0
     )
     corrective_ncrs: int = (
         db.query(func.count(NCR.id))
-        .filter(NCR.status == "Under Corrective Action")
+        .filter(NCR.status == "Under Corrective Action", NCR.project_id.in_(ids))
         .scalar() or 0
     )
     late_pos: int = (
         db.query(func.count(PurchaseOrder.id))
-        .filter(PurchaseOrder.is_late.is_(True))
+        .filter(PurchaseOrder.is_late.is_(True), PurchaseOrder.project_id.in_(ids))
         .scalar() or 0
     )
     total_pos: int = (
-        db.query(func.count(PurchaseOrder.id)).scalar() or 0
+        db.query(func.count(PurchaseOrder.id)).filter(PurchaseOrder.project_id.in_(ids)).scalar() or 0
     )
     open_prs: int = (
         db.query(func.count(PurchaseRequest.id))
-        .filter(PurchaseRequest.status.in_(["Under Review", "Pending Clarification"]))
+        .filter(PurchaseRequest.status.in_(["Under Review", "Pending Clarification"]), PurchaseRequest.project_id.in_(ids))
         .scalar() or 0
     )
     rework_prs: int = (
         db.query(func.count(PurchaseRequest.id))
-        .filter(PurchaseRequest.status.in_(["Needs Rework", "Returned to Requester"]))
+        .filter(PurchaseRequest.status.in_(["Needs Rework", "Returned to Requester"]), PurchaseRequest.project_id.in_(ids))
         .scalar() or 0
     )
     delayed_projects: int = (
         db.query(func.count(Project.id))
-        .filter(Project.status.in_(["Delayed", "On Hold", "Suspended"]))
+        .filter(Project.status.in_(["Delayed", "On Hold", "Suspended"]), Project.id.in_(ids))
         .scalar() or 0
     )
     open_actions: int = (
         db.query(func.count(MeetingActionItem.id))
-        .filter(MeetingActionItem.status == "open")
+        .filter(MeetingActionItem.status == "open", MeetingActionItem.project_id.in_(ids))
         .scalar() or 0
     )
     overdue_actions: int = (
@@ -237,6 +241,7 @@ def _compute_executive_weekly_report(db) -> ExecutiveWeeklyReport:  # type: igno
         .filter(
             MeetingActionItem.status == "open",
             MeetingActionItem.priority == "high",
+            MeetingActionItem.project_id.in_(ids),
         )
         .scalar() or 0
     )
@@ -533,13 +538,13 @@ def _compute_executive_weekly_report(db) -> ExecutiveWeeklyReport:  # type: igno
 
     # ── Sources ───────────────────────────────────────────────────────────────
     total_safety = (
-        db.query(func.count(SafetyEvent.id)).scalar() or 0
+        db.query(func.count(SafetyEvent.id)).filter(SafetyEvent.project_id.in_(ids)).scalar() or 0
     )
     total_ncrs_all = (
-        db.query(func.count(NCR.id)).scalar() or 0
+        db.query(func.count(NCR.id)).filter(NCR.project_id.in_(ids)).scalar() or 0
     )
     total_prs = (
-        db.query(func.count(PurchaseRequest.id)).scalar() or 0
+        db.query(func.count(PurchaseRequest.id)).filter(PurchaseRequest.project_id.in_(ids)).scalar() or 0
     )
     sources = [
         SourceReference(
@@ -570,7 +575,9 @@ def _compute_executive_weekly_report(db) -> ExecutiveWeeklyReport:  # type: igno
         SourceReference(
             source="Meeting Action Items",
             record_count=open_actions + (
-                db.query(func.count(MeetingActionItem.id)).filter(MeetingActionItem.status != "open").scalar() or 0
+                db.query(func.count(MeetingActionItem.id))
+                .filter(MeetingActionItem.status != "open", MeetingActionItem.project_id.in_(ids))
+                .scalar() or 0
             ),
             description=f"Action items from project meetings tracked for completion",
         ),
@@ -640,9 +647,11 @@ def _empty_report(period: ReportPeriod, now_str: str) -> ExecutiveWeeklyReport:
 # ── Route ──────────────────────────────────────────────────────────────────────
 
 @router.get("/executive-weekly", response_model=ExecutiveWeeklyReport)
-def get_executive_weekly_report(db: DbSession) -> ExecutiveWeeklyReport:
+def get_executive_weekly_report(db: DbSession, scope: CurrentScope) -> ExecutiveWeeklyReport:
     """
-    Generate a deterministic Executive Weekly Report from live portfolio data.
-    Covers health, procurement, safety, quality, and recommended actions.
+    Generate a deterministic Executive Weekly Report, scoped to the
+    caller's own organization (Phase 1 production-hardening), from live
+    portfolio data. Covers health, procurement, safety, quality, and
+    recommended actions.
     """
-    return _compute_executive_weekly_report(db)
+    return _compute_executive_weekly_report(db, scope)

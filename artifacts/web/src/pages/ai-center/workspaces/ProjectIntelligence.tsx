@@ -60,7 +60,7 @@ export default function ProjectIntelligence() {
             <Link
               key={p.id}
               href={`/projects/${p.id}?tab=ai-summary`}
-              className="rounded-xl border border-border bg-card p-4 space-y-2 hover:border-primary/30 transition-colors group"
+              className="panel panel-body space-y-2 hover:border-primary/30 hover:-translate-y-0.5 transition-all duration-150 group"
             >
               <div className="flex items-start justify-between gap-2">
                 <div className="min-w-0">

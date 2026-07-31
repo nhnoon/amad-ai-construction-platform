@@ -1,5 +1,5 @@
 from fastapi import APIRouter, HTTPException, Query
-from ...core.deps import DbSession
+from ...core.deps import CurrentScope, DbSession
 from ...models.claims import Claim, ChangeOrder, ClaimEvidence
 from ...schemas.claims import ClaimOut, ChangeOrderOut, ClaimEvidenceOut
 
@@ -10,9 +10,11 @@ router = APIRouter(tags=["claims"])
 def list_claims(
     project_id: int,
     db: DbSession,
+    scope: CurrentScope,
     skip: int = Query(0, ge=0),
     limit: int = Query(20, ge=1, le=100),
 ):
+    scope.enforce_project_access(project_id)
     return (
         db.query(Claim)
         .filter(Claim.project_id == project_id)
@@ -21,7 +23,8 @@ def list_claims(
 
 
 @router.get("/projects/{project_id}/claims/{claim_id}", response_model=ClaimOut)
-def get_claim(project_id: int, claim_id: int, db: DbSession):
+def get_claim(project_id: int, claim_id: int, db: DbSession, scope: CurrentScope):
+    scope.enforce_project_access(project_id)
     claim = (
         db.query(Claim)
         .filter(Claim.id == claim_id, Claim.project_id == project_id)
@@ -33,7 +36,8 @@ def get_claim(project_id: int, claim_id: int, db: DbSession):
 
 
 @router.get("/projects/{project_id}/claims/{claim_id}/evidence", response_model=list[ClaimEvidenceOut])
-def list_claim_evidence(project_id: int, claim_id: int, db: DbSession):
+def list_claim_evidence(project_id: int, claim_id: int, db: DbSession, scope: CurrentScope):
+    scope.enforce_project_access(project_id)
     claim = db.query(Claim).filter(Claim.id == claim_id, Claim.project_id == project_id).first()
     if not claim:
         raise HTTPException(status_code=404, detail="Claim not found")
@@ -44,10 +48,12 @@ def list_claim_evidence(project_id: int, claim_id: int, db: DbSession):
 def list_change_orders(
     project_id: int,
     db: DbSession,
+    scope: CurrentScope,
     status: str | None = None,
     skip: int = Query(0, ge=0),
     limit: int = Query(20, ge=1, le=100),
 ):
+    scope.enforce_project_access(project_id)
     q = db.query(ChangeOrder).filter(ChangeOrder.project_id == project_id)
     if status:
         q = q.filter(ChangeOrder.status == status)

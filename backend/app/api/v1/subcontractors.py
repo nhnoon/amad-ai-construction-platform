@@ -1,11 +1,17 @@
 from fastapi import APIRouter, HTTPException, Query
 from typing import Optional
 from sqlalchemy import func
-from ...core.deps import DbSession
+from ...core.deps import CurrentScope, DbSession
 from ...models.subcontractors import Subcontractor, SubcontractorEvaluation
 from ...schemas.subcontractors import SubcontractorOut, SubcontractorEvaluationOut
 
 router = APIRouter(tags=["subcontractors"])
+
+# NOTE (Phase 1 production-hardening): Subcontractor is a shared,
+# portfolio-wide registry — like Supplier (see procurement.py), the model
+# carries no project_id or organization_id, so list/detail/evaluations-by-
+# subcontractor/performance below are left unscoped by organization. Only
+# list_project_evaluations (project-scoped by definition) is enforced.
 
 
 @router.get("/subcontractors", response_model=list[SubcontractorOut])
@@ -84,9 +90,11 @@ def get_subcontractor_performance(subcontractor_id: int, db: DbSession):
 def list_project_evaluations(
     project_id: int,
     db: DbSession,
+    scope: CurrentScope,
     skip: int = Query(0, ge=0),
     limit: int = Query(20, ge=1, le=100),
 ):
+    scope.enforce_project_access(project_id)
     return (
         db.query(SubcontractorEvaluation)
         .filter(SubcontractorEvaluation.project_id == project_id)

@@ -20,7 +20,7 @@ def get_recent_site_reports(
     if project_id is not None:
         scope.enforce_project_access(project_id)
         q = q.filter(SiteReport.project_id == project_id)
-    elif not scope.has_global_read:
+    else:
         ids = list(scope.accessible_project_ids)
         if not ids:
             return RetrievalResult(data={"reports": [], "total": 0}, evidence=[])
@@ -65,7 +65,7 @@ def get_recent_daily_activities(
     if project_id is not None:
         scope.enforce_project_access(project_id)
         q = q.filter(DailyActivity.project_id == project_id)
-    elif not scope.has_global_read:
+    else:
         ids = list(scope.accessible_project_ids)
         if not ids:
             return RetrievalResult(data={"activities": [], "total": 0}, evidence=[])

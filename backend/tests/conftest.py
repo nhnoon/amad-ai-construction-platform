@@ -1,3 +1,5 @@
+from contextlib import contextmanager
+
 import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy import create_engine, text as sa_text
@@ -27,7 +29,30 @@ def _resolve_test_user_id() -> int:
         db.close()
 
 
+def _resolve_test_user_organization_id() -> "int | None":
+    """Return the real admin user's actual organization_id.
+
+    Phase 1 production-hardening: override_get_current_user() below builds
+    a UserAccount object directly rather than loading it from the DB, so it
+    never picked up organization_id (always implicitly None) — harmless
+    before organization scoping existed, but since build_ai_scope() now
+    determines a global-read user's accessible_project_ids from their
+    organization_id, leaving this None would make the mocked test admin see
+    zero projects, breaking every existing test that assumes full access.
+    Resolved once at import time, same pattern as _resolve_test_user_id().
+    """
+    db = TestingSessionLocal()
+    try:
+        row = db.execute(
+            sa_text("SELECT organization_id FROM user_accounts WHERE email = 'admin@construction.ai' LIMIT 1")
+        ).fetchone()
+        return int(row[0]) if row and row[0] is not None else None
+    finally:
+        db.close()
+
+
 TEST_USER_ID: int = _resolve_test_user_id()
+TEST_USER_ORGANIZATION_ID: "int | None" = _resolve_test_user_organization_id()
 
 
 def override_get_db():
@@ -46,6 +71,7 @@ def override_get_current_user() -> UserAccount:
         role="admin",
         is_active=True,
         hashed_password="x",
+        organization_id=TEST_USER_ORGANIZATION_ID,
         created_at=datetime(2026, 1, 1, tzinfo=timezone.utc),
     )
 
@@ -60,12 +86,51 @@ def client():
         yield c
 
 
+@contextmanager
+def real_auth_client():
+    """A TestClient that resolves identity from a real Bearer token
+    (register/login as an actual user) instead of the shared mocked admin
+    override — for tests that need to verify a genuinely different user's
+    real behavior (e.g. RBAC/tenant-isolation checks, Phase 2's
+    must-change-password gate).
+
+    app.dependency_overrides is one global dict shared by every TestClient
+    instance, including the session-scoped `client` fixture — so this
+    must NOT be used at the same time as `client` within one test (fixture
+    setup for both would run before the test body, and popping the
+    override here would silently break `client` too). Finish any
+    admin-mocked (`client` fixture) setup first, then use this,
+    ``with real_auth_client() as raw: ...`` — the override is restored
+    automatically on exit regardless of what ran inside.
+    """
+    saved = app.dependency_overrides.pop(get_current_user, None)
+    try:
+        with TestClient(app) as c:
+            yield c
+    finally:
+        if saved is not None:
+            app.dependency_overrides[get_current_user] = saved
+
+
 @pytest.fixture(autouse=True)
 def reset_rate_limiter_global():
     """Reset the AI rate limiter before every test so rate-limit state from
     one test does not bleed into the next.  Applies to all test files."""
     from app.ai.ratelimit import get_ai_rate_limiter
     get_ai_rate_limiter().reset(TEST_USER_ID)
+    yield
+
+
+@pytest.fixture(autouse=True)
+def reset_login_rate_limiter_global():
+    """Phase 2 — Security & Authentication Hardening: reset the per-IP
+    login rate limiter before every test. Starlette's TestClient always
+    reports the same synthetic client host, so without this every test
+    file's real /auth/login calls would share one sliding window and could
+    trip each other's 429s purely from aggregate test-suite volume, not
+    real brute-forcing."""
+    from app.core.login_security import login_ip_rate_limiter
+    login_ip_rate_limiter.reset_all()
     yield
 
 

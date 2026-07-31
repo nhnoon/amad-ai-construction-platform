@@ -29,16 +29,16 @@ export function ActivityTimeline({
       </div>
 
       {isLoading ? (
-        <div className="p-5 space-y-3">
+        <div className="p-4 space-y-3">
           {[1, 2, 3, 4].map((i) => <Skeleton key={i} className="h-12 w-full rounded-xl" />)}
         </div>
       ) : recent.length === 0 ? (
-        <div className="p-5 min-h-[180px] flex flex-col items-center justify-center text-center gap-2">
+        <div className="p-4 min-h-[120px] flex flex-col items-center justify-center text-center gap-2">
           <FileText className="w-8 h-8 text-muted-foreground/30" />
           <p className="text-xs text-muted-foreground">No recent document activity</p>
         </div>
       ) : (
-        <div className="p-5 space-y-1">
+        <div className="p-4 space-y-1">
           {recent.map((doc) => (
             <div
               key={doc.id}

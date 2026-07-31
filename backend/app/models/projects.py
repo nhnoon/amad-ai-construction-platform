@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Integer, String, Float, Text, ForeignKey
+from sqlalchemy import Column, Integer, String, Float, Text, ForeignKey, Index
 from sqlalchemy.orm import relationship
 from .base import Base
 
@@ -7,6 +7,17 @@ class Project(Base):
     __tablename__ = "projects"
 
     id = Column(Integer, primary_key=True, autoincrement=True)
+    # Root tenant-ownership column (Phase 1 production-hardening). Added via
+    # migration 0012 with a backfill — see that migration's docstring for
+    # how existing projects were assigned. Dependent records (procurement,
+    # site reports, meetings, safety, claims, change orders, subcontractor
+    # evaluations, project-scoped documents) do NOT carry their own
+    # organization_id — they inherit tenant scope through this column via
+    # their project_id, enforced at the API layer (app/ai/scope.py), rather
+    # than duplicating organization_id onto every dependent table.
+    organization_id = Column(
+        Integer, ForeignKey("organizations.id", ondelete="RESTRICT"), nullable=False,
+    )
     project_code = Column(String(50), nullable=False, unique=True)
     project_name = Column(String(255), nullable=False)
     project_type = Column(String(100), nullable=False)
@@ -18,6 +29,7 @@ class Project(Base):
     status = Column(String(50), nullable=False, index=True)
     budget = Column(Float, nullable=False)
 
+    organization = relationship("Organization", back_populates="projects")
     purchase_requests = relationship("PurchaseRequest", back_populates="project")
     purchase_orders = relationship("PurchaseOrder", back_populates="project")
     site_reports = relationship("SiteReport", back_populates="project")
@@ -37,6 +49,10 @@ class Project(Base):
     ncrs = relationship("NCR", back_populates="project")
     subcontractor_evaluations = relationship("SubcontractorEvaluation", back_populates="project")
     memberships = relationship("ProjectMembership", back_populates="project")
+
+    __table_args__ = (
+        Index("ix_projects_organization_id", "organization_id"),
+    )
 
 
 class ProjectPhase(Base):

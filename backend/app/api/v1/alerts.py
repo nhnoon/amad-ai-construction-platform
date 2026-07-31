@@ -14,7 +14,8 @@ from fastapi import APIRouter, Query
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
-from ...core.deps import DbSession
+from ...ai.scope import AIAuthScope
+from ...core.deps import CurrentScope, DbSession
 from ...models.projects import Project
 from ...models.safety import SafetyEvent, NCR
 from ...models.procurement import PurchaseOrder
@@ -77,17 +78,23 @@ def _truncate(s: str, n: int) -> str:
 
 # ── Alert generation ──────────────────────────────────────────────────────────
 
-def _generate_alerts(db: Session) -> list[Alert]:
+def _generate_alerts(db: Session, scope: AIAuthScope) -> list[Alert]:
     alerts: list[Alert] = []
     now = _now()
 
-    # Load project lookup (id → Project) once — used across all generators
+    # Load project lookup (id → Project) once — used across all generators.
+    # Scoped to the caller's own organization (Phase 1 production-
+    # hardening): every other generator below looks a project up via
+    # all_projects.get(...) and skips if not found, so scoping this one
+    # dict is sufficient to scope safety/quality/procurement/schedule
+    # alerts without touching each generator individually.
+    ids = list(scope.accessible_project_ids)
     all_projects: dict[int, Project] = {
-        p.id: p for p in db.query(Project).all()
+        p.id: p for p in db.query(Project).filter(Project.id.in_(ids)).all()
     }
 
     # ── 1 & 2: Health score alerts (Critical and At Risk projects) ────────────
-    health_scores = get_all_projects_health(db)
+    health_scores = [h for h in get_all_projects_health(db) if h.project_id in scope.accessible_project_ids]
     for hs in health_scores:
         if hs.level not in ("Critical", "At Risk"):
             continue
@@ -383,13 +390,14 @@ def _generate_alerts(db: Session) -> list[Alert]:
 @router.get("", response_model=AlertsResponse)
 def list_alerts(
     db: DbSession,
+    scope: CurrentScope,
     severity: Optional[str] = Query(None, description="Filter: critical | high | medium | low"),
     category: Optional[str] = Query(None, description="Filter: health | safety | procurement | quality | schedule"),
     project_id: Optional[int] = Query(None, description="Filter by project ID"),
     limit: int = Query(100, ge=1, le=500),
     offset: int = Query(0, ge=0),
 ):
-    alerts = _generate_alerts(db)
+    alerts = _generate_alerts(db, scope)
 
     if severity:
         alerts = [a for a in alerts if a.severity == severity.lower()]
@@ -404,8 +412,8 @@ def list_alerts(
 
 
 @router.get("/summary", response_model=AlertsSummary)
-def get_alerts_summary(db: DbSession):
-    alerts = _generate_alerts(db)
+def get_alerts_summary(db: DbSession, scope: CurrentScope):
+    alerts = _generate_alerts(db, scope)
 
     by_sev: dict[str, int] = {"critical": 0, "high": 0, "medium": 0, "low": 0}
     by_cat: dict[str, int] = {}

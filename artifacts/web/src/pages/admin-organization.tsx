@@ -12,6 +12,8 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Skeleton } from "@/components/ui/skeleton";
+import { EmptyState } from "@/components/ui/empty-state";
+import { WorkspaceLayout } from "@/components/workspace-layout";
 import { useToast } from "@/hooks/use-toast";
 import { getToken } from "../lib/auth";
 
@@ -79,7 +81,7 @@ function OrgCard({
   });
 
   return (
-    <div className="rounded-xl border border-border bg-card p-5 space-y-4">
+    <div className="panel p-4 space-y-4">
       <div className="flex items-start justify-between gap-3">
         <div className="flex items-center gap-3">
           <div className="w-10 h-10 rounded-lg bg-primary/10 flex items-center justify-center shrink-0">
@@ -92,12 +94,12 @@ function OrgCard({
         </div>
         <div className="flex items-center gap-2 shrink-0">
           {org.is_active ? (
-            <span className="inline-flex items-center gap-1 text-xs font-medium text-emerald-600 dark:text-emerald-400">
+            <span className="badge badge-success gap-1">
               <CheckCircle2 className="w-3.5 h-3.5" />
               Active
             </span>
           ) : (
-            <span className="inline-flex items-center gap-1 text-xs font-medium text-zinc-400">
+            <span className="badge badge-neutral gap-1">
               <XCircle className="w-3.5 h-3.5" />
               Inactive
             </span>
@@ -365,23 +367,23 @@ export default function AdminOrganization() {
   }
 
   return (
-    <div className="space-y-6">
-      {/* Header */}
-      <div className="flex items-start justify-between gap-4">
-        <div>
-          <h1 className="text-2xl font-bold text-foreground flex items-center gap-2">
-            <Building2 className="w-6 h-6 text-primary" />
-            Organizations
-          </h1>
-          <p className="text-sm text-muted-foreground mt-0.5">
-            Manage tenant organizations for the platform.
-          </p>
-        </div>
-        <Button onClick={() => setCreateOpen(true)} className="shrink-0">
-          <Plus className="w-4 h-4 me-2" />
-          New Organization
-        </Button>
-      </div>
+    <WorkspaceLayout
+        title="Organizations"
+        subtitle="Manage tenant organizations for the platform."
+        backLabel="Back to Dashboard"
+        backHref="/"
+        breadcrumbs={[
+          { label: "Dashboard", href: "/" },
+          { label: "Administration" },
+          { label: "Organizations" },
+        ]}
+        toolbar={
+          <Button onClick={() => setCreateOpen(true)} className="shrink-0">
+            <Plus className="w-4 h-4 me-2" />
+            New Organization
+          </Button>
+        }
+      >
 
       {/* Summary stat */}
       <div className="inline-flex items-center gap-2 px-4 py-2 rounded-xl border border-border bg-card">
@@ -397,16 +399,17 @@ export default function AdminOrganization() {
 
       {/* Org cards */}
       {orgs.length === 0 ? (
-        <div className="rounded-xl border border-dashed border-border bg-muted/20 p-12 text-center">
-          <Building2 className="w-8 h-8 text-muted-foreground/40 mx-auto mb-3" />
-          <p className="text-sm text-muted-foreground">
-            No organizations yet. Create one to group your users and projects.
-          </p>
-          <Button className="mt-4" onClick={() => setCreateOpen(true)}>
-            <Plus className="w-4 h-4 me-2" />
-            Create First Organization
-          </Button>
-        </div>
+        <EmptyState
+          icon={Building2}
+          title="No organizations yet"
+          description="Create one to group your users and projects."
+          action={
+            <Button onClick={() => setCreateOpen(true)}>
+              <Plus className="w-4 h-4 me-2" />
+              Create First Organization
+            </Button>
+          }
+        />
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
           {orgs.map((org) => (
@@ -417,6 +420,6 @@ export default function AdminOrganization() {
 
       <EditOrgDialog org={editTarget} onClose={() => setEditTarget(null)} />
       <CreateOrgDialog open={createOpen} onClose={() => setCreateOpen(false)} />
-    </div>
+    </WorkspaceLayout>
   );
 }

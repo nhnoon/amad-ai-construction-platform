@@ -17,6 +17,8 @@ export interface UserOut {
   role: string;
   is_active: boolean;
   created_at: string;
+  /** Phase 2 — Security & Authentication Hardening */
+  must_change_password?: boolean;
 }
 
 export interface LoginInput {

@@ -6,7 +6,7 @@ from ...ai.document_access import create_document
 from ...ai.document_ocr import get_document_ocr_result, process_document_ocr
 from ...ai.scope import build_ai_scope
 from ...config import settings
-from ...core.deps import CurrentUser, DbSession
+from ...core.deps import CurrentScope, CurrentUser, DbSession
 from ...models.documents import Document, GeneratedDocument, Correspondence
 from ...models.document_ocr import DocumentOCRResult
 from ...models.contract_extraction import ContractExtraction
@@ -173,10 +173,12 @@ def read_contract_extraction_unified(
 def list_documents(
     project_id: int,
     db: DbSession,
+    scope: CurrentScope,
     doc_type: Optional[str] = None,
     skip: int = Query(0, ge=0),
     limit: int = Query(20, ge=1, le=100),
 ):
+    scope.enforce_project_access(project_id)
     q = db.query(Document).filter(Document.project_id == project_id)
     if doc_type:
         q = q.filter(Document.doc_type == doc_type)
@@ -184,7 +186,8 @@ def list_documents(
 
 
 @router.get("/projects/{project_id}/documents/{doc_id}", response_model=DocumentOut)
-def get_document(project_id: int, doc_id: int, db: DbSession):
+def get_document(project_id: int, doc_id: int, db: DbSession, scope: CurrentScope):
+    scope.enforce_project_access(project_id)
     doc = (
         db.query(Document)
         .filter(Document.id == doc_id, Document.project_id == project_id)
@@ -307,10 +310,12 @@ def read_contract_extraction(
 def list_generated_documents(
     project_id: int,
     db: DbSession,
+    scope: CurrentScope,
     doc_type: Optional[str] = None,
     skip: int = Query(0, ge=0),
     limit: int = Query(20, ge=1, le=100),
 ):
+    scope.enforce_project_access(project_id)
     q = db.query(GeneratedDocument).filter(GeneratedDocument.project_id == project_id)
     if doc_type:
         q = q.filter(GeneratedDocument.type == doc_type)
@@ -321,9 +326,11 @@ def list_generated_documents(
 def list_correspondence(
     project_id: int,
     db: DbSession,
+    scope: CurrentScope,
     skip: int = Query(0, ge=0),
     limit: int = Query(20, ge=1, le=100),
 ):
+    scope.enforce_project_access(project_id)
     return (
         db.query(Correspondence)
         .filter(Correspondence.project_id == project_id)

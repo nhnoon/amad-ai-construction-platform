@@ -2,13 +2,11 @@ import { useMemo, useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useListProjects } from "@workspace/api-client-react";
 import {
-  FileText, Search, AlertTriangle, CalendarDays, Tag, FileUp, Loader2, Building2, Folder,
+  FileText, AlertTriangle, CalendarDays, Tag, FileUp, Loader2, Building2, Folder,
   X, UploadCloud, Library,
 } from "lucide-react";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
-import { Input } from "@/components/ui/input";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
@@ -23,6 +21,9 @@ import {
 import DocumentDetailPanel from "./DocumentDetailPanel";
 import { ScopeBadge } from "./DocumentBadges";
 import SectionHeading from "./SectionHeading";
+import { WorkspaceLayout } from "@/components/workspace-layout";
+import { SearchInput } from "@/components/search-input";
+import { EmptyState } from "@/components/ui/empty-state";
 
 const ACCEPTED_TYPES = ["application/pdf", "image/png", "image/jpeg"];
 const ACCEPTED_EXTENSIONS = ".pdf,.png,.jpg,.jpeg";
@@ -117,20 +118,17 @@ export default function Documents() {
   const canUpload = !!selectedFile && (destination === "general" || uploadProjectId != null);
 
   return (
-    <div className="space-y-8">
-      {/* Header */}
-      <div>
-        <h1 className="text-3xl font-bold text-foreground">Documents</h1>
-        <p className="text-muted-foreground mt-1">
-          Upload documents to the General Library or a project, then run OCR and contract analysis.
-        </p>
-      </div>
+    <WorkspaceLayout
+        title="Documents"
+        subtitle="Upload documents to the General Library or a project, then run OCR and contract analysis."
+        breadcrumbs={[{ label: "Dashboard", href: "/" }, { label: "Documents" }]}
+      >
 
       {/* ── Upload ────────────────────────────────────────────────────── */}
       <section ref={uploadCardRef}>
         <SectionHeading icon={UploadCloud} title="Upload" description="Add a document to the workspace" />
-        <Card className="rounded-xl">
-          <CardContent className="pt-6 space-y-5">
+        <div className="panel">
+          <div className="panel-body space-y-4">
             <div className="space-y-2">
               <label className="text-sm font-medium text-foreground">Destination</label>
               <RadioGroup
@@ -262,8 +260,8 @@ export default function Documents() {
                 </AlertDescription>
               </Alert>
             )}
-          </CardContent>
-        </Card>
+          </div>
+        </div>
       </section>
 
       {/* ── Document Library ─────────────────────────────────────────── */}
@@ -297,16 +295,12 @@ export default function Documents() {
             </Select>
           )}
 
-          <div className="flex-1 min-w-[200px] relative">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground pointer-events-none" />
-            <Input
-              type="text"
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-              placeholder="Search documents by title or type…"
-              className="pl-9"
-            />
-          </div>
+          <SearchInput
+            value={search}
+            onChange={setSearch}
+            placeholder="Search documents by title or type…"
+            className="min-w-[200px]"
+          />
         </div>
 
         <div className="grid grid-cols-1 lg:grid-cols-[360px_1fr] gap-6 items-start">
@@ -327,17 +321,17 @@ export default function Documents() {
                 ))}
               </div>
             ) : filteredDocuments.length === 0 ? (
-              <div className="rounded-xl border border-dashed border-border bg-card/30 p-8 text-center">
-                <FileText className="w-8 h-8 text-muted-foreground/30 mx-auto mb-2" />
-                <p className="text-sm text-muted-foreground mb-4">
-                  {documents?.length ? "No documents match your search." : "No documents found for this filter yet."}
-                </p>
-                {!documents?.length && (
-                  <Button size="sm" variant="secondary" onClick={focusUploadCard} className="gap-1.5">
-                    <UploadCloud className="w-3.5 h-3.5" />
-                    Upload a document
-                  </Button>
-                )}
+              <div className="panel">
+                <EmptyState
+                  icon={FileText}
+                  title={documents?.length ? "No documents match your search." : "No documents found for this filter yet."}
+                  action={!documents?.length ? (
+                    <Button size="sm" variant="secondary" onClick={focusUploadCard} className="gap-1.5">
+                      <UploadCloud className="w-3.5 h-3.5" />
+                      Upload a document
+                    </Button>
+                  ) : undefined}
+                />
               </div>
             ) : (
               filteredDocuments.map((doc: DocumentStub) => (
@@ -377,17 +371,17 @@ export default function Documents() {
             {selectedDocument ? (
               <DocumentDetailPanel document={selectedDocument} />
             ) : (
-              <div className="rounded-xl border border-dashed border-border bg-card/30 p-12 text-center">
-                <FileText className="w-12 h-12 text-muted-foreground/30 mx-auto mb-4" />
-                <h3 className="text-lg font-semibold text-foreground mb-2">Select a document</h3>
-                <p className="text-muted-foreground">
-                  Choose a document from the library to preview it, run OCR, and view contract analysis.
-                </p>
+              <div className="panel">
+                <EmptyState
+                  icon={FileText}
+                  title="Select a document"
+                  description="Choose a document from the library to preview it, run OCR, and view contract analysis."
+                />
               </div>
             )}
           </div>
         </div>
       </section>
-    </div>
+    </WorkspaceLayout>
   );
 }

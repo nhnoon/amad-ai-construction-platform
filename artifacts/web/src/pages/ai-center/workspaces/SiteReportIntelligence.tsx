@@ -97,7 +97,7 @@ export default function SiteReportIntelligence() {
             <Link
               key={c.report_id}
               href={`/projects/${c.project_id}/site-reports/${c.report_id}`}
-              className="rounded-xl border border-border bg-card p-4 space-y-2 hover:border-primary/30 transition-colors group"
+              className="panel panel-body space-y-2 hover:border-primary/30 hover:-translate-y-0.5 transition-all duration-150 group"
             >
               <div className="flex items-start justify-between gap-2">
                 <p className="text-sm font-semibold text-foreground">{c.report_date}</p>

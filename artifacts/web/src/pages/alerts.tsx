@@ -8,6 +8,9 @@ import {
 } from "lucide-react";
 import { useAlerts, useAlertsSummary, type Alert, type AlertSeverity, type AlertCategory } from "../lib/useAlerts";
 import { Skeleton } from "@/components/ui/skeleton";
+import { WorkspaceLayout } from "@/components/workspace-layout";
+import { EmptyState } from "@/components/ui/empty-state";
+import { ErrorState } from "@/components/ui/error-state";
 
 // ── Constants ──────────────────────────────────────────────────────────────────
 
@@ -211,23 +214,17 @@ export default function Alerts() {
   };
 
   return (
-    <div className="space-y-6">
-      {/* Header */}
-      <div className="page-header">
-        <div>
-          <h1 className="page-title flex items-center gap-2">
-            <Bell className="w-6 h-6 text-destructive" />
-            {t("Alerts")}
-          </h1>
-          <p className="page-subtitle">
-            {summaryLoading
-              ? "Loading…"
-              : summary
-              ? `${summary.total} active alert${summary.total !== 1 ? "s" : ""} · ${summary.critical} critical, ${summary.high} high`
-              : "Smart alerts derived from live project data"}
-          </p>
-        </div>
-      </div>
+    <WorkspaceLayout
+        title={t("Alerts")}
+        subtitle={
+          summaryLoading
+            ? "Loading…"
+            : summary
+            ? `${summary.total} active alert${summary.total !== 1 ? "s" : ""} · ${summary.critical} critical, ${summary.high} high`
+            : "Smart alerts derived from live project data"
+        }
+        breadcrumbs={[{ label: "Dashboard", href: "/" }, { label: "Alerts" }]}
+      >
 
       {/* Summary cards */}
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
@@ -347,22 +344,14 @@ export default function Alerts() {
           {[1, 2, 3, 4].map((i) => <Skeleton key={i} className="h-40 w-full rounded-xl" />)}
         </div>
       ) : isError ? (
-        <div className="panel panel-body flex items-center justify-center h-48">
-          <div className="text-center text-muted-foreground">
-            <AlertOctagon className="w-8 h-8 mx-auto mb-2 text-destructive opacity-60" />
-            <p className="text-sm font-medium">Unable to load alerts</p>
-            <p className="text-xs mt-1">Check your connection and try refreshing.</p>
-          </div>
-        </div>
+        <ErrorState title="Unable to load alerts" description="Check your connection and try refreshing." />
       ) : alerts.length === 0 ? (
-        <div className="panel panel-body flex items-center justify-center h-48">
-          <div className="text-center text-muted-foreground">
-            <CheckCircle className="w-10 h-10 mx-auto mb-3 text-emerald-500 opacity-60" />
-            <p className="text-sm font-semibold text-foreground">No alerts</p>
-            <p className="text-xs mt-1">
-              {severity || category ? "No alerts match the current filters." : "All systems are operating normally."}
-            </p>
-          </div>
+        <div className="panel">
+          <EmptyState
+            icon={CheckCircle}
+            title="No alerts"
+            description={severity || category ? "No alerts match the current filters." : "All systems are operating normally."}
+          />
         </div>
       ) : (
         <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
@@ -371,6 +360,6 @@ export default function Alerts() {
           ))}
         </div>
       )}
-    </div>
+    </WorkspaceLayout>
   );
 }

@@ -23,7 +23,7 @@ def get_safety_summary(
     if project_id is not None:
         scope.enforce_project_access(project_id)
         q = q.filter(SafetyEvent.project_id == project_id)
-    elif not scope.has_global_read:
+    else:
         ids = list(scope.accessible_project_ids)
         if not ids:
             return RetrievalResult(data={}, evidence=[])
@@ -71,7 +71,7 @@ def get_open_ncrs(
     if project_id is not None:
         scope.enforce_project_access(project_id)
         q = q.filter(NCR.project_id == project_id)
-    elif not scope.has_global_read:
+    else:
         ids = list(scope.accessible_project_ids)
         if not ids:
             return RetrievalResult(data={"ncrs": [], "total": 0}, evidence=[])
@@ -120,7 +120,7 @@ def get_safety_event_counts(
     if project_id is not None:
         scope.enforce_project_access(project_id)
         q = q.filter(SafetyEvent.project_id == project_id)
-    elif not scope.has_global_read:
+    else:
         ids = list(scope.accessible_project_ids)
         if not ids:
             return {"total": 0, "high": 0, "medium": 0, "low": 0}
@@ -149,7 +149,7 @@ def get_ncr_counts(
         scope.enforce_project_access(project_id)
         q_total = q_total.filter(NCR.project_id == project_id)
         q_open = q_open.filter(NCR.project_id == project_id)
-    elif not scope.has_global_read:
+    else:
         ids = list(scope.accessible_project_ids)
         if not ids:
             return {"total": 0, "open": 0}

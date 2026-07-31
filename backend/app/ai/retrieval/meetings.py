@@ -20,7 +20,7 @@ def get_recent_meetings(
     if project_id is not None:
         scope.enforce_project_access(project_id)
         q = q.filter(Meeting.project_id == project_id)
-    elif not scope.has_global_read:
+    else:
         ids = list(scope.accessible_project_ids)
         if not ids:
             return RetrievalResult(data={"meetings": [], "total": 0}, evidence=[])
@@ -64,7 +64,7 @@ def get_project_decisions(
     if project_id is not None:
         scope.enforce_project_access(project_id)
         q = q.filter(ProjectDecision.project_id == project_id)
-    elif not scope.has_global_read:
+    else:
         ids = list(scope.accessible_project_ids)
         if not ids:
             return RetrievalResult(data={"decisions": [], "total": 0}, evidence=[])
@@ -115,7 +115,7 @@ def get_open_action_items(
     if project_id is not None:
         scope.enforce_project_access(project_id)
         q = q.filter(MeetingActionItem.project_id == project_id)
-    elif not scope.has_global_read:
+    else:
         ids = list(scope.accessible_project_ids)
         if not ids:
             return RetrievalResult(data={"action_items": [], "total": 0}, evidence=[])
@@ -173,7 +173,7 @@ def get_meeting_counts(
         q_m = q_m.filter(Meeting.project_id == project_id)
         q_d = q_d.filter(ProjectDecision.project_id == project_id)
         q_a = q_a.filter(MeetingActionItem.project_id == project_id)
-    elif not scope.has_global_read:
+    else:
         ids = list(scope.accessible_project_ids)
         if not ids:
             return {"total_meetings": 0, "total_decisions": 0, "total_open_action_items": 0}

@@ -43,12 +43,11 @@ def get_procurement_summary(
         q_pr = q_pr.filter(PurchaseRequest.project_id == project_id)
         q_po = q_po.filter(PurchaseOrder.project_id == project_id)
     else:
-        if not scope.has_global_read:
-            ids = list(scope.accessible_project_ids)
-            if not ids:
-                return RetrievalResult(data={}, evidence=[])
-            q_pr = q_pr.filter(PurchaseRequest.project_id.in_(ids))
-            q_po = q_po.filter(PurchaseOrder.project_id.in_(ids))
+        ids = list(scope.accessible_project_ids)
+        if not ids:
+            return RetrievalResult(data={}, evidence=[])
+        q_pr = q_pr.filter(PurchaseRequest.project_id.in_(ids))
+        q_po = q_po.filter(PurchaseOrder.project_id.in_(ids))
 
     prs = q_pr.order_by(PurchaseRequest.id.desc()).limit(limit).all()
     pos = q_po.order_by(PurchaseOrder.id.desc()).limit(limit).all()
@@ -133,7 +132,7 @@ def get_late_purchase_orders(
     if project_id is not None:
         scope.enforce_project_access(project_id)
         q = q.filter(PurchaseOrder.project_id == project_id)
-    elif not scope.has_global_read:
+    else:
         ids = list(scope.accessible_project_ids)
         if not ids:
             return RetrievalResult(data={"late_orders": [], "total": 0}, evidence=[])
@@ -227,7 +226,7 @@ def get_procurement_counts(
         scope.enforce_project_access(project_id)
         q_po = q_po.filter(PurchaseOrder.project_id == project_id)
         q_pr = q_pr.filter(PurchaseRequest.project_id == project_id)
-    elif not scope.has_global_read:
+    else:
         ids = list(scope.accessible_project_ids)
         if not ids:
             return {"total_po": 0, "late_po": 0, "total_pr": 0, "open_pr": 0}

@@ -4,9 +4,10 @@ Smart Alerts Center generator (app/api/v1/alerts.py::_generate_alerts).
 Reuses that generator as-is rather than re-deriving alert logic (per the
 Knowledge Access Layer's "consolidate, don't rebuild" constraint). That
 generator itself has no RBAC/org scoping — it loads every project — so this
-module is the enforcement point: alerts are filtered down to the caller's
-accessible projects (or returned unfiltered for has_global_read roles)
-before ever becoming Evidence.
+module is the enforcement point: alerts are always filtered down to the
+caller's accessible projects (scope.accessible_project_ids, which already
+reflects the caller's own organization for global-read roles — see
+app/ai/scope.py) before ever becoming Evidence.
 """
 from __future__ import annotations
 
@@ -33,11 +34,11 @@ def get_active_alerts(
     if project_id is not None:
         scope.enforce_project_access(project_id)
 
-    alerts = _generate_alerts(db)
+    alerts = _generate_alerts(db, scope)
 
     if project_id is not None:
         alerts = [a for a in alerts if a.project_id == project_id]
-    elif not scope.has_global_read:
+    else:
         ids = set(scope.accessible_project_ids)
         alerts = [a for a in alerts if a.project_id in ids]
 

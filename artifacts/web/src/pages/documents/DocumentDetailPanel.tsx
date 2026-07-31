@@ -1,12 +1,12 @@
-import { useState, type ReactNode } from "react";
+import { useRef, useState, type ReactNode } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   FileUp, FileText, Loader2, ScanText, Sparkles, AlertTriangle, CalendarDays, Tag,
   X, ClipboardList, ShieldAlert, FileSearch,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Alert, AlertDescription } from "@/components/ui/alert";
+import { EmptyState } from "@/components/ui/empty-state";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Skeleton } from "@/components/ui/skeleton";
 import { cn } from "@/lib/utils";
@@ -23,6 +23,8 @@ import {
 } from "@/lib/aiCenterClient";
 import { OcrReadyBadge, ScopeBadge, StatusBadge, ValidatedExtractionBadge } from "./DocumentBadges";
 import SectionHeading from "./SectionHeading";
+import { useRegisterCurrentEntity } from "@/context/CurrentEntityContext";
+import { CurrentlyAnalyzing } from "@/components/CurrentlyAnalyzing";
 
 // Document workspace: preview, OCR, and contract analysis for ONE document.
 // Presentation-only refinement — same endpoints, same request shapes, same
@@ -106,12 +108,7 @@ function ListFieldGroup({ title, icon: Icon, items }: { title: string; icon: typ
 }
 
 function NotProcessedState({ label }: { label: string }) {
-  return (
-    <div className="rounded-lg border border-dashed border-border bg-card/30 p-6 text-center">
-      <ScanText className="w-8 h-8 text-muted-foreground/30 mx-auto mb-2" />
-      <p className="text-sm text-muted-foreground">{label}: Not Processed Yet</p>
-    </div>
-  );
+  return <EmptyState icon={ScanText} title={`${label}: Not Processed Yet`} className="py-6" />;
 }
 
 export default function DocumentDetailPanel({
@@ -170,29 +167,47 @@ export default function DocumentDetailPanel({
   const contractResult = contractQuery.data;
   const contractIsProcessed = contractResult && contractResult !== NOT_PROCESSED;
   const usedValidatedExtraction = contractIsProcessed && contractResult.validation_status === "fallback_valid";
+  const contractCompleted = contractIsProcessed && contractResult.status === "completed" && contractResult.extracted_fields;
+
+  // Contextual Hermes (Phase 2 §2) — this document IS a contract once its
+  // extraction has completed; register it so "Currently analyzing: Contract
+  // …" shows the same way it does for a Project or Site Report.
+  useRegisterCurrentEntity(
+    contractCompleted
+      ? { kind: "contract", code: `DOC-${documentId}`, label: contractResult.extracted_fields!.contract_title || document.title, projectId: document.project_id ?? undefined }
+      : null,
+  );
+
+  const overviewRef = useRef<HTMLDivElement>(null);
+  const obligationsRef = useRef<HTMLDivElement>(null);
+  const risksRef = useRef<HTMLDivElement>(null);
+  const [flashSection, setFlashSection] = useState<string | null>(null);
+  const scrollToSection = (ref: React.RefObject<HTMLDivElement | null>, key: string) => {
+    ref.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+    setFlashSection(key);
+    window.setTimeout(() => setFlashSection((cur) => (cur === key ? null : cur)), 1400);
+  };
 
   return (
     <div className="space-y-8">
       {/* ── Document Details ─────────────────────────────────────────── */}
       <section>
         <SectionHeading icon={FileSearch} title="Document Details" />
-        <Card className="rounded-xl">
-          <CardHeader>
-            <div className="flex items-start justify-between gap-3">
-              <div>
-                <CardTitle className="text-base flex items-center gap-2">
-                  <FileText className="w-4 h-4 text-primary shrink-0" />
-                  {document.title}
-                </CardTitle>
-                <CardDescription className="flex items-center gap-3 mt-1.5 flex-wrap">
-                  <span className="inline-flex items-center gap-1"><Tag className="w-3 h-3" />{document.doc_type}</span>
-                  <span className="inline-flex items-center gap-1"><CalendarDays className="w-3 h-3" />{document.doc_date}</span>
-                  <ScopeBadge isGeneral={document.project_id == null} />
-                </CardDescription>
+        <div className="panel">
+          <div className="panel-header items-start">
+            <div>
+              <p className="panel-title flex items-center gap-2">
+                <FileText className="w-4 h-4 text-primary shrink-0" />
+                {document.title}
+              </p>
+              <div className="flex items-center gap-3 mt-1.5 flex-wrap text-xs text-muted-foreground">
+                <span className="inline-flex items-center gap-1"><Tag className="w-3 h-3" />{document.doc_type}</span>
+                <span className="inline-flex items-center gap-1"><CalendarDays className="w-3 h-3" />{document.doc_date}</span>
+                <ScopeBadge isGeneral={document.project_id == null} />
               </div>
             </div>
-          </CardHeader>
-          <CardContent className="space-y-4">
+          </div>
+          <div className="panel-body space-y-4">
             <div>
               <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-1">Summary</p>
               <p className="text-sm text-foreground">{document.content_summary || "No summary available for this document."}</p>
@@ -272,19 +287,19 @@ export default function DocumentDetailPanel({
                 </Alert>
               )}
             </div>
-          </CardContent>
-        </Card>
+          </div>
+        </div>
       </section>
 
       {/* ── OCR ──────────────────────────────────────────────────────── */}
       <section>
         <SectionHeading icon={ScanText} title="OCR" description="Text extracted from the uploaded file" />
-        <Card className="rounded-xl">
-          <CardHeader className="flex flex-row items-center justify-between space-y-0">
-            <CardTitle className="text-base sr-only">OCR Status</CardTitle>
+        <div className="panel">
+          <div className="panel-header">
+            <p className="panel-title sr-only">OCR Status</p>
             {ocrIsProcessed && <StatusBadge status={ocrResult.status} />}
-          </CardHeader>
-          <CardContent>
+          </div>
+          <div className="panel-body">
             {ocrQuery.isLoading ? (
               <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
                 {[0, 1, 2, 3].map((i) => <Skeleton key={i} className="h-14 rounded-lg" />)}
@@ -339,23 +354,43 @@ export default function DocumentDetailPanel({
                 )}
               </div>
             )}
-          </CardContent>
-        </Card>
+          </div>
+        </div>
       </section>
 
       {/* ── Contract Analysis ───────────────────────────────────────── */}
       <section>
         <SectionHeading icon={Sparkles} title="Contract Analysis" description="Structured fields extracted from the OCR text" />
-        <Card className="rounded-xl">
-          <CardHeader className="flex flex-row items-center justify-between space-y-0">
-            <CardTitle className="text-base sr-only">Contract Analysis</CardTitle>
+        {contractCompleted && <CurrentlyAnalyzing className="mb-3" />}
+        <div className="panel">
+          <div className="panel-header">
+            <p className="panel-title sr-only">Contract Analysis</p>
             <div className="flex items-center gap-2">
               {ocrCompleted && !contractIsProcessed && <OcrReadyBadge />}
               {contractIsProcessed && <StatusBadge status={contractResult.status} />}
               {usedValidatedExtraction && <ValidatedExtractionBadge />}
             </div>
-          </CardHeader>
-          <CardContent className="space-y-4">
+          </div>
+          <div className="panel-body space-y-4">
+            {contractCompleted && (
+              <div>
+                <div className="flex items-center gap-1.5 mb-2">
+                  <Sparkles className="w-3.5 h-3.5 text-primary" />
+                  <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">AI Actions</p>
+                </div>
+                <div className="flex flex-wrap gap-2 mb-1">
+                  <Button size="sm" variant="outline" className="gap-1.5" onClick={() => scrollToSection(overviewRef, "overview")}>
+                    <FileSearch className="w-3.5 h-3.5" />Summarize
+                  </Button>
+                  <Button size="sm" variant="outline" className="gap-1.5" onClick={() => scrollToSection(risksRef, "risks")}>
+                    <ShieldAlert className="w-3.5 h-3.5" />Highlight Risks
+                  </Button>
+                  <Button size="sm" variant="outline" className="gap-1.5" onClick={() => scrollToSection(obligationsRef, "obligations")}>
+                    <ClipboardList className="w-3.5 h-3.5" />Extract Obligations
+                  </Button>
+                </div>
+              </div>
+            )}
             <div className="flex items-center justify-between flex-wrap gap-2">
               <p className="text-sm text-muted-foreground">
                 {ocrCompleted
@@ -412,32 +447,38 @@ export default function DocumentDetailPanel({
                   </p>
                 )}
 
-                {FIELD_GROUPS.map((group) => (
-                  <FieldGroupCard key={group.title} title={group.title}>
-                    {group.fields.map((field) => (
-                      <FieldRow
-                        key={field}
-                        label={FIELD_LABELS[field]}
-                        value={contractResult.extracted_fields![field as keyof typeof contractResult.extracted_fields]}
-                      />
-                    ))}
-                  </FieldGroupCard>
-                ))}
+                <div ref={overviewRef} className={cn("space-y-5 rounded-lg transition-shadow duration-500", flashSection === "overview" && "ring-2 ring-primary/50")}>
+                  {FIELD_GROUPS.map((group) => (
+                    <FieldGroupCard key={group.title} title={group.title}>
+                      {group.fields.map((field) => (
+                        <FieldRow
+                          key={field}
+                          label={FIELD_LABELS[field]}
+                          value={contractResult.extracted_fields![field as keyof typeof contractResult.extracted_fields]}
+                        />
+                      ))}
+                    </FieldGroupCard>
+                  ))}
+                </div>
 
-                <ListFieldGroup
-                  title="Key Obligations"
-                  icon={ClipboardList}
-                  items={contractResult.extracted_fields.key_obligations}
-                />
-                <ListFieldGroup
-                  title="Risks"
-                  icon={ShieldAlert}
-                  items={contractResult.extracted_fields.risks}
-                />
+                <div ref={obligationsRef} className={cn("rounded-lg transition-shadow duration-500", flashSection === "obligations" && "ring-2 ring-primary/50")}>
+                  <ListFieldGroup
+                    title="Key Obligations"
+                    icon={ClipboardList}
+                    items={contractResult.extracted_fields.key_obligations}
+                  />
+                </div>
+                <div ref={risksRef} className={cn("rounded-lg transition-shadow duration-500", flashSection === "risks" && "ring-2 ring-primary/50")}>
+                  <ListFieldGroup
+                    title="Risks"
+                    icon={ShieldAlert}
+                    items={contractResult.extracted_fields.risks}
+                  />
+                </div>
               </div>
             ) : null}
-          </CardContent>
-        </Card>
+          </div>
+        </div>
       </section>
     </div>
   );

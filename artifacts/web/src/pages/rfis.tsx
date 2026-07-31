@@ -1,10 +1,13 @@
 import { useEffect, useMemo, useState } from "react";
 import { useListProjects, useListProjectDecisions } from "@workspace/api-client-react";
-import { AlertOctagon, History } from "lucide-react";
+import { AlertOctagon, History, HelpCircle, FileText, Mail } from "lucide-react";
 import { getToken } from "@/lib/auth";
-import { PageContextHeader } from "@/components/page-context-header";
+import { WorkspaceLayout } from "@/components/workspace-layout";
 import { EmptyState } from "@/components/ui/empty-state";
 import { TableSkeletonRows } from "@/components/ui/table-skeleton";
+import { StatTile } from "@/components/stat-tile";
+import { Alert, AlertDescription } from "@/components/ui/alert";
+import { FilterSelect } from "@/components/filter-select";
 
 type DocRecord = {
   id: number;
@@ -48,7 +51,7 @@ export default function RFIs() {
   const { data: decisions, isLoading: loadingDecisions, isError: decisionsError } = useListProjectDecisions(
     selectedProjectId ?? 0,
     { limit: 100 },
-    { query: { enabled: !!selectedProjectId } },
+    { query: { enabled: !!selectedProjectId, queryKey: ["rfi-decisions", selectedProjectId] } },
   );
 
   useEffect(() => {
@@ -147,10 +150,9 @@ export default function RFIs() {
   const isLoading = loadingRecords || loadingDecisions;
 
   return (
-    <div className="space-y-6">
-      <PageContextHeader
+    <WorkspaceLayout
         title="Requests for Information"
-        subtitle="Manage clarification records, references, and response traceability"
+        subtitle={project ? project.project_name : "Manage clarification records, references, and response traceability"}
         backLabel="Back to Operations"
         backHref="/operations"
         breadcrumbs={[
@@ -158,48 +160,36 @@ export default function RFIs() {
           { label: "Operations", href: "/operations" },
           { label: "RFIs" },
         ]}
-      />
-
-      <div className="panel panel-body flex flex-wrap items-center gap-3">
-        <label className="text-sm font-medium text-muted-foreground">Project</label>
-        <select
-          className="h-10 min-w-64 rounded-lg border border-border bg-background px-3 text-sm"
-          value={selectedProjectId ?? ""}
-          onChange={(e) => setSelectedProjectId(Number(e.target.value))}
-          data-testid="project-selector"
-        >
-          <option value="" disabled>
-            Select Project
-          </option>
-          {projects?.map((p) => (
-            <option key={p.id} value={p.id}>
-              {p.project_code} - {p.project_name}
+        toolbar={
+          <FilterSelect
+            className="min-w-64"
+            value={String(selectedProjectId ?? "")}
+            onChange={(v) => setSelectedProjectId(Number(v))}
+            testId="project-selector"
+          >
+            <option value="" disabled>
+              Select Project
             </option>
-          ))}
-        </select>
-        {project && <p className="text-sm text-muted-foreground">{project.project_name}</p>}
-      </div>
+            {projects?.map((p) => (
+              <option key={p.id} value={p.id}>
+                {p.project_code} - {p.project_name}
+              </option>
+            ))}
+          </FilterSelect>
+        }
+      >
 
-      <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
-        <div className="panel panel-body">
-          <p className="text-xs uppercase tracking-wide text-muted-foreground">RFI Decisions</p>
-          <p className="mt-2 text-2xl font-bold text-foreground">{decisionRows.length}</p>
-        </div>
-        <div className="panel panel-body">
-          <p className="text-xs uppercase tracking-wide text-muted-foreground">RFI Documents</p>
-          <p className="mt-2 text-2xl font-bold text-foreground">{documents.length}</p>
-        </div>
-        <div className="panel panel-body">
-          <p className="text-xs uppercase tracking-wide text-muted-foreground">RFI Correspondence</p>
-          <p className="mt-2 text-2xl font-bold text-foreground">{correspondence.length}</p>
-        </div>
+      <div className="grid grid-cols-1 gap-2.5 md:grid-cols-3">
+        <StatTile icon={HelpCircle} label="RFI Decisions" description="Formal decisions on record" value={decisionRows.length} />
+        <StatTile icon={FileText} label="RFI Documents" description="Referenced supporting documents" value={documents.length} />
+        <StatTile icon={Mail} label="RFI Correspondence" description="Sent and received traceability" value={correspondence.length} />
       </div>
 
       {(recordsError || decisionsError) && (
-        <div className="rounded-xl border border-destructive/30 bg-destructive/5 p-4 text-sm text-destructive inline-flex items-center gap-2">
+        <Alert variant="destructive">
           <AlertOctagon className="h-4 w-4" />
-          {recordsError || "Failed to load project decisions"}
-        </div>
+          <AlertDescription>{recordsError || "Failed to load project decisions"}</AlertDescription>
+        </Alert>
       )}
 
       <div className="panel overflow-hidden">
@@ -243,6 +233,6 @@ export default function RFIs() {
           </table>
         </div>
       </div>
-    </div>
+    </WorkspaceLayout>
   );
 }
