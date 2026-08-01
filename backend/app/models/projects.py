@@ -1,5 +1,6 @@
-from sqlalchemy import Column, Integer, String, Float, Text, ForeignKey, Index
+from sqlalchemy import Column, DateTime, Integer, String, Float, Text, ForeignKey, Index
 from sqlalchemy.orm import relationship
+from sqlalchemy.sql import func
 from .base import Base
 
 
@@ -98,6 +99,11 @@ class ProjectRisk(Base):
     owner = Column(String(255), nullable=True)
     mitigation = Column(Text, nullable=True)
     created_at = Column(String(50), nullable=True)
+    # Core Workflow Engine (Sprint 2) — system audit trail for PATCH
+    # updates, distinct from the free-text `owner` field (ownership_id
+    # migration deliberately deferred, see app/ai/workflow_engine.py).
+    updated_at = Column(DateTime(timezone=True), nullable=False, server_default=func.now(), onupdate=func.now())
+    updated_by = Column(Integer, ForeignKey("user_accounts.id", ondelete="SET NULL"), nullable=True)
 
     project = relationship("Project", back_populates="risks")
 
@@ -115,5 +121,8 @@ class ProjectIssue(Base):
     resolution = Column(Text, nullable=True)
     created_at = Column(String(50), nullable=True)
     resolved_at = Column(String(50), nullable=True)
+    # Core Workflow Engine (Sprint 2)
+    updated_at = Column(DateTime(timezone=True), nullable=False, server_default=func.now(), onupdate=func.now())
+    updated_by = Column(Integer, ForeignKey("user_accounts.id", ondelete="SET NULL"), nullable=True)
 
     project = relationship("Project", back_populates="issues")

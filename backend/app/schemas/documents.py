@@ -1,3 +1,4 @@
+from datetime import datetime
 from pydantic import BaseModel, Field
 from typing import Optional
 
@@ -11,7 +12,44 @@ class DocumentOut(BaseModel):
     doc_date: str
     content_summary: str
 
+    # ── Document Storage System (Sprint 1) — current-version snapshot.
+    # All Optional/None-safe: a document created before this migration, or
+    # that never had a file uploaded, simply has these as None/False.
+    # storage_key (the internal storage-provider key) is intentionally
+    # NEVER exposed here — same precedent as DocumentOCRResult.storage_path.
+    original_filename: Optional[str] = None
+    mime_type: Optional[str] = None
+    file_size: Optional[int] = None
+    checksum: Optional[str] = None
+    uploaded_at: Optional[datetime] = None
+    uploaded_by: Optional[int] = None
+    updated_at: Optional[datetime] = None
+    version_number: Optional[int] = None
+    is_archived: bool = False
+
     model_config = {"from_attributes": True}
+
+
+class DocumentVersionOut(BaseModel):
+    """One entry in a document's version history. storage_key is never
+    exposed — download by version_number via GET .../download?version=N."""
+
+    version_number: int
+    original_filename: str
+    mime_type: str
+    file_size: int
+    checksum: str
+    uploaded_at: datetime
+    uploaded_by: Optional[int] = None
+    is_current: bool
+
+    model_config = {"from_attributes": True}
+
+
+class DocumentVersionUploadOut(DocumentVersionOut):
+    # True when the uploaded bytes matched the current version's checksum
+    # exactly — no new version was created, this is the existing one.
+    is_duplicate: bool
 
 
 class DocumentCreateRequest(BaseModel):

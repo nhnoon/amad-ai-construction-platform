@@ -127,6 +127,26 @@ class Settings(BaseSettings):
     CONTRACT_EXTRACTION_MAX_INPUT_CHARS: int = 12_000
     CONTRACT_EXTRACTION_MAX_RAW_RESPONSE_CHARS: int = 20_000
 
+    # ── Document Storage System (Sprint 1 — app/ai/document_storage.py,
+    # app/storage/) — persistent, versioned, checksummed file storage for
+    # Document rows. Deliberately separate from OCR_UPLOAD_DIR above: that
+    # directory is OCR's own ephemeral single-file-per-document working
+    # copy (app/ai/document_ocr.py), unaffected by this. "local" is the
+    # only implemented provider; "s3"/"azure_blob" are interface-complete
+    # stubs (app/storage/providers_stub.py) pending an SDK dependency this
+    # project doesn't currently install plus real credentials — selecting
+    # either fails fast and loud at get_storage_service() time rather than
+    # silently falling back to local disk.
+    DOCUMENT_STORAGE_PROVIDER: str = "local"
+    DOCUMENT_STORAGE_DIR: str = str(BACKEND_DIR / "data" / "document_storage")
+    DOCUMENT_MAX_FILE_SIZE_BYTES: int = 50 * 1024 * 1024  # 50 MB
+    # Unused by LocalStorageService — read only by the future S3/Azure
+    # providers once implemented.
+    DOCUMENT_STORAGE_S3_BUCKET: Optional[str] = None
+    DOCUMENT_STORAGE_S3_REGION: Optional[str] = None
+    DOCUMENT_STORAGE_AZURE_CONTAINER: Optional[str] = None
+    DOCUMENT_STORAGE_AZURE_CONNECTION_STRING: Optional[str] = None
+
     # ── Site Report Intelligence (app/ai/site_report_reasoning.py) — one
     # Hermes reasoning call per /analyze request, over report-scoped,
     # per-domain-capped evidence (see site_report_evidence.py's ranking/

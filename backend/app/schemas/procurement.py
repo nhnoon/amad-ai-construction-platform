@@ -1,3 +1,4 @@
+from datetime import datetime
 from pydantic import BaseModel
 from typing import Optional
 
@@ -29,8 +30,23 @@ class PurchaseRequestCreate(PurchaseRequestBase):
 
 class PurchaseRequestOut(PurchaseRequestBase):
     id: int
+    # Core Workflow Engine (Sprint 2)
+    updated_at: Optional[datetime] = None
+    updated_by: Optional[int] = None
 
     model_config = {"from_attributes": True}
+
+
+class PurchaseRequestUpdate(BaseModel):
+    """Workflow fields only — material_category/specification/
+    required_delivery_date are request-content fields, not approval
+    workflow fields, and are intentionally not included here."""
+
+    status: Optional[str] = None
+    rework_reason: Optional[str] = None
+    expected_updated_at: Optional[datetime] = None
+
+    model_config = {"extra": "forbid"}
 
 
 class PurchaseOrderOut(BaseModel):

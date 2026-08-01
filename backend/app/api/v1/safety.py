@@ -1,8 +1,9 @@
 from fastapi import APIRouter, HTTPException, Query
 from typing import Optional
+from ...ai.workflow_engine import update_ncr, update_safety_event
 from ...core.deps import CurrentScope, DbSession
 from ...models.safety import SafetyEvent, NCR
-from ...schemas.safety import SafetyEventOut, NCROut
+from ...schemas.safety import SafetyEventOut, SafetyEventUpdate, NCROut, NCRUpdate
 
 router = APIRouter(tags=["safety-quality"])
 
@@ -36,6 +37,16 @@ def get_safety_event(project_id: int, event_id: int, db: DbSession, scope: Curre
     return event
 
 
+@router.patch("/projects/{project_id}/safety-events/{event_id}", response_model=SafetyEventOut)
+def update_safety_event_route(
+    project_id: int, event_id: int, body: SafetyEventUpdate, db: DbSession, scope: CurrentScope,
+):
+    """Core Workflow Engine (Sprint 2) — see app/ai/workflow_engine.py.
+    Only Open/Closed is supported; this model has no investigation/
+    assignee field, so no such workflow is fabricated here."""
+    return update_safety_event(db, scope, project_id, event_id, body)
+
+
 @router.get("/projects/{project_id}/ncrs", response_model=list[NCROut])
 def list_ncrs(
     project_id: int,
@@ -53,3 +64,10 @@ def list_ncrs(
     if ncr_type:
         q = q.filter(NCR.ncr_type == ncr_type)
     return q.offset(skip).limit(limit).all()
+
+
+@router.patch("/projects/{project_id}/ncrs/{ncr_id}", response_model=NCROut)
+def update_ncr_route(project_id: int, ncr_id: int, body: NCRUpdate, db: DbSession, scope: CurrentScope):
+    """Core Workflow Engine (Sprint 2) — see app/ai/workflow_engine.py for
+    the status transition matrix and close-out rules."""
+    return update_ncr(db, scope, project_id, ncr_id, body)

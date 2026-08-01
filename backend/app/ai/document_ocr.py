@@ -31,6 +31,7 @@ from fastapi import HTTPException, status as http_status
 from sqlalchemy.orm import Session
 
 from app.ai.document_access import get_authorized_document
+from app.ai.document_storage import save_document_version
 from app.ai.scope import AIAuthScope
 from app.config import settings
 from app.models.document_ocr import DocumentOCRResult
@@ -285,6 +286,16 @@ def process_document_ocr(
         mime_type = _validate_upload(file_bytes)
     except (UnsupportedFileType, FileTooLarge) as e:
         raise HTTPException(status_code=http_status.HTTP_400_BAD_REQUEST, detail=str(e))
+
+    # Document Storage System (Sprint 1) — persist a permanent, versioned,
+    # checksummed copy of the upload through the same path a dedicated
+    # upload endpoint would use. This is independent of, and additional
+    # to, the ephemeral single-file OCR working copy written below (which
+    # exists only so this function has bytes to re-extract text from on
+    # reprocessing). Does its own authorization/validation and commits
+    # independently before any DocumentOCRResult row exists for this
+    # request, so it can never leave a half-written OCR row committed.
+    save_document_version(db, scope, document_id, file_bytes, filename)
 
     row = (
         db.query(DocumentOCRResult)

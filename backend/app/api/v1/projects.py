@@ -2,11 +2,13 @@ from fastapi import APIRouter, HTTPException, Query
 from sqlalchemy.orm import Session
 from typing import Optional
 from ...ai.scope import get_project_or_404
+from ...ai.workflow_engine import update_project_issue, update_project_risk
 from ...core.deps import CurrentScope, DbSession
 from ...models.projects import Project, ProjectRisk, ProjectIssue
 from ...schemas.projects import (
     ProjectOut, ProjectCreate, ProjectUpdate, ProjectSummary,
-    ProjectRiskCreate, ProjectRiskOut, ProjectIssueCreate, ProjectIssueOut,
+    ProjectRiskCreate, ProjectRiskOut, ProjectRiskUpdate,
+    ProjectIssueCreate, ProjectIssueOut, ProjectIssueUpdate,
     HealthScoreOut,
 )
 from ...ai.health_score import get_project_health, get_all_projects_health
@@ -140,6 +142,13 @@ def create_project_risk(project_id: int, body: ProjectRiskCreate, db: DbSession,
     return risk
 
 
+@router.patch("/{project_id}/risks/{risk_id}", response_model=ProjectRiskOut)
+def update_project_risk_route(project_id: int, risk_id: int, body: ProjectRiskUpdate, db: DbSession, scope: CurrentScope):
+    """Core Workflow Engine (Sprint 2) — see app/ai/workflow_engine.py for
+    the status transition matrix and close-out rules."""
+    return update_project_risk(db, scope, project_id, risk_id, body)
+
+
 @router.get("/{project_id}/issues", response_model=list[ProjectIssueOut])
 def list_project_issues(project_id: int, db: DbSession, scope: CurrentScope):
     scope.enforce_project_access(project_id)
@@ -154,3 +163,8 @@ def create_project_issue(project_id: int, body: ProjectIssueCreate, db: DbSessio
     db.commit()
     db.refresh(issue)
     return issue
+
+
+@router.patch("/{project_id}/issues/{issue_id}", response_model=ProjectIssueOut)
+def update_project_issue_route(project_id: int, issue_id: int, body: ProjectIssueUpdate, db: DbSession, scope: CurrentScope):
+    return update_project_issue(db, scope, project_id, issue_id, body)

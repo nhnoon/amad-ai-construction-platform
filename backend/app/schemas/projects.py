@@ -1,3 +1,4 @@
+from datetime import datetime
 from pydantic import BaseModel
 from typing import Optional, List
 
@@ -69,8 +70,32 @@ class ProjectRiskCreate(ProjectRiskBase):
 class ProjectRiskOut(ProjectRiskBase):
     id: int
     project_id: int
+    # Core Workflow Engine (Sprint 2)
+    updated_at: Optional[datetime] = None
+    updated_by: Optional[int] = None
 
     model_config = {"from_attributes": True}
+
+
+class ProjectRiskUpdate(BaseModel):
+    """Partial update — every field optional; only relevant, pre-existing
+    workflow fields are updatable (see app/ai/workflow_engine.py for the
+    status transition matrix and close-out rules). `title`/`description`
+    are content fields, not workflow fields, and are intentionally not
+    included here."""
+
+    status: Optional[str] = None
+    owner: Optional[str] = None
+    mitigation: Optional[str] = None
+    probability: Optional[str] = None
+    impact: Optional[str] = None
+    # Optimistic concurrency (Sprint 2 §8) — omit to skip the check
+    # entirely (fully backward compatible, since no existing caller could
+    # ever have known this field). If provided and it does not match the
+    # row's current updated_at, the update is rejected with 409.
+    expected_updated_at: Optional[datetime] = None
+
+    model_config = {"extra": "forbid"}
 
 
 class ProjectIssueBase(BaseModel):
@@ -89,8 +114,23 @@ class ProjectIssueCreate(ProjectIssueBase):
 class ProjectIssueOut(ProjectIssueBase):
     id: int
     project_id: int
+    resolved_at: Optional[str] = None
+    # Core Workflow Engine (Sprint 2)
+    updated_at: Optional[datetime] = None
+    updated_by: Optional[int] = None
 
     model_config = {"from_attributes": True}
+
+
+class ProjectIssueUpdate(BaseModel):
+    status: Optional[str] = None
+    owner: Optional[str] = None
+    resolution: Optional[str] = None
+    resolved_at: Optional[str] = None
+    severity: Optional[str] = None
+    expected_updated_at: Optional[datetime] = None
+
+    model_config = {"extra": "forbid"}
 
 
 # ── Health Score ──────────────────────────────────────────────────────────────

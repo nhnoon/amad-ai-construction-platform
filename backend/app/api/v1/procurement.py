@@ -2,10 +2,12 @@ from fastapi import APIRouter, HTTPException, Query, Response
 from sqlalchemy.orm import Session
 from sqlalchemy import func
 from typing import Optional
+from ...ai.workflow_engine import update_purchase_request
 from ...core.deps import CurrentScope, DbSession
 from ...models.procurement import PurchaseRequest, PurchaseOrder, Supplier
 from ...schemas.procurement import (
-    PurchaseRequestOut, PurchaseRequestCreate, PurchaseOrderOut, SupplierOut,
+    PurchaseRequestOut, PurchaseRequestCreate, PurchaseRequestUpdate,
+    PurchaseOrderOut, SupplierOut,
 )
 
 router = APIRouter(tags=["procurement"])
@@ -158,6 +160,14 @@ def get_purchase_request(pr_id: int, db: DbSession, scope: CurrentScope):
         raise HTTPException(status_code=404, detail="Purchase request not found")
     scope.enforce_project_access(pr.project_id)
     return pr
+
+
+@router.patch("/procurement/purchase-requests/{request_id}", response_model=PurchaseRequestOut)
+def update_purchase_request_route(request_id: int, body: PurchaseRequestUpdate, db: DbSession, scope: CurrentScope):
+    """Core Workflow Engine (Sprint 2) — see app/ai/workflow_engine.py for
+    the status transition matrix and close-out rules (Rejected/Returned to
+    Requester require a non-empty rework_reason)."""
+    return update_purchase_request(db, scope, request_id, body)
 
 
 @router.post("/procurement/purchase-requests", response_model=PurchaseRequestOut, status_code=201)

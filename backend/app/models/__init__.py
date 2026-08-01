@@ -5,7 +5,7 @@ from .projects import Project, ProjectPhase, ProjectMilestone, ProjectRisk, Proj
 from .procurement import PurchaseRequest, PurchaseOrder, Supplier
 from .meetings import Meeting, ProjectDecision, MeetingAttendee, MeetingActionItem
 from .site import SiteReport, DailyActivity
-from .documents import Document, GeneratedDocument, Correspondence
+from .documents import Document, GeneratedDocument, Correspondence, DocumentVersion
 from .claims import Claim, ClaimEvidence, ChangeOrder
 from .safety import SafetyEvent, NCR
 from .subcontractors import Subcontractor, SubcontractorEvaluation
@@ -22,7 +22,7 @@ __all__ = [
     "PurchaseRequest", "PurchaseOrder", "Supplier",
     "Meeting", "ProjectDecision", "MeetingAttendee", "MeetingActionItem",
     "SiteReport", "DailyActivity",
-    "Document", "GeneratedDocument", "Correspondence",
+    "Document", "GeneratedDocument", "Correspondence", "DocumentVersion",
     "Claim", "ClaimEvidence", "ChangeOrder",
     "SafetyEvent", "NCR",
     "Subcontractor", "SubcontractorEvaluation",

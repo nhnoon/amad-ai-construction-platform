@@ -1,5 +1,6 @@
-from sqlalchemy import Column, Integer, String, Text, ForeignKey
+from sqlalchemy import Column, DateTime, Integer, String, Text, ForeignKey
 from sqlalchemy.orm import relationship
+from sqlalchemy.sql import func
 from .base import Base
 
 
@@ -57,5 +58,11 @@ class MeetingActionItem(Base):
     status = Column(String(50), nullable=False, default="open")
     priority = Column(String(20), nullable=False, default="medium")
     source = Column(String(50), nullable=False, default="manual")
+    # Core Workflow Engine (Sprint 2) — completed_at matches
+    # ProjectIssue.resolved_at's existing type (a business-meaningful
+    # close-out date), not the system-timestamp convention below.
+    completed_at = Column(String(50), nullable=True)
+    updated_at = Column(DateTime(timezone=True), nullable=False, server_default=func.now(), onupdate=func.now())
+    updated_by = Column(Integer, ForeignKey("user_accounts.id", ondelete="SET NULL"), nullable=True)
 
     meeting = relationship("Meeting", back_populates="action_items")

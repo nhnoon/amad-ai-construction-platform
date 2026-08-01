@@ -1,5 +1,6 @@
-from sqlalchemy import Column, Integer, String, Float, Text, ForeignKey, Boolean
+from sqlalchemy import Column, DateTime, Integer, String, Float, Text, ForeignKey, Boolean
 from sqlalchemy.orm import relationship
+from sqlalchemy.sql import func
 from .base import Base
 
 
@@ -28,6 +29,9 @@ class PurchaseRequest(Base):
     status = Column(String(50), nullable=False, index=True)
     rework_reason = Column(Text, nullable=True)
     created_at = Column(String(50), nullable=False)
+    # Core Workflow Engine (Sprint 2)
+    updated_at = Column(DateTime(timezone=True), nullable=False, server_default=func.now(), onupdate=func.now())
+    updated_by = Column(Integer, ForeignKey("user_accounts.id", ondelete="SET NULL"), nullable=True)
 
     project = relationship("Project", back_populates="purchase_requests")
     purchase_orders = relationship("PurchaseOrder", back_populates="purchase_request")

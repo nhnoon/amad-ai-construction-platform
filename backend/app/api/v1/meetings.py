@@ -4,10 +4,12 @@ from fastapi import APIRouter, HTTPException, Query
 from typing import Optional
 from ...ai.meeting_memory import write_meeting_memory
 from ...ai.scope import build_ai_scope
+from ...ai.workflow_engine import update_action_item
 from ...core.deps import CurrentScope, CurrentUser, DbSession
 from ...models.meetings import Meeting, ProjectDecision, MeetingActionItem, MeetingAttendee
 from ...schemas.meetings import (
-    MeetingOut, MeetingCreate, ProjectDecisionOut, MeetingActionItemOut, MeetingActionItemCreate,
+    MeetingOut, MeetingCreate, ProjectDecisionOut,
+    MeetingActionItemOut, MeetingActionItemCreate, MeetingActionItemUpdate,
 )
 
 logger = logging.getLogger(__name__)
@@ -125,7 +127,11 @@ def list_action_items(
 @router.post("/projects/{project_id}/action-items", response_model=MeetingActionItemOut, status_code=201)
 def create_action_item(project_id: int, body: MeetingActionItemCreate, db: DbSession, current_user: CurrentUser, scope: CurrentScope):
     scope.enforce_project_access(project_id)
-    item = MeetingActionItem(project_id=project_id, **body.model_dump())
+    # body.project_id is intentionally discarded in favor of the URL's
+    # project_id (already authorized above) — trusting a client-supplied
+    # project_id here would let a caller attach the new action item to a
+    # project it was never authorized for.
+    item = MeetingActionItem(project_id=project_id, **body.model_dump(exclude={"project_id"}))
     db.add(item)
     db.commit()
     db.refresh(item)
@@ -134,3 +140,14 @@ def create_action_item(project_id: int, body: MeetingActionItemCreate, db: DbSes
     # whatever was recorded at meeting-creation time.
     _write_meeting_memory_best_effort(db, current_user, item.meeting_id)
     return item
+
+
+@router.patch("/projects/{project_id}/action-items/{action_item_id}", response_model=MeetingActionItemOut)
+def update_action_item_route(
+    project_id: int, action_item_id: int, body: MeetingActionItemUpdate,
+    db: DbSession, scope: CurrentScope,
+):
+    """Core Workflow Engine (Sprint 2) — see app/ai/workflow_engine.py for
+    the status transition matrix and close-out rules. Reassignment (owner)
+    and due-date changes are allowed independent of any status change."""
+    return update_action_item(db, scope, project_id, action_item_id, body)

@@ -1,3 +1,4 @@
+from datetime import datetime
 from pydantic import BaseModel
 from typing import Optional
 
@@ -50,5 +51,24 @@ class MeetingActionItemOut(MeetingActionItemBase):
     id: int
     meeting_id: int
     project_id: int
+    # Core Workflow Engine (Sprint 2)
+    completed_at: Optional[str] = None
+    updated_at: Optional[datetime] = None
+    updated_by: Optional[int] = None
 
     model_config = {"from_attributes": True}
+
+
+class MeetingActionItemUpdate(BaseModel):
+    """Reassignment (owner) and due-date changes are allowed independent
+    of any status change — status is optional here too, so a PATCH that
+    only reassigns or reschedules never needs to touch status at all."""
+
+    status: Optional[str] = None
+    owner: Optional[str] = None
+    due_date: Optional[str] = None
+    priority: Optional[str] = None
+    completed_at: Optional[str] = None
+    expected_updated_at: Optional[datetime] = None
+
+    model_config = {"extra": "forbid"}

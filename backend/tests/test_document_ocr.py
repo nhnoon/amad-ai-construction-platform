@@ -22,8 +22,9 @@ from app.ai.document_ocr import (
 )
 from app.ai.memory import get_memory_notes
 from app.ai.scope import AIAuthScope
+from app.storage import get_storage_service
 from app.models.document_ocr import DocumentOCRResult
-from app.models.documents import Document
+from app.models.documents import Document, DocumentVersion
 
 _REAL_PROJECT_ID = 1
 _USER_A = 1  # admin@construction.ai — global read access
@@ -112,6 +113,20 @@ def test_document(db_session):
     )
     if ocr_row and ocr_row.storage_path and os.path.isfile(ocr_row.storage_path):
         os.remove(ocr_row.storage_path)
+
+    # Document Storage System (Sprint 1) — process_document_ocr() now also
+    # writes a DocumentVersion (see app/ai/document_storage.py) for every
+    # test in this file that calls it. The DB row is cascade-deleted with
+    # the Document below, but the underlying stored file is not — clean it
+    # up explicitly so tests don't leak files into DOCUMENT_STORAGE_DIR.
+    storage = get_storage_service()
+    for version in (
+        db_session.query(DocumentVersion)
+        .filter(DocumentVersion.document_id == doc_id)
+        .all()
+    ):
+        storage.delete(version.storage_key)
+
     db_session.query(DocumentOCRResult).filter(
         DocumentOCRResult.document_id == doc_id
     ).delete()
