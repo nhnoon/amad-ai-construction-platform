@@ -33,6 +33,11 @@ class PurchaseRequestOut(PurchaseRequestBase):
     # Core Workflow Engine (Sprint 2)
     updated_at: Optional[datetime] = None
     updated_by: Optional[int] = None
+    # Ownership Engine (Sprint 3) — no legacy free-text owner ever existed
+    # on this table.
+    owner_id: Optional[int] = None
+    assigned_by: Optional[int] = None
+    assigned_at: Optional[datetime] = None
 
     model_config = {"from_attributes": True}
 

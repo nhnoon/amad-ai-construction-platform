@@ -3,6 +3,11 @@ from sqlalchemy.orm import Session
 from typing import Optional
 from ...ai.scope import get_project_or_404
 from ...ai.workflow_engine import update_project_issue, update_project_risk
+from ...ai.ownership_engine import (
+    apply_ownership_filters,
+    assign_project_issue, unassign_project_issue,
+    assign_project_risk, unassign_project_risk,
+)
 from ...core.deps import CurrentScope, DbSession
 from ...models.projects import Project, ProjectRisk, ProjectIssue
 from ...schemas.projects import (
@@ -11,6 +16,7 @@ from ...schemas.projects import (
     ProjectIssueCreate, ProjectIssueOut, ProjectIssueUpdate,
     HealthScoreOut,
 )
+from ...schemas.ownership import AssignRequest, UnassignRequest
 from ...ai.health_score import get_project_health, get_all_projects_health
 
 router = APIRouter(prefix="/projects", tags=["projects"])
@@ -127,9 +133,14 @@ def update_project(project_id: int, body: ProjectUpdate, db: DbSession, scope: C
 
 
 @router.get("/{project_id}/risks", response_model=list[ProjectRiskOut])
-def list_project_risks(project_id: int, db: DbSession, scope: CurrentScope):
+def list_project_risks(
+    project_id: int, db: DbSession, scope: CurrentScope,
+    assigned_to_me: bool = False, assigned_to: Optional[int] = None, unassigned: bool = False,
+):
     scope.enforce_project_access(project_id)
-    return db.query(ProjectRisk).filter(ProjectRisk.project_id == project_id).all()
+    q = db.query(ProjectRisk).filter(ProjectRisk.project_id == project_id)
+    q = apply_ownership_filters(q, ProjectRisk, scope, assigned_to_me=assigned_to_me, assigned_to=assigned_to, unassigned=unassigned)
+    return q.all()
 
 
 @router.post("/{project_id}/risks", response_model=ProjectRiskOut, status_code=201)
@@ -149,10 +160,29 @@ def update_project_risk_route(project_id: int, risk_id: int, body: ProjectRiskUp
     return update_project_risk(db, scope, project_id, risk_id, body)
 
 
+@router.post("/{project_id}/risks/{risk_id}/assign", response_model=ProjectRiskOut)
+def assign_project_risk_route(project_id: int, risk_id: int, body: AssignRequest, db: DbSession, scope: CurrentScope):
+    """Ownership Engine (Sprint 3) — see app/ai/ownership_engine.py.
+    Self-assignment is always allowed; assigning to someone else requires
+    manager authority (admin/executive/project_manager, globally or on
+    this project)."""
+    return assign_project_risk(db, scope, project_id, risk_id, body.user_id, body.expected_updated_at)
+
+
+@router.post("/{project_id}/risks/{risk_id}/unassign", response_model=ProjectRiskOut)
+def unassign_project_risk_route(project_id: int, risk_id: int, body: UnassignRequest, db: DbSession, scope: CurrentScope):
+    return unassign_project_risk(db, scope, project_id, risk_id, body.expected_updated_at)
+
+
 @router.get("/{project_id}/issues", response_model=list[ProjectIssueOut])
-def list_project_issues(project_id: int, db: DbSession, scope: CurrentScope):
+def list_project_issues(
+    project_id: int, db: DbSession, scope: CurrentScope,
+    assigned_to_me: bool = False, assigned_to: Optional[int] = None, unassigned: bool = False,
+):
     scope.enforce_project_access(project_id)
-    return db.query(ProjectIssue).filter(ProjectIssue.project_id == project_id).all()
+    q = db.query(ProjectIssue).filter(ProjectIssue.project_id == project_id)
+    q = apply_ownership_filters(q, ProjectIssue, scope, assigned_to_me=assigned_to_me, assigned_to=assigned_to, unassigned=unassigned)
+    return q.all()
 
 
 @router.post("/{project_id}/issues", response_model=ProjectIssueOut, status_code=201)
@@ -168,3 +198,13 @@ def create_project_issue(project_id: int, body: ProjectIssueCreate, db: DbSessio
 @router.patch("/{project_id}/issues/{issue_id}", response_model=ProjectIssueOut)
 def update_project_issue_route(project_id: int, issue_id: int, body: ProjectIssueUpdate, db: DbSession, scope: CurrentScope):
     return update_project_issue(db, scope, project_id, issue_id, body)
+
+
+@router.post("/{project_id}/issues/{issue_id}/assign", response_model=ProjectIssueOut)
+def assign_project_issue_route(project_id: int, issue_id: int, body: AssignRequest, db: DbSession, scope: CurrentScope):
+    return assign_project_issue(db, scope, project_id, issue_id, body.user_id, body.expected_updated_at)
+
+
+@router.post("/{project_id}/issues/{issue_id}/unassign", response_model=ProjectIssueOut)
+def unassign_project_issue_route(project_id: int, issue_id: int, body: UnassignRequest, db: DbSession, scope: CurrentScope):
+    return unassign_project_issue(db, scope, project_id, issue_id, body.expected_updated_at)

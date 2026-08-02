@@ -95,7 +95,7 @@ class ProjectRisk(Base):
     description = Column(Text, nullable=True)
     probability = Column(String(20), nullable=False, server_default="medium")
     impact = Column(String(20), nullable=False, server_default="medium")
-    status = Column(String(50), nullable=False, server_default="open")
+    status = Column(String(50), nullable=False, server_default="open", index=True)
     owner = Column(String(255), nullable=True)
     mitigation = Column(Text, nullable=True)
     created_at = Column(String(50), nullable=True)
@@ -104,6 +104,15 @@ class ProjectRisk(Base):
     # migration deliberately deferred, see app/ai/workflow_engine.py).
     updated_at = Column(DateTime(timezone=True), nullable=False, server_default=func.now(), onupdate=func.now())
     updated_by = Column(Integer, ForeignKey("user_accounts.id", ondelete="SET NULL"), nullable=True)
+    # Ownership Engine (Sprint 3) — real user ownership, additive alongside
+    # the free-text `owner` above (kept for backward compatibility, never
+    # cleared automatically; see app/ai/ownership_engine.py). `owner_id`
+    # NULL + `owner` set means no deterministic backfill match was found
+    # at migration time — the entity is still effectively "unassigned" for
+    # real-ownership queries even though its legacy text isn't empty.
+    owner_id = Column(Integer, ForeignKey("user_accounts.id", ondelete="SET NULL"), nullable=True, index=True)
+    assigned_by = Column(Integer, ForeignKey("user_accounts.id", ondelete="SET NULL"), nullable=True)
+    assigned_at = Column(DateTime(timezone=True), nullable=True)
 
     project = relationship("Project", back_populates="risks")
 
@@ -116,7 +125,7 @@ class ProjectIssue(Base):
     title = Column(String(255), nullable=False)
     description = Column(Text, nullable=True)
     severity = Column(String(20), nullable=False, server_default="medium")
-    status = Column(String(50), nullable=False, server_default="open")
+    status = Column(String(50), nullable=False, server_default="open", index=True)
     owner = Column(String(255), nullable=True)
     resolution = Column(Text, nullable=True)
     created_at = Column(String(50), nullable=True)
@@ -124,5 +133,10 @@ class ProjectIssue(Base):
     # Core Workflow Engine (Sprint 2)
     updated_at = Column(DateTime(timezone=True), nullable=False, server_default=func.now(), onupdate=func.now())
     updated_by = Column(Integer, ForeignKey("user_accounts.id", ondelete="SET NULL"), nullable=True)
+    # Ownership Engine (Sprint 3) — see ProjectRisk above for the
+    # owner/owner_id coexistence rationale.
+    owner_id = Column(Integer, ForeignKey("user_accounts.id", ondelete="SET NULL"), nullable=True, index=True)
+    assigned_by = Column(Integer, ForeignKey("user_accounts.id", ondelete="SET NULL"), nullable=True)
+    assigned_at = Column(DateTime(timezone=True), nullable=True)
 
     project = relationship("Project", back_populates="issues")

@@ -55,6 +55,10 @@ class MeetingActionItemOut(MeetingActionItemBase):
     completed_at: Optional[str] = None
     updated_at: Optional[datetime] = None
     updated_by: Optional[int] = None
+    # Ownership Engine (Sprint 3)
+    owner_id: Optional[int] = None
+    assigned_by: Optional[int] = None
+    assigned_at: Optional[datetime] = None
 
     model_config = {"from_attributes": True}
 

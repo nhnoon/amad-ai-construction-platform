@@ -49,6 +49,11 @@ from typing import Optional
 from fastapi import HTTPException, status as http_status
 from sqlalchemy.orm import Session
 
+from app.ai.notification_service import (
+    notify_action_item_due_date_changed,
+    notify_purchase_request_status,
+    notify_status_change,
+)
 from app.ai.scope import AIAuthScope, get_project_or_404
 from app.models.meetings import MeetingActionItem
 from app.models.procurement import PurchaseRequest
@@ -114,6 +119,28 @@ def _require_nonempty(value: Optional[str], field_label: str, entity_label: str,
         )
 
 
+def _reject_owner_text_conflict(row, entity_label: str) -> None:
+    """Ownership Consistency Policy (Sprint 4 Part F). app/ai/ownership_engine.py
+    already keeps the legacy free-text `owner` column in sync automatically
+    on every real assign/unassign; the actual drift risk is the other
+    direction — this plain PATCH silently overwriting `owner` text while
+    `owner_id` still points at a real, different user. Policy chosen:
+    reject the direct text edit once owner_id is set (rather than trying
+    to auto-resolve the text back to a user, which would need fuzzy name
+    matching and would let a plain PATCH bypass assign/unassign's
+    self-vs-manager authorization). Rows where owner_id is still NULL
+    (never assigned / pre-migration) keep accepting direct text edits
+    exactly as before — old records are preserved untouched."""
+    if row.owner_id is not None:
+        raise HTTPException(
+            status_code=http_status.HTTP_409_CONFLICT,
+            detail=(
+                f"{entity_label} already has a real assigned owner; use the assign/unassign "
+                f"endpoints instead of editing the legacy owner text directly."
+            ),
+        )
+
+
 # ─────────────────────────────────────────────────────────────────────────
 # ProjectRisk — "open" is the exact, unchanged existing POST-create default
 # (see ProjectRiskBase.status); "mitigating"/"closed" are this sprint's own
@@ -135,6 +162,7 @@ def update_project_risk(db: Session, scope: AIAuthScope, project_id: int, risk_i
     _check_concurrency("Risk", risk.updated_at, patch.expected_updated_at)
 
     if patch.owner is not None:
+        _reject_owner_text_conflict(risk, "Risk")
         risk.owner = patch.owner
     if patch.mitigation is not None:
         risk.mitigation = patch.mitigation
@@ -143,7 +171,9 @@ def update_project_risk(db: Session, scope: AIAuthScope, project_id: int, risk_i
     if patch.impact is not None:
         risk.impact = patch.impact
 
-    if patch.status is not None and patch.status != risk.status:
+    old_status = risk.status
+    status_changed = patch.status is not None and patch.status != old_status
+    if status_changed:
         validate_transition("Risk", PROJECT_RISK_TRANSITIONS, risk.status, patch.status)
         if patch.status == "closed":
             # "Closure must preserve mitigation or closure rationale. Do
@@ -156,6 +186,11 @@ def update_project_risk(db: Session, scope: AIAuthScope, project_id: int, risk_i
     risk.updated_by = scope.user_id
     db.commit()
     db.refresh(risk)
+    if status_changed:
+        notify_status_change(
+            db, scope=scope, row=risk, entity_type="project_risk", entity_label_text=risk.title,
+            project_id=project_id, old_status=old_status, new_status=risk.status,
+        )
     return risk
 
 
@@ -180,6 +215,7 @@ def update_project_issue(db: Session, scope: AIAuthScope, project_id: int, issue
     _check_concurrency("Issue", issue.updated_at, patch.expected_updated_at)
 
     if patch.owner is not None:
+        _reject_owner_text_conflict(issue, "Issue")
         issue.owner = patch.owner
     if patch.resolution is not None:
         issue.resolution = patch.resolution
@@ -188,7 +224,9 @@ def update_project_issue(db: Session, scope: AIAuthScope, project_id: int, issue
     if patch.severity is not None:
         issue.severity = patch.severity
 
-    if patch.status is not None and patch.status != issue.status:
+    old_status = issue.status
+    status_changed = patch.status is not None and patch.status != old_status
+    if status_changed:
         validate_transition("Issue", PROJECT_ISSUE_TRANSITIONS, issue.status, patch.status)
         if patch.status == "Resolved":
             _require_nonempty(issue.resolution, "resolution", "Issue", "Resolved")
@@ -202,6 +240,11 @@ def update_project_issue(db: Session, scope: AIAuthScope, project_id: int, issue
     issue.updated_by = scope.user_id
     db.commit()
     db.refresh(issue)
+    if status_changed:
+        notify_status_change(
+            db, scope=scope, row=issue, entity_type="project_issue", entity_label_text=issue.title,
+            project_id=project_id, old_status=old_status, new_status=issue.status,
+        )
     return issue
 
 
@@ -230,7 +273,9 @@ def update_action_item(db: Session, scope: AIAuthScope, project_id: int, action_
     _check_concurrency("Action item", item.updated_at, patch.expected_updated_at)
 
     if patch.owner is not None:
+        _reject_owner_text_conflict(item, "Action item")
         item.owner = patch.owner
+    old_due_date = item.due_date
     if patch.due_date is not None:
         item.due_date = patch.due_date
     if patch.priority is not None:
@@ -238,7 +283,9 @@ def update_action_item(db: Session, scope: AIAuthScope, project_id: int, action_
     if patch.completed_at is not None:
         item.completed_at = patch.completed_at
 
-    if patch.status is not None and patch.status != item.status:
+    old_status = item.status
+    status_changed = patch.status is not None and patch.status != old_status
+    if status_changed:
         validate_transition("Action item", ACTION_ITEM_TRANSITIONS, item.status, patch.status)
         if patch.status == "Completed":
             if patch.completed_at is None and not item.completed_at:
@@ -249,6 +296,15 @@ def update_action_item(db: Session, scope: AIAuthScope, project_id: int, action_
     item.updated_by = scope.user_id
     db.commit()
     db.refresh(item)
+    if status_changed:
+        notify_status_change(
+            db, scope=scope, row=item, entity_type="action_item", entity_label_text=(item.description or "Action item")[:80],
+            project_id=project_id, old_status=old_status, new_status=item.status,
+        )
+    if patch.due_date is not None:
+        notify_action_item_due_date_changed(
+            db, scope=scope, item=item, project_id=project_id, old_due_date=old_due_date, new_due_date=item.due_date,
+        )
     return item
 
 
@@ -276,7 +332,9 @@ def update_safety_event(db: Session, scope: AIAuthScope, project_id: int, event_
     if patch.severity is not None:
         event.severity = patch.severity
 
-    if patch.status is not None and patch.status != event.status:
+    old_status = event.status
+    status_changed = patch.status is not None and patch.status != old_status
+    if status_changed:
         validate_transition("Safety event", SAFETY_EVENT_TRANSITIONS, event.status, patch.status)
         if patch.status == "Closed":
             _require_nonempty(event.corrective_action, "corrective_action", "Safety event", "Closed")
@@ -285,6 +343,11 @@ def update_safety_event(db: Session, scope: AIAuthScope, project_id: int, event_
     event.updated_by = scope.user_id
     db.commit()
     db.refresh(event)
+    if status_changed:
+        notify_status_change(
+            db, scope=scope, row=event, entity_type="safety_event", entity_label_text=f"Safety event ({event.severity})",
+            project_id=project_id, old_status=old_status, new_status=event.status,
+        )
     return event
 
 
@@ -315,7 +378,9 @@ def update_ncr(db: Session, scope: AIAuthScope, project_id: int, ncr_id: int, pa
     if patch.root_cause is not None:
         ncr.root_cause = patch.root_cause
 
-    if patch.status is not None and patch.status != ncr.status:
+    old_status = ncr.status
+    status_changed = patch.status is not None and patch.status != old_status
+    if status_changed:
         validate_transition("NCR", NCR_TRANSITIONS, ncr.status, patch.status)
         if patch.status == "Closed":
             _require_nonempty(ncr.corrective_action, "corrective_action", "NCR", "Closed")
@@ -324,6 +389,11 @@ def update_ncr(db: Session, scope: AIAuthScope, project_id: int, ncr_id: int, pa
     ncr.updated_by = scope.user_id
     db.commit()
     db.refresh(ncr)
+    if status_changed:
+        notify_status_change(
+            db, scope=scope, row=ncr, entity_type="ncr", entity_label_text=f"NCR ({ncr.ncr_type})",
+            project_id=project_id, old_status=old_status, new_status=ncr.status,
+        )
     return ncr
 
 
@@ -369,7 +439,9 @@ def update_purchase_request(db: Session, scope: AIAuthScope, request_id: int, pa
     if patch.rework_reason is not None:
         pr.rework_reason = patch.rework_reason
 
-    if patch.status is not None and patch.status != pr.status:
+    old_status = pr.status
+    status_changed = patch.status is not None and patch.status != old_status
+    if status_changed:
         validate_transition("Purchase request", PURCHASE_REQUEST_TRANSITIONS, pr.status, patch.status)
         if patch.status in _PURCHASE_REQUEST_REASON_REQUIRED:
             _require_nonempty(pr.rework_reason, "rework_reason", "Purchase request", patch.status)
@@ -378,4 +450,8 @@ def update_purchase_request(db: Session, scope: AIAuthScope, request_id: int, pa
     pr.updated_by = scope.user_id
     db.commit()
     db.refresh(pr)
+    if status_changed:
+        notify_purchase_request_status(
+            db, scope=scope, pr=pr, project_id=project.id, old_status=old_status, new_status=pr.status,
+        )
     return pr

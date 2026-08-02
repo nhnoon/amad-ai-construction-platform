@@ -73,6 +73,13 @@ class ProjectRiskOut(ProjectRiskBase):
     # Core Workflow Engine (Sprint 2)
     updated_at: Optional[datetime] = None
     updated_by: Optional[int] = None
+    # Ownership Engine (Sprint 3) — owner_id is the real-user assignment;
+    # `owner` (above, inherited from ProjectRiskBase) is kept for backward
+    # compatibility and best-effort synced on assign/unassign, but can
+    # still drift if edited directly via PATCH's own `owner` field.
+    owner_id: Optional[int] = None
+    assigned_by: Optional[int] = None
+    assigned_at: Optional[datetime] = None
 
     model_config = {"from_attributes": True}
 
@@ -118,6 +125,10 @@ class ProjectIssueOut(ProjectIssueBase):
     # Core Workflow Engine (Sprint 2)
     updated_at: Optional[datetime] = None
     updated_by: Optional[int] = None
+    # Ownership Engine (Sprint 3)
+    owner_id: Optional[int] = None
+    assigned_by: Optional[int] = None
+    assigned_at: Optional[datetime] = None
 
     model_config = {"from_attributes": True}
 

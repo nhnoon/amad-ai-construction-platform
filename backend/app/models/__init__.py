@@ -9,6 +9,8 @@ from .documents import Document, GeneratedDocument, Correspondence, DocumentVers
 from .claims import Claim, ClaimEvidence, ChangeOrder
 from .safety import SafetyEvent, NCR
 from .subcontractors import Subcontractor, SubcontractorEvaluation
+from .assignment_history import AssignmentHistory
+from .notifications import Notification
 from .ai import AIMemory, AIAuditLog, ApprovalRequest
 from .ai_copilot import AIConversation, AIMessage, AICitation, CopilotAuditLog
 from .copilot_memory import AIUserProfileMemory, AIMemoryNote
@@ -26,6 +28,8 @@ __all__ = [
     "Claim", "ClaimEvidence", "ChangeOrder",
     "SafetyEvent", "NCR",
     "Subcontractor", "SubcontractorEvaluation",
+    "AssignmentHistory",
+    "Notification",
     "AIMemory", "AIAuditLog", "ApprovalRequest",
     "AIConversation", "AIMessage", "AICitation", "CopilotAuditLog",
     "AIUserProfileMemory", "AIMemoryNote",

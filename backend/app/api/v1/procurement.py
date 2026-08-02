@@ -3,12 +3,14 @@ from sqlalchemy.orm import Session
 from sqlalchemy import func
 from typing import Optional
 from ...ai.workflow_engine import update_purchase_request
+from ...ai.ownership_engine import apply_ownership_filters, assign_purchase_request, unassign_purchase_request
 from ...core.deps import CurrentScope, DbSession
 from ...models.procurement import PurchaseRequest, PurchaseOrder, Supplier
 from ...schemas.procurement import (
     PurchaseRequestOut, PurchaseRequestCreate, PurchaseRequestUpdate,
     PurchaseOrderOut, SupplierOut,
 )
+from ...schemas.ownership import AssignRequest, UnassignRequest
 
 router = APIRouter(tags=["procurement"])
 
@@ -130,6 +132,9 @@ def list_purchase_requests(
     project_id: Optional[int] = None,
     status: Optional[str] = None,
     material_category: Optional[str] = None,
+    assigned_to_me: bool = False,
+    assigned_to: Optional[int] = None,
+    unassigned: bool = False,
     skip: int = Query(0, ge=0),
     limit: int = Query(20, ge=1, le=200),
 ):
@@ -146,6 +151,7 @@ def list_purchase_requests(
         q = q.filter(PurchaseRequest.status == status)
     if material_category:
         q = q.filter(PurchaseRequest.material_category == material_category)
+    q = apply_ownership_filters(q, PurchaseRequest, scope, assigned_to_me=assigned_to_me, assigned_to=assigned_to, unassigned=unassigned)
     total = q.count()
     response.headers["X-Total-Count"] = str(total)
     response.headers["X-Limit"] = str(limit)
@@ -168,6 +174,17 @@ def update_purchase_request_route(request_id: int, body: PurchaseRequestUpdate, 
     the status transition matrix and close-out rules (Rejected/Returned to
     Requester require a non-empty rework_reason)."""
     return update_purchase_request(db, scope, request_id, body)
+
+
+@router.post("/procurement/purchase-requests/{request_id}/assign", response_model=PurchaseRequestOut)
+def assign_purchase_request_route(request_id: int, body: AssignRequest, db: DbSession, scope: CurrentScope):
+    """Ownership Engine (Sprint 3) — see app/ai/ownership_engine.py."""
+    return assign_purchase_request(db, scope, request_id, body.user_id, body.expected_updated_at)
+
+
+@router.post("/procurement/purchase-requests/{request_id}/unassign", response_model=PurchaseRequestOut)
+def unassign_purchase_request_route(request_id: int, body: UnassignRequest, db: DbSession, scope: CurrentScope):
+    return unassign_purchase_request(db, scope, request_id, body.expected_updated_at)
 
 
 @router.post("/procurement/purchase-requests", response_model=PurchaseRequestOut, status_code=201)

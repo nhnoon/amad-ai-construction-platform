@@ -54,8 +54,8 @@ class MeetingActionItem(Base):
     project_id = Column(Integer, ForeignKey("projects.id"), nullable=False)
     description = Column(Text, nullable=False)
     owner = Column(String(255), nullable=False)
-    due_date = Column(String(50), nullable=True)
-    status = Column(String(50), nullable=False, default="open")
+    due_date = Column(String(50), nullable=True, index=True)
+    status = Column(String(50), nullable=False, default="open", index=True)
     priority = Column(String(20), nullable=False, default="medium")
     source = Column(String(50), nullable=False, default="manual")
     # Core Workflow Engine (Sprint 2) — completed_at matches
@@ -64,5 +64,11 @@ class MeetingActionItem(Base):
     completed_at = Column(String(50), nullable=True)
     updated_at = Column(DateTime(timezone=True), nullable=False, server_default=func.now(), onupdate=func.now())
     updated_by = Column(Integer, ForeignKey("user_accounts.id", ondelete="SET NULL"), nullable=True)
+    # Ownership Engine (Sprint 3) — `owner` (free text, required at
+    # creation) is kept unchanged for backward compatibility; `owner_id`
+    # is the new real-user assignment, additive and nullable.
+    owner_id = Column(Integer, ForeignKey("user_accounts.id", ondelete="SET NULL"), nullable=True, index=True)
+    assigned_by = Column(Integer, ForeignKey("user_accounts.id", ondelete="SET NULL"), nullable=True)
+    assigned_at = Column(DateTime(timezone=True), nullable=True)
 
     meeting = relationship("Meeting", back_populates="action_items")

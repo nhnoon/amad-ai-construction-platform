@@ -18,9 +18,14 @@ class SafetyEvent(Base):
     # all before; every existing row is backfilled to 'Open' (see migration
     # 0016). Only Open/Closed are supported — no investigation/assignee
     # workflow is fabricated since no such fields exist on this model.
-    status = Column(String(50), nullable=False, server_default="Open")
+    status = Column(String(50), nullable=False, server_default="Open", index=True)
     updated_at = Column(DateTime(timezone=True), nullable=False, server_default=func.now(), onupdate=func.now())
     updated_by = Column(Integer, ForeignKey("user_accounts.id", ondelete="SET NULL"), nullable=True)
+    # Ownership Engine (Sprint 3) — no legacy free-text owner field ever
+    # existed on this table; owner_id is the only ownership representation.
+    owner_id = Column(Integer, ForeignKey("user_accounts.id", ondelete="SET NULL"), nullable=True, index=True)
+    assigned_by = Column(Integer, ForeignKey("user_accounts.id", ondelete="SET NULL"), nullable=True)
+    assigned_at = Column(DateTime(timezone=True), nullable=True)
 
     project = relationship("Project", back_populates="safety_events")
     subcontractor = relationship("Subcontractor", back_populates="safety_events")
@@ -40,12 +45,17 @@ class NCR(Base):
     description = Column(Text, nullable=False)
     root_cause = Column(Text, nullable=False)
     issue_date = Column(String(50), nullable=False)
-    status = Column(String(50), nullable=False)
+    status = Column(String(50), nullable=False, index=True)
     # Core Workflow Engine (Sprint 2) — required to reach Closed; NULL for
     # every existing row until explicitly set via PATCH.
     corrective_action = Column(Text, nullable=True)
     updated_at = Column(DateTime(timezone=True), nullable=False, server_default=func.now(), onupdate=func.now())
     updated_by = Column(Integer, ForeignKey("user_accounts.id", ondelete="SET NULL"), nullable=True)
+    # Ownership Engine (Sprint 3) — no legacy free-text owner field ever
+    # existed on this table; owner_id is the only ownership representation.
+    owner_id = Column(Integer, ForeignKey("user_accounts.id", ondelete="SET NULL"), nullable=True, index=True)
+    assigned_by = Column(Integer, ForeignKey("user_accounts.id", ondelete="SET NULL"), nullable=True)
+    assigned_at = Column(DateTime(timezone=True), nullable=True)
 
     project = relationship("Project", back_populates="ncrs")
     supplier = relationship("Supplier", back_populates="ncrs")

@@ -16,6 +16,11 @@ class SafetyEventOut(BaseModel):
     status: str = "Open"
     updated_at: Optional[datetime] = None
     updated_by: Optional[int] = None
+    # Ownership Engine (Sprint 3) — no legacy free-text owner ever existed
+    # on this table.
+    owner_id: Optional[int] = None
+    assigned_by: Optional[int] = None
+    assigned_at: Optional[datetime] = None
 
     model_config = {"from_attributes": True}
 
@@ -44,6 +49,11 @@ class NCROut(BaseModel):
     corrective_action: Optional[str] = None
     updated_at: Optional[datetime] = None
     updated_by: Optional[int] = None
+    # Ownership Engine (Sprint 3) — no legacy free-text owner ever existed
+    # on this table.
+    owner_id: Optional[int] = None
+    assigned_by: Optional[int] = None
+    assigned_at: Optional[datetime] = None
 
     model_config = {"from_attributes": True}
 

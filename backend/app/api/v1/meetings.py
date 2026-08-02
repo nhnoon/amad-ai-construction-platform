@@ -5,12 +5,14 @@ from typing import Optional
 from ...ai.meeting_memory import write_meeting_memory
 from ...ai.scope import build_ai_scope
 from ...ai.workflow_engine import update_action_item
+from ...ai.ownership_engine import apply_ownership_filters, apply_overdue_filter, assign_action_item, unassign_action_item
 from ...core.deps import CurrentScope, CurrentUser, DbSession
 from ...models.meetings import Meeting, ProjectDecision, MeetingActionItem, MeetingAttendee
 from ...schemas.meetings import (
     MeetingOut, MeetingCreate, ProjectDecisionOut,
     MeetingActionItemOut, MeetingActionItemCreate, MeetingActionItemUpdate,
 )
+from ...schemas.ownership import AssignRequest, UnassignRequest
 
 logger = logging.getLogger(__name__)
 router = APIRouter(tags=["meetings"])
@@ -112,6 +114,10 @@ def list_action_items(
     scope: CurrentScope,
     meeting_id: Optional[int] = None,
     status: Optional[str] = None,
+    assigned_to_me: bool = False,
+    assigned_to: Optional[int] = None,
+    unassigned: bool = False,
+    overdue: bool = False,
     skip: int = Query(0, ge=0),
     limit: int = Query(50, ge=1, le=200),
 ):
@@ -121,6 +127,8 @@ def list_action_items(
         q = q.filter(MeetingActionItem.meeting_id == meeting_id)
     if status:
         q = q.filter(MeetingActionItem.status == status)
+    q = apply_ownership_filters(q, MeetingActionItem, scope, assigned_to_me=assigned_to_me, assigned_to=assigned_to, unassigned=unassigned)
+    q = apply_overdue_filter(q, MeetingActionItem, overdue=overdue)
     return q.offset(skip).limit(limit).all()
 
 
@@ -151,3 +159,14 @@ def update_action_item_route(
     the status transition matrix and close-out rules. Reassignment (owner)
     and due-date changes are allowed independent of any status change."""
     return update_action_item(db, scope, project_id, action_item_id, body)
+
+
+@router.post("/projects/{project_id}/action-items/{action_item_id}/assign", response_model=MeetingActionItemOut)
+def assign_action_item_route(project_id: int, action_item_id: int, body: AssignRequest, db: DbSession, scope: CurrentScope):
+    """Ownership Engine (Sprint 3) — see app/ai/ownership_engine.py."""
+    return assign_action_item(db, scope, project_id, action_item_id, body.user_id, body.expected_updated_at)
+
+
+@router.post("/projects/{project_id}/action-items/{action_item_id}/unassign", response_model=MeetingActionItemOut)
+def unassign_action_item_route(project_id: int, action_item_id: int, body: UnassignRequest, db: DbSession, scope: CurrentScope):
+    return unassign_action_item(db, scope, project_id, action_item_id, body.expected_updated_at)

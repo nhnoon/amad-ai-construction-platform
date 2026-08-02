@@ -32,6 +32,12 @@ class PurchaseRequest(Base):
     # Core Workflow Engine (Sprint 2)
     updated_at = Column(DateTime(timezone=True), nullable=False, server_default=func.now(), onupdate=func.now())
     updated_by = Column(Integer, ForeignKey("user_accounts.id", ondelete="SET NULL"), nullable=True)
+    # Ownership Engine (Sprint 3) — no legacy free-text owner field ever
+    # existed on this table; owner_id is the only ownership representation
+    # (who is responsible for progressing this request through review).
+    owner_id = Column(Integer, ForeignKey("user_accounts.id", ondelete="SET NULL"), nullable=True, index=True)
+    assigned_by = Column(Integer, ForeignKey("user_accounts.id", ondelete="SET NULL"), nullable=True)
+    assigned_at = Column(DateTime(timezone=True), nullable=True)
 
     project = relationship("Project", back_populates="purchase_requests")
     purchase_orders = relationship("PurchaseOrder", back_populates="purchase_request")
