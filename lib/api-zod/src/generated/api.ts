@@ -3,7 +3,7 @@
  * Do not edit manually.
  * Api
  * Construction AI Platform — Phase 2 API (routes match FastAPI backend exactly)
- * OpenAPI spec version: 2.1.0
+ * OpenAPI spec version: 2.2.0
  */
 import * as zod from 'zod';
 
@@ -33,7 +33,8 @@ export const LoginResponse = zod.object({
   "full_name": zod.string().nullish(),
   "role": zod.string(),
   "is_active": zod.boolean(),
-  "created_at": zod.coerce.date()
+  "created_at": zod.coerce.date(),
+  "must_change_password": zod.boolean().optional().describe('Phase 2 — Security & Authentication Hardening')
 })
 })
 
@@ -56,7 +57,8 @@ export const RegisterResponse = zod.object({
   "full_name": zod.string().nullish(),
   "role": zod.string(),
   "is_active": zod.boolean(),
-  "created_at": zod.coerce.date()
+  "created_at": zod.coerce.date(),
+  "must_change_password": zod.boolean().optional().describe('Phase 2 — Security & Authentication Hardening')
 })
 
 
@@ -69,7 +71,8 @@ export const GetMeResponse = zod.object({
   "full_name": zod.string().nullish(),
   "role": zod.string(),
   "is_active": zod.boolean(),
-  "created_at": zod.coerce.date()
+  "created_at": zod.coerce.date(),
+  "must_change_password": zod.boolean().optional().describe('Phase 2 — Security & Authentication Hardening')
 })
 
 
@@ -203,6 +206,24 @@ export const GetProjectHealthResponse = zod.object({
 
 
 /**
+ * @summary List project memberships (used to resolve assignable users)
+ */
+export const ListProjectMembershipsParams = zod.object({
+  "project_id": zod.coerce.number()
+})
+
+export const ListProjectMembershipsResponseItem = zod.object({
+  "id": zod.number(),
+  "user_id": zod.number(),
+  "project_id": zod.number(),
+  "role_on_project": zod.string(),
+  "is_active": zod.boolean(),
+  "created_at": zod.coerce.date()
+})
+export const ListProjectMembershipsResponse = zod.array(ListProjectMembershipsResponseItem)
+
+
+/**
  * @summary List all suppliers
  */
 export const listSuppliersQuerySkipDefault = 0;
@@ -244,6 +265,8 @@ export const GetSupplierResponse = zod.object({
 /**
  * @summary List purchase requests
  */
+export const listPurchaseRequestsQueryAssignedToMeDefault = false;
+export const listPurchaseRequestsQueryUnassignedDefault = false;
 export const listPurchaseRequestsQuerySkipDefault = 0;
 export const listPurchaseRequestsQueryLimitDefault = 20;
 
@@ -251,6 +274,9 @@ export const ListPurchaseRequestsQueryParams = zod.object({
   "project_id": zod.coerce.number().optional(),
   "status": zod.coerce.string().optional(),
   "material_category": zod.coerce.string().optional(),
+  "assigned_to_me": zod.coerce.boolean().default(listPurchaseRequestsQueryAssignedToMeDefault),
+  "assigned_to": zod.coerce.number().optional(),
+  "unassigned": zod.coerce.boolean().default(listPurchaseRequestsQueryUnassignedDefault),
   "skip": zod.coerce.number().default(listPurchaseRequestsQuerySkipDefault),
   "limit": zod.coerce.number().default(listPurchaseRequestsQueryLimitDefault)
 })
@@ -264,9 +290,129 @@ export const ListPurchaseRequestsResponseItem = zod.object({
   "required_delivery_date": zod.string().nullish(),
   "status": zod.string(),
   "rework_reason": zod.string().nullish(),
-  "created_at": zod.string()
+  "created_at": zod.string(),
+  "updated_at": zod.coerce.date().nullish(),
+  "updated_by": zod.number().nullish(),
+  "owner_id": zod.number().nullish(),
+  "assigned_by": zod.number().nullish(),
+  "assigned_at": zod.coerce.date().nullish()
 })
 export const ListPurchaseRequestsResponse = zod.array(ListPurchaseRequestsResponseItem)
+
+
+/**
+ * @summary Get a single purchase request by ID
+ */
+export const GetPurchaseRequestParams = zod.object({
+  "request_id": zod.coerce.number()
+})
+
+export const GetPurchaseRequestResponse = zod.object({
+  "id": zod.number(),
+  "project_id": zod.number(),
+  "request_no": zod.string(),
+  "material_category": zod.string().nullish(),
+  "specification": zod.string().nullish(),
+  "required_delivery_date": zod.string().nullish(),
+  "status": zod.string(),
+  "rework_reason": zod.string().nullish(),
+  "created_at": zod.string(),
+  "updated_at": zod.coerce.date().nullish(),
+  "updated_by": zod.number().nullish(),
+  "owner_id": zod.number().nullish(),
+  "assigned_by": zod.number().nullish(),
+  "assigned_at": zod.coerce.date().nullish()
+})
+
+
+/**
+ * @summary Update a purchase request's workflow status (Sprint 2)
+ */
+export const UpdatePurchaseRequestParams = zod.object({
+  "request_id": zod.coerce.number()
+})
+
+export const UpdatePurchaseRequestBody = zod.object({
+  "status": zod.string().nullish(),
+  "rework_reason": zod.string().nullish(),
+  "expected_updated_at": zod.coerce.date().nullish()
+})
+
+export const UpdatePurchaseRequestResponse = zod.object({
+  "id": zod.number(),
+  "project_id": zod.number(),
+  "request_no": zod.string(),
+  "material_category": zod.string().nullish(),
+  "specification": zod.string().nullish(),
+  "required_delivery_date": zod.string().nullish(),
+  "status": zod.string(),
+  "rework_reason": zod.string().nullish(),
+  "created_at": zod.string(),
+  "updated_at": zod.coerce.date().nullish(),
+  "updated_by": zod.number().nullish(),
+  "owner_id": zod.number().nullish(),
+  "assigned_by": zod.number().nullish(),
+  "assigned_at": zod.coerce.date().nullish()
+})
+
+
+/**
+ * @summary Assign/reassign the owner of a purchase request (Sprint 3)
+ */
+export const AssignPurchaseRequestParams = zod.object({
+  "request_id": zod.coerce.number()
+})
+
+export const AssignPurchaseRequestBody = zod.object({
+  "user_id": zod.number(),
+  "expected_updated_at": zod.coerce.date().nullish()
+})
+
+export const AssignPurchaseRequestResponse = zod.object({
+  "id": zod.number(),
+  "project_id": zod.number(),
+  "request_no": zod.string(),
+  "material_category": zod.string().nullish(),
+  "specification": zod.string().nullish(),
+  "required_delivery_date": zod.string().nullish(),
+  "status": zod.string(),
+  "rework_reason": zod.string().nullish(),
+  "created_at": zod.string(),
+  "updated_at": zod.coerce.date().nullish(),
+  "updated_by": zod.number().nullish(),
+  "owner_id": zod.number().nullish(),
+  "assigned_by": zod.number().nullish(),
+  "assigned_at": zod.coerce.date().nullish()
+})
+
+
+/**
+ * @summary Unassign the owner of a purchase request (Sprint 3)
+ */
+export const UnassignPurchaseRequestParams = zod.object({
+  "request_id": zod.coerce.number()
+})
+
+export const UnassignPurchaseRequestBody = zod.object({
+  "expected_updated_at": zod.coerce.date().nullish()
+})
+
+export const UnassignPurchaseRequestResponse = zod.object({
+  "id": zod.number(),
+  "project_id": zod.number(),
+  "request_no": zod.string(),
+  "material_category": zod.string().nullish(),
+  "specification": zod.string().nullish(),
+  "required_delivery_date": zod.string().nullish(),
+  "status": zod.string(),
+  "rework_reason": zod.string().nullish(),
+  "created_at": zod.string(),
+  "updated_at": zod.coerce.date().nullish(),
+  "updated_by": zod.number().nullish(),
+  "owner_id": zod.number().nullish(),
+  "assigned_by": zod.number().nullish(),
+  "assigned_at": zod.coerce.date().nullish()
+})
 
 
 /**
@@ -332,14 +478,21 @@ export const ListProjectSafetyEventsParams = zod.object({
   "project_id": zod.coerce.number()
 })
 
+export const listProjectSafetyEventsQueryAssignedToMeDefault = false;
+export const listProjectSafetyEventsQueryUnassignedDefault = false;
 export const listProjectSafetyEventsQuerySkipDefault = 0;
 export const listProjectSafetyEventsQueryLimitDefault = 20;
 
 export const ListProjectSafetyEventsQueryParams = zod.object({
   "severity": zod.coerce.string().optional(),
+  "assigned_to_me": zod.coerce.boolean().default(listProjectSafetyEventsQueryAssignedToMeDefault),
+  "assigned_to": zod.coerce.number().optional(),
+  "unassigned": zod.coerce.boolean().default(listProjectSafetyEventsQueryUnassignedDefault),
   "skip": zod.coerce.number().default(listProjectSafetyEventsQuerySkipDefault),
   "limit": zod.coerce.number().default(listProjectSafetyEventsQueryLimitDefault)
 })
+
+export const listProjectSafetyEventsResponseStatusDefault = `Open`;
 
 export const ListProjectSafetyEventsResponseItem = zod.object({
   "id": zod.number(),
@@ -348,9 +501,112 @@ export const ListProjectSafetyEventsResponseItem = zod.object({
   "event_date": zod.string(),
   "severity": zod.string(),
   "description": zod.string(),
-  "corrective_action": zod.string()
+  "corrective_action": zod.string(),
+  "status": zod.string().default(listProjectSafetyEventsResponseStatusDefault),
+  "updated_at": zod.coerce.date().nullish(),
+  "updated_by": zod.number().nullish(),
+  "owner_id": zod.number().nullish(),
+  "assigned_by": zod.number().nullish(),
+  "assigned_at": zod.coerce.date().nullish()
 })
 export const ListProjectSafetyEventsResponse = zod.array(ListProjectSafetyEventsResponseItem)
+
+
+/**
+ * @summary Update a safety event's workflow status (Sprint 2)
+ */
+export const UpdateSafetyEventParams = zod.object({
+  "project_id": zod.coerce.number(),
+  "event_id": zod.coerce.number()
+})
+
+export const UpdateSafetyEventBody = zod.object({
+  "status": zod.string().nullish(),
+  "severity": zod.string().nullish(),
+  "corrective_action": zod.string().nullish(),
+  "expected_updated_at": zod.coerce.date().nullish()
+})
+
+export const updateSafetyEventResponseStatusDefault = `Open`;
+
+export const UpdateSafetyEventResponse = zod.object({
+  "id": zod.number(),
+  "project_id": zod.number(),
+  "subcontractor_id": zod.number(),
+  "event_date": zod.string(),
+  "severity": zod.string(),
+  "description": zod.string(),
+  "corrective_action": zod.string(),
+  "status": zod.string().default(updateSafetyEventResponseStatusDefault),
+  "updated_at": zod.coerce.date().nullish(),
+  "updated_by": zod.number().nullish(),
+  "owner_id": zod.number().nullish(),
+  "assigned_by": zod.number().nullish(),
+  "assigned_at": zod.coerce.date().nullish()
+})
+
+
+/**
+ * @summary Assign/reassign the owner of a safety event (Sprint 3)
+ */
+export const AssignSafetyEventParams = zod.object({
+  "project_id": zod.coerce.number(),
+  "event_id": zod.coerce.number()
+})
+
+export const AssignSafetyEventBody = zod.object({
+  "user_id": zod.number(),
+  "expected_updated_at": zod.coerce.date().nullish()
+})
+
+export const assignSafetyEventResponseStatusDefault = `Open`;
+
+export const AssignSafetyEventResponse = zod.object({
+  "id": zod.number(),
+  "project_id": zod.number(),
+  "subcontractor_id": zod.number(),
+  "event_date": zod.string(),
+  "severity": zod.string(),
+  "description": zod.string(),
+  "corrective_action": zod.string(),
+  "status": zod.string().default(assignSafetyEventResponseStatusDefault),
+  "updated_at": zod.coerce.date().nullish(),
+  "updated_by": zod.number().nullish(),
+  "owner_id": zod.number().nullish(),
+  "assigned_by": zod.number().nullish(),
+  "assigned_at": zod.coerce.date().nullish()
+})
+
+
+/**
+ * @summary Unassign the owner of a safety event (Sprint 3)
+ */
+export const UnassignSafetyEventParams = zod.object({
+  "project_id": zod.coerce.number(),
+  "event_id": zod.coerce.number()
+})
+
+export const UnassignSafetyEventBody = zod.object({
+  "expected_updated_at": zod.coerce.date().nullish()
+})
+
+export const unassignSafetyEventResponseStatusDefault = `Open`;
+
+export const UnassignSafetyEventResponse = zod.object({
+  "id": zod.number(),
+  "project_id": zod.number(),
+  "subcontractor_id": zod.number(),
+  "event_date": zod.string(),
+  "severity": zod.string(),
+  "description": zod.string(),
+  "corrective_action": zod.string(),
+  "status": zod.string().default(unassignSafetyEventResponseStatusDefault),
+  "updated_at": zod.coerce.date().nullish(),
+  "updated_by": zod.number().nullish(),
+  "owner_id": zod.number().nullish(),
+  "assigned_by": zod.number().nullish(),
+  "assigned_at": zod.coerce.date().nullish()
+})
 
 
 /**
@@ -360,12 +616,17 @@ export const ListProjectNcrsParams = zod.object({
   "project_id": zod.coerce.number()
 })
 
+export const listProjectNcrsQueryAssignedToMeDefault = false;
+export const listProjectNcrsQueryUnassignedDefault = false;
 export const listProjectNcrsQuerySkipDefault = 0;
 export const listProjectNcrsQueryLimitDefault = 20;
 
 export const ListProjectNcrsQueryParams = zod.object({
   "status": zod.coerce.string().optional(),
   "ncr_type": zod.coerce.string().optional(),
+  "assigned_to_me": zod.coerce.boolean().default(listProjectNcrsQueryAssignedToMeDefault),
+  "assigned_to": zod.coerce.number().optional(),
+  "unassigned": zod.coerce.boolean().default(listProjectNcrsQueryUnassignedDefault),
   "skip": zod.coerce.number().default(listProjectNcrsQuerySkipDefault),
   "limit": zod.coerce.number().default(listProjectNcrsQueryLimitDefault)
 })
@@ -379,9 +640,112 @@ export const ListProjectNcrsResponseItem = zod.object({
   "description": zod.string(),
   "root_cause": zod.string(),
   "issue_date": zod.string(),
-  "status": zod.string()
+  "status": zod.string(),
+  "corrective_action": zod.string().nullish(),
+  "updated_at": zod.coerce.date().nullish(),
+  "updated_by": zod.number().nullish(),
+  "owner_id": zod.number().nullish(),
+  "assigned_by": zod.number().nullish(),
+  "assigned_at": zod.coerce.date().nullish()
 })
 export const ListProjectNcrsResponse = zod.array(ListProjectNcrsResponseItem)
+
+
+/**
+ * @summary Update an NCR's workflow status (Sprint 2)
+ */
+export const UpdateNcrParams = zod.object({
+  "project_id": zod.coerce.number(),
+  "ncr_id": zod.coerce.number()
+})
+
+export const UpdateNcrBody = zod.object({
+  "status": zod.string().nullish(),
+  "corrective_action": zod.string().nullish(),
+  "root_cause": zod.string().nullish(),
+  "expected_updated_at": zod.coerce.date().nullish()
+})
+
+export const UpdateNcrResponse = zod.object({
+  "id": zod.number(),
+  "project_id": zod.number(),
+  "supplier_id": zod.number().nullish(),
+  "subcontractor_id": zod.number().nullish(),
+  "ncr_type": zod.string(),
+  "description": zod.string(),
+  "root_cause": zod.string(),
+  "issue_date": zod.string(),
+  "status": zod.string(),
+  "corrective_action": zod.string().nullish(),
+  "updated_at": zod.coerce.date().nullish(),
+  "updated_by": zod.number().nullish(),
+  "owner_id": zod.number().nullish(),
+  "assigned_by": zod.number().nullish(),
+  "assigned_at": zod.coerce.date().nullish()
+})
+
+
+/**
+ * @summary Assign/reassign the owner of an NCR (Sprint 3)
+ */
+export const AssignNcrParams = zod.object({
+  "project_id": zod.coerce.number(),
+  "ncr_id": zod.coerce.number()
+})
+
+export const AssignNcrBody = zod.object({
+  "user_id": zod.number(),
+  "expected_updated_at": zod.coerce.date().nullish()
+})
+
+export const AssignNcrResponse = zod.object({
+  "id": zod.number(),
+  "project_id": zod.number(),
+  "supplier_id": zod.number().nullish(),
+  "subcontractor_id": zod.number().nullish(),
+  "ncr_type": zod.string(),
+  "description": zod.string(),
+  "root_cause": zod.string(),
+  "issue_date": zod.string(),
+  "status": zod.string(),
+  "corrective_action": zod.string().nullish(),
+  "updated_at": zod.coerce.date().nullish(),
+  "updated_by": zod.number().nullish(),
+  "owner_id": zod.number().nullish(),
+  "assigned_by": zod.number().nullish(),
+  "assigned_at": zod.coerce.date().nullish()
+})
+
+
+/**
+ * @summary Unassign the owner of an NCR (Sprint 3)
+ */
+export const UnassignNcrParams = zod.object({
+  "project_id": zod.coerce.number(),
+  "ncr_id": zod.coerce.number()
+})
+
+export const UnassignNcrBody = zod.object({
+  "expected_updated_at": zod.coerce.date().nullish()
+})
+
+export const UnassignNcrResponse = zod.object({
+  "id": zod.number(),
+  "project_id": zod.number(),
+  "supplier_id": zod.number().nullish(),
+  "subcontractor_id": zod.number().nullish(),
+  "ncr_type": zod.string(),
+  "description": zod.string(),
+  "root_cause": zod.string(),
+  "issue_date": zod.string(),
+  "status": zod.string(),
+  "corrective_action": zod.string().nullish(),
+  "updated_at": zod.coerce.date().nullish(),
+  "updated_by": zod.number().nullish(),
+  "owner_id": zod.number().nullish(),
+  "assigned_by": zod.number().nullish(),
+  "assigned_at": zod.coerce.date().nullish()
+})
 
 
 /**
@@ -434,5 +798,1130 @@ export const ListProjectDecisionsResponseItem = zod.object({
   "owner": zod.string()
 })
 export const ListProjectDecisionsResponse = zod.array(ListProjectDecisionsResponseItem)
+
+
+/**
+ * @summary List meeting action items for a project
+ */
+export const ListActionItemsParams = zod.object({
+  "project_id": zod.coerce.number()
+})
+
+export const listActionItemsQueryAssignedToMeDefault = false;
+export const listActionItemsQueryUnassignedDefault = false;
+export const listActionItemsQueryOverdueDefault = false;
+export const listActionItemsQuerySkipDefault = 0;
+export const listActionItemsQueryLimitDefault = 50;
+
+export const ListActionItemsQueryParams = zod.object({
+  "meeting_id": zod.coerce.number().optional(),
+  "status": zod.coerce.string().optional(),
+  "assigned_to_me": zod.coerce.boolean().default(listActionItemsQueryAssignedToMeDefault),
+  "assigned_to": zod.coerce.number().optional(),
+  "unassigned": zod.coerce.boolean().default(listActionItemsQueryUnassignedDefault),
+  "overdue": zod.coerce.boolean().default(listActionItemsQueryOverdueDefault),
+  "skip": zod.coerce.number().default(listActionItemsQuerySkipDefault),
+  "limit": zod.coerce.number().default(listActionItemsQueryLimitDefault)
+})
+
+export const listActionItemsResponseStatusDefault = `open`;
+export const listActionItemsResponsePriorityDefault = `medium`;
+export const listActionItemsResponseSourceDefault = `manual`;
+
+export const ListActionItemsResponseItem = zod.object({
+  "id": zod.number(),
+  "meeting_id": zod.number(),
+  "project_id": zod.number(),
+  "description": zod.string(),
+  "owner": zod.string(),
+  "due_date": zod.string().nullish(),
+  "status": zod.string().default(listActionItemsResponseStatusDefault),
+  "priority": zod.string().default(listActionItemsResponsePriorityDefault),
+  "source": zod.string().default(listActionItemsResponseSourceDefault),
+  "completed_at": zod.string().nullish(),
+  "updated_at": zod.coerce.date().nullish(),
+  "updated_by": zod.number().nullish(),
+  "owner_id": zod.number().nullish(),
+  "assigned_by": zod.number().nullish(),
+  "assigned_at": zod.coerce.date().nullish()
+})
+export const ListActionItemsResponse = zod.array(ListActionItemsResponseItem)
+
+
+/**
+ * @summary Update a meeting action item's workflow status (Sprint 2)
+ */
+export const UpdateActionItemParams = zod.object({
+  "project_id": zod.coerce.number(),
+  "action_item_id": zod.coerce.number()
+})
+
+export const UpdateActionItemBody = zod.object({
+  "status": zod.string().nullish(),
+  "owner": zod.string().nullish(),
+  "due_date": zod.string().nullish(),
+  "priority": zod.string().nullish(),
+  "completed_at": zod.string().nullish(),
+  "expected_updated_at": zod.coerce.date().nullish()
+})
+
+export const updateActionItemResponseStatusDefault = `open`;
+export const updateActionItemResponsePriorityDefault = `medium`;
+export const updateActionItemResponseSourceDefault = `manual`;
+
+export const UpdateActionItemResponse = zod.object({
+  "id": zod.number(),
+  "meeting_id": zod.number(),
+  "project_id": zod.number(),
+  "description": zod.string(),
+  "owner": zod.string(),
+  "due_date": zod.string().nullish(),
+  "status": zod.string().default(updateActionItemResponseStatusDefault),
+  "priority": zod.string().default(updateActionItemResponsePriorityDefault),
+  "source": zod.string().default(updateActionItemResponseSourceDefault),
+  "completed_at": zod.string().nullish(),
+  "updated_at": zod.coerce.date().nullish(),
+  "updated_by": zod.number().nullish(),
+  "owner_id": zod.number().nullish(),
+  "assigned_by": zod.number().nullish(),
+  "assigned_at": zod.coerce.date().nullish()
+})
+
+
+/**
+ * @summary Assign/reassign the owner of an action item (Sprint 3)
+ */
+export const AssignActionItemParams = zod.object({
+  "project_id": zod.coerce.number(),
+  "action_item_id": zod.coerce.number()
+})
+
+export const AssignActionItemBody = zod.object({
+  "user_id": zod.number(),
+  "expected_updated_at": zod.coerce.date().nullish()
+})
+
+export const assignActionItemResponseStatusDefault = `open`;
+export const assignActionItemResponsePriorityDefault = `medium`;
+export const assignActionItemResponseSourceDefault = `manual`;
+
+export const AssignActionItemResponse = zod.object({
+  "id": zod.number(),
+  "meeting_id": zod.number(),
+  "project_id": zod.number(),
+  "description": zod.string(),
+  "owner": zod.string(),
+  "due_date": zod.string().nullish(),
+  "status": zod.string().default(assignActionItemResponseStatusDefault),
+  "priority": zod.string().default(assignActionItemResponsePriorityDefault),
+  "source": zod.string().default(assignActionItemResponseSourceDefault),
+  "completed_at": zod.string().nullish(),
+  "updated_at": zod.coerce.date().nullish(),
+  "updated_by": zod.number().nullish(),
+  "owner_id": zod.number().nullish(),
+  "assigned_by": zod.number().nullish(),
+  "assigned_at": zod.coerce.date().nullish()
+})
+
+
+/**
+ * @summary Unassign the owner of an action item (Sprint 3)
+ */
+export const UnassignActionItemParams = zod.object({
+  "project_id": zod.coerce.number(),
+  "action_item_id": zod.coerce.number()
+})
+
+export const UnassignActionItemBody = zod.object({
+  "expected_updated_at": zod.coerce.date().nullish()
+})
+
+export const unassignActionItemResponseStatusDefault = `open`;
+export const unassignActionItemResponsePriorityDefault = `medium`;
+export const unassignActionItemResponseSourceDefault = `manual`;
+
+export const UnassignActionItemResponse = zod.object({
+  "id": zod.number(),
+  "meeting_id": zod.number(),
+  "project_id": zod.number(),
+  "description": zod.string(),
+  "owner": zod.string(),
+  "due_date": zod.string().nullish(),
+  "status": zod.string().default(unassignActionItemResponseStatusDefault),
+  "priority": zod.string().default(unassignActionItemResponsePriorityDefault),
+  "source": zod.string().default(unassignActionItemResponseSourceDefault),
+  "completed_at": zod.string().nullish(),
+  "updated_at": zod.coerce.date().nullish(),
+  "updated_by": zod.number().nullish(),
+  "owner_id": zod.number().nullish(),
+  "assigned_by": zod.number().nullish(),
+  "assigned_at": zod.coerce.date().nullish()
+})
+
+
+/**
+ * @summary List risks for a project
+ */
+export const ListProjectRisksParams = zod.object({
+  "project_id": zod.coerce.number()
+})
+
+export const listProjectRisksQueryAssignedToMeDefault = false;
+export const listProjectRisksQueryUnassignedDefault = false;
+
+export const ListProjectRisksQueryParams = zod.object({
+  "assigned_to_me": zod.coerce.boolean().default(listProjectRisksQueryAssignedToMeDefault),
+  "assigned_to": zod.coerce.number().optional(),
+  "unassigned": zod.coerce.boolean().default(listProjectRisksQueryUnassignedDefault)
+})
+
+export const listProjectRisksResponseProbabilityDefault = `medium`;
+export const listProjectRisksResponseImpactDefault = `medium`;
+export const listProjectRisksResponseStatusDefault = `open`;
+
+export const ListProjectRisksResponseItem = zod.object({
+  "id": zod.number(),
+  "project_id": zod.number(),
+  "title": zod.string(),
+  "description": zod.string().nullish(),
+  "probability": zod.string().default(listProjectRisksResponseProbabilityDefault),
+  "impact": zod.string().default(listProjectRisksResponseImpactDefault),
+  "status": zod.string().default(listProjectRisksResponseStatusDefault),
+  "owner": zod.string().nullish(),
+  "mitigation": zod.string().nullish(),
+  "updated_at": zod.coerce.date().nullish(),
+  "updated_by": zod.number().nullish(),
+  "owner_id": zod.number().nullish(),
+  "assigned_by": zod.number().nullish(),
+  "assigned_at": zod.coerce.date().nullish()
+})
+export const ListProjectRisksResponse = zod.array(ListProjectRisksResponseItem)
+
+
+/**
+ * @summary Create a new project risk
+ */
+export const CreateProjectRiskParams = zod.object({
+  "project_id": zod.coerce.number()
+})
+
+export const createProjectRiskBodyProbabilityDefault = `medium`;
+export const createProjectRiskBodyImpactDefault = `medium`;
+export const createProjectRiskBodyStatusDefault = `open`;
+
+export const CreateProjectRiskBody = zod.object({
+  "title": zod.string(),
+  "description": zod.string().nullish(),
+  "probability": zod.string().default(createProjectRiskBodyProbabilityDefault),
+  "impact": zod.string().default(createProjectRiskBodyImpactDefault),
+  "status": zod.string().default(createProjectRiskBodyStatusDefault),
+  "owner": zod.string().nullish(),
+  "mitigation": zod.string().nullish()
+})
+
+export const createProjectRiskResponseProbabilityDefault = `medium`;
+export const createProjectRiskResponseImpactDefault = `medium`;
+export const createProjectRiskResponseStatusDefault = `open`;
+
+export const CreateProjectRiskResponse = zod.object({
+  "id": zod.number(),
+  "project_id": zod.number(),
+  "title": zod.string(),
+  "description": zod.string().nullish(),
+  "probability": zod.string().default(createProjectRiskResponseProbabilityDefault),
+  "impact": zod.string().default(createProjectRiskResponseImpactDefault),
+  "status": zod.string().default(createProjectRiskResponseStatusDefault),
+  "owner": zod.string().nullish(),
+  "mitigation": zod.string().nullish(),
+  "updated_at": zod.coerce.date().nullish(),
+  "updated_by": zod.number().nullish(),
+  "owner_id": zod.number().nullish(),
+  "assigned_by": zod.number().nullish(),
+  "assigned_at": zod.coerce.date().nullish()
+})
+
+
+/**
+ * @summary Update a risk's workflow status (Sprint 2)
+ */
+export const UpdateProjectRiskParams = zod.object({
+  "project_id": zod.coerce.number(),
+  "risk_id": zod.coerce.number()
+})
+
+export const UpdateProjectRiskBody = zod.object({
+  "status": zod.string().nullish(),
+  "owner": zod.string().nullish(),
+  "mitigation": zod.string().nullish(),
+  "probability": zod.string().nullish(),
+  "impact": zod.string().nullish(),
+  "expected_updated_at": zod.coerce.date().nullish()
+})
+
+export const updateProjectRiskResponseProbabilityDefault = `medium`;
+export const updateProjectRiskResponseImpactDefault = `medium`;
+export const updateProjectRiskResponseStatusDefault = `open`;
+
+export const UpdateProjectRiskResponse = zod.object({
+  "id": zod.number(),
+  "project_id": zod.number(),
+  "title": zod.string(),
+  "description": zod.string().nullish(),
+  "probability": zod.string().default(updateProjectRiskResponseProbabilityDefault),
+  "impact": zod.string().default(updateProjectRiskResponseImpactDefault),
+  "status": zod.string().default(updateProjectRiskResponseStatusDefault),
+  "owner": zod.string().nullish(),
+  "mitigation": zod.string().nullish(),
+  "updated_at": zod.coerce.date().nullish(),
+  "updated_by": zod.number().nullish(),
+  "owner_id": zod.number().nullish(),
+  "assigned_by": zod.number().nullish(),
+  "assigned_at": zod.coerce.date().nullish()
+})
+
+
+/**
+ * @summary Assign/reassign the owner of a risk (Sprint 3)
+ */
+export const AssignProjectRiskParams = zod.object({
+  "project_id": zod.coerce.number(),
+  "risk_id": zod.coerce.number()
+})
+
+export const AssignProjectRiskBody = zod.object({
+  "user_id": zod.number(),
+  "expected_updated_at": zod.coerce.date().nullish()
+})
+
+export const assignProjectRiskResponseProbabilityDefault = `medium`;
+export const assignProjectRiskResponseImpactDefault = `medium`;
+export const assignProjectRiskResponseStatusDefault = `open`;
+
+export const AssignProjectRiskResponse = zod.object({
+  "id": zod.number(),
+  "project_id": zod.number(),
+  "title": zod.string(),
+  "description": zod.string().nullish(),
+  "probability": zod.string().default(assignProjectRiskResponseProbabilityDefault),
+  "impact": zod.string().default(assignProjectRiskResponseImpactDefault),
+  "status": zod.string().default(assignProjectRiskResponseStatusDefault),
+  "owner": zod.string().nullish(),
+  "mitigation": zod.string().nullish(),
+  "updated_at": zod.coerce.date().nullish(),
+  "updated_by": zod.number().nullish(),
+  "owner_id": zod.number().nullish(),
+  "assigned_by": zod.number().nullish(),
+  "assigned_at": zod.coerce.date().nullish()
+})
+
+
+/**
+ * @summary Unassign the owner of a risk (Sprint 3)
+ */
+export const UnassignProjectRiskParams = zod.object({
+  "project_id": zod.coerce.number(),
+  "risk_id": zod.coerce.number()
+})
+
+export const UnassignProjectRiskBody = zod.object({
+  "expected_updated_at": zod.coerce.date().nullish()
+})
+
+export const unassignProjectRiskResponseProbabilityDefault = `medium`;
+export const unassignProjectRiskResponseImpactDefault = `medium`;
+export const unassignProjectRiskResponseStatusDefault = `open`;
+
+export const UnassignProjectRiskResponse = zod.object({
+  "id": zod.number(),
+  "project_id": zod.number(),
+  "title": zod.string(),
+  "description": zod.string().nullish(),
+  "probability": zod.string().default(unassignProjectRiskResponseProbabilityDefault),
+  "impact": zod.string().default(unassignProjectRiskResponseImpactDefault),
+  "status": zod.string().default(unassignProjectRiskResponseStatusDefault),
+  "owner": zod.string().nullish(),
+  "mitigation": zod.string().nullish(),
+  "updated_at": zod.coerce.date().nullish(),
+  "updated_by": zod.number().nullish(),
+  "owner_id": zod.number().nullish(),
+  "assigned_by": zod.number().nullish(),
+  "assigned_at": zod.coerce.date().nullish()
+})
+
+
+/**
+ * @summary List issues for a project
+ */
+export const ListProjectIssuesParams = zod.object({
+  "project_id": zod.coerce.number()
+})
+
+export const listProjectIssuesQueryAssignedToMeDefault = false;
+export const listProjectIssuesQueryUnassignedDefault = false;
+
+export const ListProjectIssuesQueryParams = zod.object({
+  "assigned_to_me": zod.coerce.boolean().default(listProjectIssuesQueryAssignedToMeDefault),
+  "assigned_to": zod.coerce.number().optional(),
+  "unassigned": zod.coerce.boolean().default(listProjectIssuesQueryUnassignedDefault)
+})
+
+export const listProjectIssuesResponseSeverityDefault = `medium`;
+export const listProjectIssuesResponseStatusDefault = `open`;
+
+export const ListProjectIssuesResponseItem = zod.object({
+  "id": zod.number(),
+  "project_id": zod.number(),
+  "title": zod.string(),
+  "description": zod.string().nullish(),
+  "severity": zod.string().default(listProjectIssuesResponseSeverityDefault),
+  "status": zod.string().default(listProjectIssuesResponseStatusDefault),
+  "owner": zod.string().nullish(),
+  "resolution": zod.string().nullish(),
+  "resolved_at": zod.string().nullish(),
+  "updated_at": zod.coerce.date().nullish(),
+  "updated_by": zod.number().nullish(),
+  "owner_id": zod.number().nullish(),
+  "assigned_by": zod.number().nullish(),
+  "assigned_at": zod.coerce.date().nullish()
+})
+export const ListProjectIssuesResponse = zod.array(ListProjectIssuesResponseItem)
+
+
+/**
+ * @summary Create a new project issue
+ */
+export const CreateProjectIssueParams = zod.object({
+  "project_id": zod.coerce.number()
+})
+
+export const createProjectIssueBodySeverityDefault = `medium`;
+export const createProjectIssueBodyStatusDefault = `open`;
+
+export const CreateProjectIssueBody = zod.object({
+  "title": zod.string(),
+  "description": zod.string().nullish(),
+  "severity": zod.string().default(createProjectIssueBodySeverityDefault),
+  "status": zod.string().default(createProjectIssueBodyStatusDefault),
+  "owner": zod.string().nullish(),
+  "resolution": zod.string().nullish()
+})
+
+export const createProjectIssueResponseSeverityDefault = `medium`;
+export const createProjectIssueResponseStatusDefault = `open`;
+
+export const CreateProjectIssueResponse = zod.object({
+  "id": zod.number(),
+  "project_id": zod.number(),
+  "title": zod.string(),
+  "description": zod.string().nullish(),
+  "severity": zod.string().default(createProjectIssueResponseSeverityDefault),
+  "status": zod.string().default(createProjectIssueResponseStatusDefault),
+  "owner": zod.string().nullish(),
+  "resolution": zod.string().nullish(),
+  "resolved_at": zod.string().nullish(),
+  "updated_at": zod.coerce.date().nullish(),
+  "updated_by": zod.number().nullish(),
+  "owner_id": zod.number().nullish(),
+  "assigned_by": zod.number().nullish(),
+  "assigned_at": zod.coerce.date().nullish()
+})
+
+
+/**
+ * @summary Update an issue's workflow status (Sprint 2)
+ */
+export const UpdateProjectIssueParams = zod.object({
+  "project_id": zod.coerce.number(),
+  "issue_id": zod.coerce.number()
+})
+
+export const UpdateProjectIssueBody = zod.object({
+  "status": zod.string().nullish(),
+  "owner": zod.string().nullish(),
+  "resolution": zod.string().nullish(),
+  "resolved_at": zod.string().nullish(),
+  "severity": zod.string().nullish(),
+  "expected_updated_at": zod.coerce.date().nullish()
+})
+
+export const updateProjectIssueResponseSeverityDefault = `medium`;
+export const updateProjectIssueResponseStatusDefault = `open`;
+
+export const UpdateProjectIssueResponse = zod.object({
+  "id": zod.number(),
+  "project_id": zod.number(),
+  "title": zod.string(),
+  "description": zod.string().nullish(),
+  "severity": zod.string().default(updateProjectIssueResponseSeverityDefault),
+  "status": zod.string().default(updateProjectIssueResponseStatusDefault),
+  "owner": zod.string().nullish(),
+  "resolution": zod.string().nullish(),
+  "resolved_at": zod.string().nullish(),
+  "updated_at": zod.coerce.date().nullish(),
+  "updated_by": zod.number().nullish(),
+  "owner_id": zod.number().nullish(),
+  "assigned_by": zod.number().nullish(),
+  "assigned_at": zod.coerce.date().nullish()
+})
+
+
+/**
+ * @summary Assign/reassign the owner of an issue (Sprint 3)
+ */
+export const AssignProjectIssueParams = zod.object({
+  "project_id": zod.coerce.number(),
+  "issue_id": zod.coerce.number()
+})
+
+export const AssignProjectIssueBody = zod.object({
+  "user_id": zod.number(),
+  "expected_updated_at": zod.coerce.date().nullish()
+})
+
+export const assignProjectIssueResponseSeverityDefault = `medium`;
+export const assignProjectIssueResponseStatusDefault = `open`;
+
+export const AssignProjectIssueResponse = zod.object({
+  "id": zod.number(),
+  "project_id": zod.number(),
+  "title": zod.string(),
+  "description": zod.string().nullish(),
+  "severity": zod.string().default(assignProjectIssueResponseSeverityDefault),
+  "status": zod.string().default(assignProjectIssueResponseStatusDefault),
+  "owner": zod.string().nullish(),
+  "resolution": zod.string().nullish(),
+  "resolved_at": zod.string().nullish(),
+  "updated_at": zod.coerce.date().nullish(),
+  "updated_by": zod.number().nullish(),
+  "owner_id": zod.number().nullish(),
+  "assigned_by": zod.number().nullish(),
+  "assigned_at": zod.coerce.date().nullish()
+})
+
+
+/**
+ * @summary Unassign the owner of an issue (Sprint 3)
+ */
+export const UnassignProjectIssueParams = zod.object({
+  "project_id": zod.coerce.number(),
+  "issue_id": zod.coerce.number()
+})
+
+export const UnassignProjectIssueBody = zod.object({
+  "expected_updated_at": zod.coerce.date().nullish()
+})
+
+export const unassignProjectIssueResponseSeverityDefault = `medium`;
+export const unassignProjectIssueResponseStatusDefault = `open`;
+
+export const UnassignProjectIssueResponse = zod.object({
+  "id": zod.number(),
+  "project_id": zod.number(),
+  "title": zod.string(),
+  "description": zod.string().nullish(),
+  "severity": zod.string().default(unassignProjectIssueResponseSeverityDefault),
+  "status": zod.string().default(unassignProjectIssueResponseStatusDefault),
+  "owner": zod.string().nullish(),
+  "resolution": zod.string().nullish(),
+  "resolved_at": zod.string().nullish(),
+  "updated_at": zod.coerce.date().nullish(),
+  "updated_by": zod.number().nullish(),
+  "owner_id": zod.number().nullish(),
+  "assigned_by": zod.number().nullish(),
+  "assigned_at": zod.coerce.date().nullish()
+})
+
+
+/**
+ * @summary List the caller's own notifications
+ */
+export const listNotificationsQueryUnreadOnlyDefault = false;
+export const listNotificationsQuerySkipDefault = 0;
+export const listNotificationsQueryLimitDefault = 20;
+
+export const ListNotificationsQueryParams = zod.object({
+  "unread_only": zod.coerce.boolean().default(listNotificationsQueryUnreadOnlyDefault),
+  "event_type": zod.coerce.string().optional(),
+  "project_id": zod.coerce.number().optional(),
+  "severity": zod.coerce.string().optional(),
+  "created_after": zod.date().optional(),
+  "created_before": zod.date().optional(),
+  "skip": zod.coerce.number().default(listNotificationsQuerySkipDefault),
+  "limit": zod.coerce.number().default(listNotificationsQueryLimitDefault)
+})
+
+export const ListNotificationsResponseItem = zod.object({
+  "id": zod.number(),
+  "organization_id": zod.number(),
+  "recipient_user_id": zod.number(),
+  "actor_user_id": zod.number().nullish(),
+  "project_id": zod.number().nullish(),
+  "event_type": zod.string(),
+  "entity_type": zod.string(),
+  "entity_id": zod.number(),
+  "title": zod.string(),
+  "message": zod.string(),
+  "severity": zod.string(),
+  "action_url": zod.string().nullish(),
+  "is_read": zod.boolean(),
+  "read_at": zod.coerce.date().nullish(),
+  "created_at": zod.coerce.date()
+})
+export const ListNotificationsResponse = zod.array(ListNotificationsResponseItem)
+
+
+/**
+ * @summary Unread/total counts for the caller
+ */
+export const GetNotificationsSummaryResponse = zod.object({
+  "unread_count": zod.number(),
+  "total_count": zod.number(),
+  "unread_by_severity": zod.record(zod.string(), zod.number())
+})
+
+
+/**
+ * @summary Mark a single notification read
+ */
+export const MarkNotificationReadParams = zod.object({
+  "notification_id": zod.coerce.number()
+})
+
+export const MarkNotificationReadResponse = zod.object({
+  "id": zod.number(),
+  "organization_id": zod.number(),
+  "recipient_user_id": zod.number(),
+  "actor_user_id": zod.number().nullish(),
+  "project_id": zod.number().nullish(),
+  "event_type": zod.string(),
+  "entity_type": zod.string(),
+  "entity_id": zod.number(),
+  "title": zod.string(),
+  "message": zod.string(),
+  "severity": zod.string(),
+  "action_url": zod.string().nullish(),
+  "is_read": zod.boolean(),
+  "read_at": zod.coerce.date().nullish(),
+  "created_at": zod.coerce.date()
+})
+
+
+/**
+ * @summary Mark all of the caller's unread notifications read
+ */
+export const MarkAllNotificationsReadResponse = zod.object({
+  "updated_count": zod.number()
+})
+
+
+/**
+ * @summary Unified feed of work assigned to the caller
+ */
+export const listMyWorkQueryOpenOnlyDefault = false;
+export const listMyWorkQueryOverdueDefault = false;
+export const listMyWorkQueryDueSoonDefault = false;
+export const listMyWorkQuerySkipDefault = 0;
+export const listMyWorkQueryLimitDefault = 20;
+
+export const ListMyWorkQueryParams = zod.object({
+  "entity_type": zod.enum(['project_risk', 'project_issue', 'action_item', 'safety_event', 'ncr', 'purchase_request', 'approval']).optional(),
+  "project_id": zod.coerce.number().optional(),
+  "status": zod.coerce.string().optional(),
+  "open_only": zod.coerce.boolean().default(listMyWorkQueryOpenOnlyDefault),
+  "overdue": zod.coerce.boolean().default(listMyWorkQueryOverdueDefault),
+  "due_soon": zod.coerce.boolean().default(listMyWorkQueryDueSoonDefault),
+  "skip": zod.coerce.number().default(listMyWorkQuerySkipDefault),
+  "limit": zod.coerce.number().default(listMyWorkQueryLimitDefault)
+})
+
+export const ListMyWorkResponseItem = zod.object({
+  "entity_type": zod.string(),
+  "entity_id": zod.number(),
+  "project_id": zod.number().nullish(),
+  "project_code": zod.string().nullish(),
+  "title": zod.string(),
+  "status": zod.string(),
+  "priority": zod.string().nullish(),
+  "due_date": zod.string().nullish(),
+  "is_overdue": zod.boolean(),
+  "is_due_soon": zod.boolean(),
+  "updated_at": zod.coerce.date(),
+  "action_url": zod.string()
+})
+export const ListMyWorkResponse = zod.array(ListMyWorkResponseItem)
+
+
+/**
+ * @summary List approval requests
+ */
+export const listApprovalsQueryAssignedToMeDefault = false;
+export const listApprovalsQueryRequestedByMeDefault = false;
+export const listApprovalsQueryOverdueDefault = false;
+export const listApprovalsQueryDueSoonDefault = false;
+export const listApprovalsQuerySkipDefault = 0;
+export const listApprovalsQueryLimitDefault = 20;
+
+export const ListApprovalsQueryParams = zod.object({
+  "status": zod.coerce.string().optional(),
+  "entity_type": zod.coerce.string().optional(),
+  "project_id": zod.coerce.number().optional(),
+  "assigned_to_me": zod.coerce.boolean().default(listApprovalsQueryAssignedToMeDefault),
+  "requested_by_me": zod.coerce.boolean().default(listApprovalsQueryRequestedByMeDefault),
+  "overdue": zod.coerce.boolean().default(listApprovalsQueryOverdueDefault),
+  "due_soon": zod.coerce.boolean().default(listApprovalsQueryDueSoonDefault),
+  "skip": zod.coerce.number().default(listApprovalsQuerySkipDefault),
+  "limit": zod.coerce.number().default(listApprovalsQueryLimitDefault)
+})
+
+export const ListApprovalsResponseItem = zod.object({
+  "id": zod.number(),
+  "organization_id": zod.number(),
+  "project_id": zod.number().nullish(),
+  "entity_type": zod.string(),
+  "entity_id": zod.number(),
+  "requested_by_user_id": zod.number().nullish(),
+  "assigned_reviewer_id": zod.number().nullish(),
+  "status": zod.enum(['Pending', 'Under Review', 'Approved', 'Rejected', 'Returned', 'Cancelled']),
+  "risk_level": zod.string(),
+  "review_note": zod.string().nullish(),
+  "reviewed_by_user_id": zod.number().nullish(),
+  "reviewed_at": zod.coerce.date().nullish(),
+  "due_at": zod.coerce.date().nullish(),
+  "target_version": zod.number().nullish(),
+  "created_at": zod.coerce.date(),
+  "updated_at": zod.coerce.date()
+})
+export const ListApprovalsResponse = zod.array(ListApprovalsResponseItem)
+
+
+/**
+ * @summary Create a new approval request
+ */
+export const createApprovalBodyRiskLevelDefault = `medium`;
+
+export const CreateApprovalBody = zod.object({
+  "entity_type": zod.enum(['purchase_request', 'change_order', 'claim', 'document']),
+  "entity_id": zod.number(),
+  "risk_level": zod.string().default(createApprovalBodyRiskLevelDefault),
+  "review_note": zod.string().nullish(),
+  "assigned_reviewer_id": zod.number().nullish(),
+  "due_at": zod.coerce.date().nullish()
+})
+
+export const CreateApprovalResponse = zod.object({
+  "id": zod.number(),
+  "organization_id": zod.number(),
+  "project_id": zod.number().nullish(),
+  "entity_type": zod.string(),
+  "entity_id": zod.number(),
+  "requested_by_user_id": zod.number().nullish(),
+  "assigned_reviewer_id": zod.number().nullish(),
+  "status": zod.enum(['Pending', 'Under Review', 'Approved', 'Rejected', 'Returned', 'Cancelled']),
+  "risk_level": zod.string(),
+  "review_note": zod.string().nullish(),
+  "reviewed_by_user_id": zod.number().nullish(),
+  "reviewed_at": zod.coerce.date().nullish(),
+  "due_at": zod.coerce.date().nullish(),
+  "target_version": zod.number().nullish(),
+  "created_at": zod.coerce.date(),
+  "updated_at": zod.coerce.date()
+})
+
+
+/**
+ * @summary Approval counts for the caller (as reviewer or requester)
+ */
+export const GetApprovalsSummaryResponse = zod.object({
+  "by_status": zod.record(zod.string(), zod.number()),
+  "overdue_count": zod.number(),
+  "due_soon_count": zod.number()
+})
+
+
+/**
+ * @summary Get a single approval request
+ */
+export const GetApprovalParams = zod.object({
+  "approval_id": zod.coerce.number()
+})
+
+export const GetApprovalResponse = zod.object({
+  "id": zod.number(),
+  "organization_id": zod.number(),
+  "project_id": zod.number().nullish(),
+  "entity_type": zod.string(),
+  "entity_id": zod.number(),
+  "requested_by_user_id": zod.number().nullish(),
+  "assigned_reviewer_id": zod.number().nullish(),
+  "status": zod.enum(['Pending', 'Under Review', 'Approved', 'Rejected', 'Returned', 'Cancelled']),
+  "risk_level": zod.string(),
+  "review_note": zod.string().nullish(),
+  "reviewed_by_user_id": zod.number().nullish(),
+  "reviewed_at": zod.coerce.date().nullish(),
+  "due_at": zod.coerce.date().nullish(),
+  "target_version": zod.number().nullish(),
+  "created_at": zod.coerce.date(),
+  "updated_at": zod.coerce.date()
+})
+
+
+/**
+ * @summary Append-only lifecycle history for an approval request
+ */
+export const GetApprovalHistoryParams = zod.object({
+  "approval_id": zod.coerce.number()
+})
+
+export const GetApprovalHistoryResponseItem = zod.object({
+  "id": zod.number(),
+  "approval_request_id": zod.number(),
+  "previous_status": zod.string().nullish(),
+  "new_status": zod.string(),
+  "actor_user_id": zod.number().nullish(),
+  "note": zod.string().nullish(),
+  "created_at": zod.coerce.date()
+})
+export const GetApprovalHistoryResponse = zod.array(GetApprovalHistoryResponseItem)
+
+
+/**
+ * @summary Assign/reassign the reviewer (manager authority only)
+ */
+export const AssignApprovalReviewerParams = zod.object({
+  "approval_id": zod.coerce.number()
+})
+
+export const AssignApprovalReviewerBody = zod.object({
+  "reviewer_user_id": zod.number(),
+  "expected_updated_at": zod.coerce.date().nullish()
+})
+
+export const AssignApprovalReviewerResponse = zod.object({
+  "id": zod.number(),
+  "organization_id": zod.number(),
+  "project_id": zod.number().nullish(),
+  "entity_type": zod.string(),
+  "entity_id": zod.number(),
+  "requested_by_user_id": zod.number().nullish(),
+  "assigned_reviewer_id": zod.number().nullish(),
+  "status": zod.enum(['Pending', 'Under Review', 'Approved', 'Rejected', 'Returned', 'Cancelled']),
+  "risk_level": zod.string(),
+  "review_note": zod.string().nullish(),
+  "reviewed_by_user_id": zod.number().nullish(),
+  "reviewed_at": zod.coerce.date().nullish(),
+  "due_at": zod.coerce.date().nullish(),
+  "target_version": zod.number().nullish(),
+  "created_at": zod.coerce.date(),
+  "updated_at": zod.coerce.date()
+})
+
+
+/**
+ * @summary Move an approval request into Under Review
+ */
+export const StartApprovalReviewParams = zod.object({
+  "approval_id": zod.coerce.number()
+})
+
+export const StartApprovalReviewBody = zod.object({
+  "review_note": zod.string().nullish(),
+  "expected_updated_at": zod.coerce.date().nullish()
+})
+
+export const StartApprovalReviewResponse = zod.object({
+  "id": zod.number(),
+  "organization_id": zod.number(),
+  "project_id": zod.number().nullish(),
+  "entity_type": zod.string(),
+  "entity_id": zod.number(),
+  "requested_by_user_id": zod.number().nullish(),
+  "assigned_reviewer_id": zod.number().nullish(),
+  "status": zod.enum(['Pending', 'Under Review', 'Approved', 'Rejected', 'Returned', 'Cancelled']),
+  "risk_level": zod.string(),
+  "review_note": zod.string().nullish(),
+  "reviewed_by_user_id": zod.number().nullish(),
+  "reviewed_at": zod.coerce.date().nullish(),
+  "due_at": zod.coerce.date().nullish(),
+  "target_version": zod.number().nullish(),
+  "created_at": zod.coerce.date(),
+  "updated_at": zod.coerce.date()
+})
+
+
+/**
+ * @summary Approve an approval request
+ */
+export const ApproveApprovalParams = zod.object({
+  "approval_id": zod.coerce.number()
+})
+
+export const ApproveApprovalBody = zod.object({
+  "review_note": zod.string().nullish(),
+  "expected_updated_at": zod.coerce.date().nullish()
+})
+
+export const ApproveApprovalResponse = zod.object({
+  "id": zod.number(),
+  "organization_id": zod.number(),
+  "project_id": zod.number().nullish(),
+  "entity_type": zod.string(),
+  "entity_id": zod.number(),
+  "requested_by_user_id": zod.number().nullish(),
+  "assigned_reviewer_id": zod.number().nullish(),
+  "status": zod.enum(['Pending', 'Under Review', 'Approved', 'Rejected', 'Returned', 'Cancelled']),
+  "risk_level": zod.string(),
+  "review_note": zod.string().nullish(),
+  "reviewed_by_user_id": zod.number().nullish(),
+  "reviewed_at": zod.coerce.date().nullish(),
+  "due_at": zod.coerce.date().nullish(),
+  "target_version": zod.number().nullish(),
+  "created_at": zod.coerce.date(),
+  "updated_at": zod.coerce.date()
+})
+
+
+/**
+ * @summary Reject an approval request (review_note required)
+ */
+export const RejectApprovalParams = zod.object({
+  "approval_id": zod.coerce.number()
+})
+
+export const RejectApprovalBody = zod.object({
+  "review_note": zod.string(),
+  "expected_updated_at": zod.coerce.date().nullish()
+})
+
+export const RejectApprovalResponse = zod.object({
+  "id": zod.number(),
+  "organization_id": zod.number(),
+  "project_id": zod.number().nullish(),
+  "entity_type": zod.string(),
+  "entity_id": zod.number(),
+  "requested_by_user_id": zod.number().nullish(),
+  "assigned_reviewer_id": zod.number().nullish(),
+  "status": zod.enum(['Pending', 'Under Review', 'Approved', 'Rejected', 'Returned', 'Cancelled']),
+  "risk_level": zod.string(),
+  "review_note": zod.string().nullish(),
+  "reviewed_by_user_id": zod.number().nullish(),
+  "reviewed_at": zod.coerce.date().nullish(),
+  "due_at": zod.coerce.date().nullish(),
+  "target_version": zod.number().nullish(),
+  "created_at": zod.coerce.date(),
+  "updated_at": zod.coerce.date()
+})
+
+
+/**
+ * @summary Return an approval request for changes (review_note required)
+ */
+export const ReturnApprovalParams = zod.object({
+  "approval_id": zod.coerce.number()
+})
+
+export const ReturnApprovalBody = zod.object({
+  "review_note": zod.string(),
+  "expected_updated_at": zod.coerce.date().nullish()
+})
+
+export const ReturnApprovalResponse = zod.object({
+  "id": zod.number(),
+  "organization_id": zod.number(),
+  "project_id": zod.number().nullish(),
+  "entity_type": zod.string(),
+  "entity_id": zod.number(),
+  "requested_by_user_id": zod.number().nullish(),
+  "assigned_reviewer_id": zod.number().nullish(),
+  "status": zod.enum(['Pending', 'Under Review', 'Approved', 'Rejected', 'Returned', 'Cancelled']),
+  "risk_level": zod.string(),
+  "review_note": zod.string().nullish(),
+  "reviewed_by_user_id": zod.number().nullish(),
+  "reviewed_at": zod.coerce.date().nullish(),
+  "due_at": zod.coerce.date().nullish(),
+  "target_version": zod.number().nullish(),
+  "created_at": zod.coerce.date(),
+  "updated_at": zod.coerce.date()
+})
+
+
+/**
+ * @summary Cancel an approval request (requester or manager only)
+ */
+export const CancelApprovalParams = zod.object({
+  "approval_id": zod.coerce.number()
+})
+
+export const CancelApprovalBody = zod.object({
+  "review_note": zod.string().nullish(),
+  "expected_updated_at": zod.coerce.date().nullish()
+})
+
+export const CancelApprovalResponse = zod.object({
+  "id": zod.number(),
+  "organization_id": zod.number(),
+  "project_id": zod.number().nullish(),
+  "entity_type": zod.string(),
+  "entity_id": zod.number(),
+  "requested_by_user_id": zod.number().nullish(),
+  "assigned_reviewer_id": zod.number().nullish(),
+  "status": zod.enum(['Pending', 'Under Review', 'Approved', 'Rejected', 'Returned', 'Cancelled']),
+  "risk_level": zod.string(),
+  "review_note": zod.string().nullish(),
+  "reviewed_by_user_id": zod.number().nullish(),
+  "reviewed_at": zod.coerce.date().nullish(),
+  "due_at": zod.coerce.date().nullish(),
+  "target_version": zod.number().nullish(),
+  "created_at": zod.coerce.date(),
+  "updated_at": zod.coerce.date()
+})
+
+
+/**
+ * @summary List a document's version history, newest first
+ */
+export const ListDocumentVersionsParams = zod.object({
+  "document_id": zod.coerce.number()
+})
+
+export const ListDocumentVersionsResponseItem = zod.object({
+  "version_number": zod.number(),
+  "original_filename": zod.string(),
+  "mime_type": zod.string(),
+  "file_size": zod.number(),
+  "checksum": zod.string(),
+  "uploaded_at": zod.coerce.date(),
+  "uploaded_by": zod.number().nullish(),
+  "is_current": zod.boolean()
+})
+export const ListDocumentVersionsResponse = zod.array(ListDocumentVersionsResponseItem)
+
+
+/**
+ * @summary Upload a new version of a document's file
+ */
+export const UploadDocumentVersionParams = zod.object({
+  "document_id": zod.coerce.number()
+})
+
+export const UploadDocumentVersionBody = zod.object({
+  "file": zod.instanceof(File)
+})
+
+export const UploadDocumentVersionResponse = zod.object({
+  "version_number": zod.number(),
+  "original_filename": zod.string(),
+  "mime_type": zod.string(),
+  "file_size": zod.number(),
+  "checksum": zod.string(),
+  "uploaded_at": zod.coerce.date(),
+  "uploaded_by": zod.number().nullish(),
+  "is_current": zod.boolean()
+}).and(zod.object({
+  "is_duplicate": zod.boolean()
+}))
+
+
+/**
+ * @summary Download the current (or a specific ?version=N) file
+ */
+export const DownloadDocumentParams = zod.object({
+  "document_id": zod.coerce.number()
+})
+
+export const DownloadDocumentQueryParams = zod.object({
+  "version": zod.coerce.number().optional()
+})
+
+export const DownloadDocumentResponse = zod.unknown()
+
+
+/**
+ * @summary Soft-archive a document (nothing is ever permanently removed)
+ */
+export const ArchiveDocumentParams = zod.object({
+  "document_id": zod.coerce.number()
+})
+
+export const ArchiveDocumentResponse = zod.object({
+  "id": zod.number(),
+  "project_id": zod.number().nullish(),
+  "organization_id": zod.number().nullish(),
+  "doc_type": zod.string(),
+  "title": zod.string(),
+  "doc_date": zod.string(),
+  "content_summary": zod.string(),
+  "original_filename": zod.string().nullish(),
+  "mime_type": zod.string().nullish(),
+  "file_size": zod.number().nullish(),
+  "checksum": zod.string().nullish(),
+  "uploaded_at": zod.coerce.date().nullish(),
+  "uploaded_by": zod.number().nullish(),
+  "updated_at": zod.coerce.date().nullish(),
+  "version_number": zod.number().nullish(),
+  "is_archived": zod.boolean()
+})
+
+
+/**
+ * @summary Unarchive a document
+ */
+export const UnarchiveDocumentParams = zod.object({
+  "document_id": zod.coerce.number()
+})
+
+export const UnarchiveDocumentResponse = zod.object({
+  "id": zod.number(),
+  "project_id": zod.number().nullish(),
+  "organization_id": zod.number().nullish(),
+  "doc_type": zod.string(),
+  "title": zod.string(),
+  "doc_date": zod.string(),
+  "content_summary": zod.string(),
+  "original_filename": zod.string().nullish(),
+  "mime_type": zod.string().nullish(),
+  "file_size": zod.number().nullish(),
+  "checksum": zod.string().nullish(),
+  "uploaded_at": zod.coerce.date().nullish(),
+  "uploaded_by": zod.number().nullish(),
+  "updated_at": zod.coerce.date().nullish(),
+  "version_number": zod.number().nullish(),
+  "is_archived": zod.boolean()
+})
+
+
+/**
+ * @summary Get a single claim by ID
+ */
+export const GetProjectClaimParams = zod.object({
+  "project_id": zod.coerce.number(),
+  "claim_id": zod.coerce.number()
+})
+
+export const GetProjectClaimResponse = zod.object({
+  "id": zod.number(),
+  "project_id": zod.number(),
+  "claim_number": zod.string(),
+  "claim_type": zod.string(),
+  "amount": zod.number(),
+  "status": zod.string(),
+  "narrative": zod.string()
+})
+
+
+/**
+ * @summary List all users in the caller's organization (admin role only)
+ */
+export const ListAdminUsersResponseItem = zod.object({
+  "id": zod.number(),
+  "email": zod.string(),
+  "full_name": zod.string().nullish(),
+  "role": zod.string(),
+  "is_active": zod.boolean(),
+  "organization_id": zod.number().nullish(),
+  "created_at": zod.coerce.date(),
+  "last_login": zod.coerce.date().nullish(),
+  "must_change_password": zod.boolean()
+})
+export const ListAdminUsersResponse = zod.array(ListAdminUsersResponseItem)
 
 

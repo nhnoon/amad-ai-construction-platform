@@ -58,6 +58,7 @@ import {
 } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { useQuery } from "@tanstack/react-query";
+import { useGetNotificationsSummary } from "@workspace/api-client-react";
 import { getToken } from "../lib/auth";
 
 // ── Enterprise SaaS navigation (GitHub / Azure DevOps / Jira / Linear /
@@ -302,6 +303,11 @@ export function Layout({ children }: { children: ReactNode }) {
   });
   void alertsSummary; // reserved for a future nav badge — not rendered yet, kept fetched so it's ready without a second wiring pass
 
+  const { data: notificationsSummary } = useGetNotificationsSummary({
+    query: { queryKey: ["notifications-summary-badge"], enabled: !!token, staleTime: 30_000, refetchInterval: 60_000 },
+  });
+  const unreadNotifications = notificationsSummary?.unread_count ?? 0;
+
   const isRtl = i18n.language === "ar";
 
   const toggleLanguage = () => {
@@ -441,6 +447,7 @@ export function Layout({ children }: { children: ReactNode }) {
                               active={matchesHref(location, item.href)}
                               indent
                               testId={`nav-${item.key.toLowerCase().replace(/[^a-z0-9]/g, "-")}`}
+                              badgeCount={item.key === "Notifications" ? unreadNotifications : undefined}
                             />
                           </div>
                         ))}
@@ -458,6 +465,7 @@ export function Layout({ children }: { children: ReactNode }) {
                         active={matchesHref(location, item.href)}
                         collapsed={collapsed}
                         testId={`nav-${item.key.toLowerCase().replace(/[^a-z0-9]/g, "-")}`}
+                        badgeCount={item.key === "Notifications" ? unreadNotifications : undefined}
                       />
                     ))}
                   </div>

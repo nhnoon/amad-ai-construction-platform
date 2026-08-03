@@ -3,7 +3,7 @@
  * Do not edit manually.
  * Api
  * Construction AI Platform — Phase 2 API (routes match FastAPI backend exactly)
- * OpenAPI spec version: 2.1.0
+ * OpenAPI spec version: 2.2.0
  */
 export interface HealthStatus {
   status: string;
@@ -127,6 +127,16 @@ export interface PurchaseRequest {
   /** @nullable */
   rework_reason?: string | null;
   created_at: string;
+  /** @nullable */
+  updated_at?: string | null;
+  /** @nullable */
+  updated_by?: number | null;
+  /** @nullable */
+  owner_id?: number | null;
+  /** @nullable */
+  assigned_by?: number | null;
+  /** @nullable */
+  assigned_at?: string | null;
 }
 
 export interface PurchaseOrder {
@@ -162,6 +172,17 @@ export interface SafetyEvent {
   severity: string;
   description: string;
   corrective_action: string;
+  status?: string;
+  /** @nullable */
+  updated_at?: string | null;
+  /** @nullable */
+  updated_by?: number | null;
+  /** @nullable */
+  owner_id?: number | null;
+  /** @nullable */
+  assigned_by?: number | null;
+  /** @nullable */
+  assigned_at?: string | null;
 }
 
 export interface Ncr {
@@ -176,6 +197,18 @@ export interface Ncr {
   root_cause: string;
   issue_date: string;
   status: string;
+  /** @nullable */
+  corrective_action?: string | null;
+  /** @nullable */
+  updated_at?: string | null;
+  /** @nullable */
+  updated_by?: number | null;
+  /** @nullable */
+  owner_id?: number | null;
+  /** @nullable */
+  assigned_by?: number | null;
+  /** @nullable */
+  assigned_at?: string | null;
 }
 
 export interface Meeting {
@@ -193,6 +226,427 @@ export interface ProjectDecision {
   decision_date: string;
   decision_text: string;
   owner: string;
+}
+
+export interface ProjectRisk {
+  id: number;
+  project_id: number;
+  title: string;
+  /** @nullable */
+  description?: string | null;
+  probability?: string;
+  impact?: string;
+  status: string;
+  /** @nullable */
+  owner?: string | null;
+  /** @nullable */
+  mitigation?: string | null;
+  /** @nullable */
+  updated_at?: string | null;
+  /** @nullable */
+  updated_by?: number | null;
+  /** @nullable */
+  owner_id?: number | null;
+  /** @nullable */
+  assigned_by?: number | null;
+  /** @nullable */
+  assigned_at?: string | null;
+}
+
+export interface ProjectRiskCreate {
+  title: string;
+  /** @nullable */
+  description?: string | null;
+  probability?: string;
+  impact?: string;
+  status?: string;
+  /** @nullable */
+  owner?: string | null;
+  /** @nullable */
+  mitigation?: string | null;
+}
+
+export interface ProjectRiskUpdate {
+  /** @nullable */
+  status?: string | null;
+  /** @nullable */
+  owner?: string | null;
+  /** @nullable */
+  mitigation?: string | null;
+  /** @nullable */
+  probability?: string | null;
+  /** @nullable */
+  impact?: string | null;
+  /** @nullable */
+  expected_updated_at?: string | null;
+}
+
+export interface ProjectIssue {
+  id: number;
+  project_id: number;
+  title: string;
+  /** @nullable */
+  description?: string | null;
+  severity?: string;
+  status: string;
+  /** @nullable */
+  owner?: string | null;
+  /** @nullable */
+  resolution?: string | null;
+  /** @nullable */
+  resolved_at?: string | null;
+  /** @nullable */
+  updated_at?: string | null;
+  /** @nullable */
+  updated_by?: number | null;
+  /** @nullable */
+  owner_id?: number | null;
+  /** @nullable */
+  assigned_by?: number | null;
+  /** @nullable */
+  assigned_at?: string | null;
+}
+
+export interface ProjectIssueCreate {
+  title: string;
+  /** @nullable */
+  description?: string | null;
+  severity?: string;
+  status?: string;
+  /** @nullable */
+  owner?: string | null;
+  /** @nullable */
+  resolution?: string | null;
+}
+
+export interface ProjectIssueUpdate {
+  /** @nullable */
+  status?: string | null;
+  /** @nullable */
+  owner?: string | null;
+  /** @nullable */
+  resolution?: string | null;
+  /** @nullable */
+  resolved_at?: string | null;
+  /** @nullable */
+  severity?: string | null;
+  /** @nullable */
+  expected_updated_at?: string | null;
+}
+
+export interface MeetingActionItem {
+  id: number;
+  meeting_id: number;
+  project_id: number;
+  description: string;
+  owner: string;
+  /** @nullable */
+  due_date?: string | null;
+  status: string;
+  priority: string;
+  source: string;
+  /** @nullable */
+  completed_at?: string | null;
+  /** @nullable */
+  updated_at?: string | null;
+  /** @nullable */
+  updated_by?: number | null;
+  /** @nullable */
+  owner_id?: number | null;
+  /** @nullable */
+  assigned_by?: number | null;
+  /** @nullable */
+  assigned_at?: string | null;
+}
+
+export interface MeetingActionItemUpdate {
+  /** @nullable */
+  status?: string | null;
+  /** @nullable */
+  owner?: string | null;
+  /** @nullable */
+  due_date?: string | null;
+  /** @nullable */
+  priority?: string | null;
+  /** @nullable */
+  completed_at?: string | null;
+  /** @nullable */
+  expected_updated_at?: string | null;
+}
+
+export interface SafetyEventUpdate {
+  /** @nullable */
+  status?: string | null;
+  /** @nullable */
+  severity?: string | null;
+  /** @nullable */
+  corrective_action?: string | null;
+  /** @nullable */
+  expected_updated_at?: string | null;
+}
+
+export interface NcrUpdate {
+  /** @nullable */
+  status?: string | null;
+  /** @nullable */
+  corrective_action?: string | null;
+  /** @nullable */
+  root_cause?: string | null;
+  /** @nullable */
+  expected_updated_at?: string | null;
+}
+
+export interface PurchaseRequestUpdate {
+  /** @nullable */
+  status?: string | null;
+  /** @nullable */
+  rework_reason?: string | null;
+  /** @nullable */
+  expected_updated_at?: string | null;
+}
+
+export interface AssignRequest {
+  user_id: number;
+  /** @nullable */
+  expected_updated_at?: string | null;
+}
+
+export interface UnassignRequest {
+  /** @nullable */
+  expected_updated_at?: string | null;
+}
+
+export interface Notification {
+  id: number;
+  organization_id: number;
+  recipient_user_id: number;
+  /** @nullable */
+  actor_user_id?: number | null;
+  /** @nullable */
+  project_id?: number | null;
+  event_type: string;
+  entity_type: string;
+  entity_id: number;
+  title: string;
+  message: string;
+  severity: string;
+  /** @nullable */
+  action_url?: string | null;
+  is_read: boolean;
+  /** @nullable */
+  read_at?: string | null;
+  created_at: string;
+}
+
+export type NotificationSummaryUnreadBySeverity = {[key: string]: number};
+
+export interface NotificationSummary {
+  unread_count: number;
+  total_count: number;
+  unread_by_severity: NotificationSummaryUnreadBySeverity;
+}
+
+export interface MarkAllReadOut {
+  updated_count: number;
+}
+
+export interface MyWorkItem {
+  entity_type: string;
+  entity_id: number;
+  /** @nullable */
+  project_id?: number | null;
+  /** @nullable */
+  project_code?: string | null;
+  title: string;
+  status: string;
+  /** @nullable */
+  priority?: string | null;
+  /** @nullable */
+  due_date?: string | null;
+  is_overdue: boolean;
+  is_due_soon: boolean;
+  updated_at: string;
+  action_url: string;
+}
+
+export type ApprovalRequestStatus = typeof ApprovalRequestStatus[keyof typeof ApprovalRequestStatus];
+
+
+export const ApprovalRequestStatus = {
+  Pending: 'Pending',
+  Under_Review: 'Under Review',
+  Approved: 'Approved',
+  Rejected: 'Rejected',
+  Returned: 'Returned',
+  Cancelled: 'Cancelled',
+} as const;
+
+export interface ApprovalRequest {
+  id: number;
+  organization_id: number;
+  /** @nullable */
+  project_id?: number | null;
+  entity_type: string;
+  entity_id: number;
+  /** @nullable */
+  requested_by_user_id?: number | null;
+  /** @nullable */
+  assigned_reviewer_id?: number | null;
+  status: ApprovalRequestStatus;
+  risk_level: string;
+  /** @nullable */
+  review_note?: string | null;
+  /** @nullable */
+  reviewed_by_user_id?: number | null;
+  /** @nullable */
+  reviewed_at?: string | null;
+  /** @nullable */
+  due_at?: string | null;
+  /** @nullable */
+  target_version?: number | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface ApprovalHistoryEntry {
+  id: number;
+  approval_request_id: number;
+  /** @nullable */
+  previous_status?: string | null;
+  new_status: string;
+  /** @nullable */
+  actor_user_id?: number | null;
+  /** @nullable */
+  note?: string | null;
+  created_at: string;
+}
+
+export type ApprovalSummaryByStatus = {[key: string]: number};
+
+export interface ApprovalSummary {
+  by_status: ApprovalSummaryByStatus;
+  overdue_count: number;
+  due_soon_count: number;
+}
+
+export type ApprovalCreateRequestEntityType = typeof ApprovalCreateRequestEntityType[keyof typeof ApprovalCreateRequestEntityType];
+
+
+export const ApprovalCreateRequestEntityType = {
+  purchase_request: 'purchase_request',
+  change_order: 'change_order',
+  claim: 'claim',
+  document: 'document',
+} as const;
+
+export interface ApprovalCreateRequest {
+  entity_type: ApprovalCreateRequestEntityType;
+  entity_id: number;
+  risk_level?: string;
+  /** @nullable */
+  review_note?: string | null;
+  /** @nullable */
+  assigned_reviewer_id?: number | null;
+  /** @nullable */
+  due_at?: string | null;
+}
+
+export interface ApprovalAssignRequest {
+  reviewer_user_id: number;
+  /** @nullable */
+  expected_updated_at?: string | null;
+}
+
+export interface ApprovalActionRequest {
+  /** @nullable */
+  review_note?: string | null;
+  /** @nullable */
+  expected_updated_at?: string | null;
+}
+
+export interface ApprovalReasonRequiredRequest {
+  review_note: string;
+  /** @nullable */
+  expected_updated_at?: string | null;
+}
+
+export interface Document {
+  id: number;
+  /** @nullable */
+  project_id?: number | null;
+  /** @nullable */
+  organization_id?: number | null;
+  doc_type: string;
+  title: string;
+  doc_date: string;
+  content_summary: string;
+  /** @nullable */
+  original_filename?: string | null;
+  /** @nullable */
+  mime_type?: string | null;
+  /** @nullable */
+  file_size?: number | null;
+  /** @nullable */
+  checksum?: string | null;
+  /** @nullable */
+  uploaded_at?: string | null;
+  /** @nullable */
+  uploaded_by?: number | null;
+  /** @nullable */
+  updated_at?: string | null;
+  /** @nullable */
+  version_number?: number | null;
+  is_archived: boolean;
+}
+
+export interface DocumentVersion {
+  version_number: number;
+  original_filename: string;
+  mime_type: string;
+  file_size: number;
+  checksum: string;
+  uploaded_at: string;
+  /** @nullable */
+  uploaded_by?: number | null;
+  is_current: boolean;
+}
+
+export type DocumentVersionUpload = DocumentVersion & {
+  is_duplicate: boolean;
+};
+
+export interface AdminUserOut {
+  id: number;
+  email: string;
+  /** @nullable */
+  full_name?: string | null;
+  role: string;
+  is_active: boolean;
+  /** @nullable */
+  organization_id?: number | null;
+  created_at: string;
+  /** @nullable */
+  last_login?: string | null;
+  must_change_password: boolean;
+}
+
+export interface Claim {
+  id: number;
+  project_id: number;
+  claim_number: string;
+  claim_type: string;
+  amount: number;
+  status: string;
+  narrative: string;
+}
+
+export interface ProjectMembership {
+  id: number;
+  user_id: number;
+  project_id: number;
+  role_on_project: string;
+  is_active: boolean;
+  created_at: string;
 }
 
 export type ListProjectsParams = {
@@ -213,6 +667,9 @@ export type ListPurchaseRequestsParams = {
 project_id?: number;
 status?: string;
 material_category?: string;
+assigned_to_me?: boolean;
+assigned_to?: number;
+unassigned?: boolean;
 skip?: number;
 limit?: number;
 };
@@ -232,6 +689,9 @@ limit?: number;
 
 export type ListProjectSafetyEventsParams = {
 severity?: string;
+assigned_to_me?: boolean;
+assigned_to?: number;
+unassigned?: boolean;
 skip?: number;
 limit?: number;
 };
@@ -239,6 +699,9 @@ limit?: number;
 export type ListProjectNcrsParams = {
 status?: string;
 ncr_type?: string;
+assigned_to_me?: boolean;
+assigned_to?: number;
+unassigned?: boolean;
 skip?: number;
 limit?: number;
 };
@@ -252,5 +715,83 @@ limit?: number;
 export type ListProjectDecisionsParams = {
 skip?: number;
 limit?: number;
+};
+
+export type ListActionItemsParams = {
+meeting_id?: number;
+status?: string;
+assigned_to_me?: boolean;
+assigned_to?: number;
+unassigned?: boolean;
+overdue?: boolean;
+skip?: number;
+limit?: number;
+};
+
+export type ListProjectRisksParams = {
+assigned_to_me?: boolean;
+assigned_to?: number;
+unassigned?: boolean;
+};
+
+export type ListProjectIssuesParams = {
+assigned_to_me?: boolean;
+assigned_to?: number;
+unassigned?: boolean;
+};
+
+export type ListNotificationsParams = {
+unread_only?: boolean;
+event_type?: string;
+project_id?: number;
+severity?: string;
+created_after?: string;
+created_before?: string;
+skip?: number;
+limit?: number;
+};
+
+export type ListMyWorkParams = {
+entity_type?: ListMyWorkEntityType;
+project_id?: number;
+status?: string;
+open_only?: boolean;
+overdue?: boolean;
+due_soon?: boolean;
+skip?: number;
+limit?: number;
+};
+
+export type ListMyWorkEntityType = typeof ListMyWorkEntityType[keyof typeof ListMyWorkEntityType];
+
+
+export const ListMyWorkEntityType = {
+  project_risk: 'project_risk',
+  project_issue: 'project_issue',
+  action_item: 'action_item',
+  safety_event: 'safety_event',
+  ncr: 'ncr',
+  purchase_request: 'purchase_request',
+  approval: 'approval',
+} as const;
+
+export type ListApprovalsParams = {
+status?: string;
+entity_type?: string;
+project_id?: number;
+assigned_to_me?: boolean;
+requested_by_me?: boolean;
+overdue?: boolean;
+due_soon?: boolean;
+skip?: number;
+limit?: number;
+};
+
+export type UploadDocumentVersionBody = {
+  file: Blob;
+};
+
+export type DownloadDocumentParams = {
+version?: number;
 };
 

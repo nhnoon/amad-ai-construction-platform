@@ -11,7 +11,8 @@ from .safety import SafetyEvent, NCR
 from .subcontractors import Subcontractor, SubcontractorEvaluation
 from .assignment_history import AssignmentHistory
 from .notifications import Notification
-from .ai import AIMemory, AIAuditLog, ApprovalRequest
+from .approvals import ApprovalRequest, ApprovalHistory
+from .ai import AIMemory, AIAuditLog
 from .ai_copilot import AIConversation, AIMessage, AICitation, CopilotAuditLog
 from .copilot_memory import AIUserProfileMemory, AIMemoryNote
 from .executive import PortfolioScoreSnapshot
@@ -30,7 +31,8 @@ __all__ = [
     "Subcontractor", "SubcontractorEvaluation",
     "AssignmentHistory",
     "Notification",
-    "AIMemory", "AIAuditLog", "ApprovalRequest",
+    "ApprovalRequest", "ApprovalHistory",
+    "AIMemory", "AIAuditLog",
     "AIConversation", "AIMessage", "AICitation", "CopilotAuditLog",
     "AIUserProfileMemory", "AIMemoryNote",
     "PortfolioScoreSnapshot",

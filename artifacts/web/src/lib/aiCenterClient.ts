@@ -45,6 +45,19 @@ export interface DocumentStub {
   title: string;
   doc_date: string;
   content_summary: string;
+  // Document Storage System (Sprint 1) fields — the backend's DocumentOut
+  // (backend/app/schemas/documents.py) always returns these; this type
+  // just didn't declare them until Sprint 6 activated version history/
+  // archive in DocumentDetailPanel.tsx. No new fetch needed — the same
+  // GET /documents response already carries them.
+  original_filename?: string | null;
+  mime_type?: string | null;
+  file_size?: number | null;
+  uploaded_at?: string | null;
+  uploaded_by?: number | null;
+  updated_at?: string | null;
+  version_number?: number | null;
+  is_archived?: boolean;
 }
 
 export type DocumentListScope = "all" | "general" | "project";

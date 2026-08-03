@@ -86,11 +86,18 @@ backups/
 *.log
 logs/
 
-# Test and debug files
-test_*.py
-*_test.py
+# Test and debug files — anchored to the repo root / backend root only
+# (not `/`-anchored before Sprint 5, these unintentionally also matched
+# backend/tests/test_*.py, silently gitignoring the entire real pytest
+# suite from Sprints 1-4). backend/tests/ is the real test suite and must
+# always be trackable — see the `!backend/tests/` rule below as a
+# belt-and-suspenders guarantee against any future rule reintroducing this.
+/test_*.py
+/*_test.py
 backend/test_*.py
 backend/*_test.py
+!backend/tests/
+!backend/tests/test_*.py
 screenshots/
 
 # Generated API client files

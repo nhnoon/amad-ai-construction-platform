@@ -1,23 +1,38 @@
-"""Unified My Work Feed (Sprint 4 Part E) — one read-only, bounded,
-aggregation across the six ownership-upgraded entities
-(app/ai/ownership_engine.py: ProjectRisk, ProjectIssue, MeetingActionItem,
-SafetyEvent, NCR, PurchaseRequest). Always scoped to the caller's own
-owner_id — no "view another user's work" mode in this sprint.
+"""Unified My Work Feed (Sprint 4 Part E, extended in Sprint 5) — one
+read-only, bounded aggregation across the six ownership-upgraded
+entities (app/ai/ownership_engine.py: ProjectRisk, ProjectIssue,
+MeetingActionItem, SafetyEvent, NCR, PurchaseRequest) plus, since Sprint
+5, a 7th "approval" branch. Always scoped to the caller's own
+owner_id/assigned_reviewer_id — no "view another user's work" mode.
 
-Built as a single SQL UNION ALL, not six queries merged in Python: every
-branch filters on owner_id == the caller first (indexed on all six
-tables since migration 0017 — see that migration's own docstring), so
-the whole aggregation stays bounded and index-backed without needing any
-new indexes. If a caller filters by entity_type, only that one branch is
-built at all — the other five are never even sent to the database.
+Built as a single SQL UNION ALL, not seven queries merged in Python:
+every branch filters on its own owner column first (owner_id, indexed on
+all six original tables since migration 0017; assigned_reviewer_id,
+indexed on approval_requests since migration 0019), so the whole
+aggregation stays bounded and index-backed without needing any new
+indexes. If a caller filters by entity_type, only that one branch is
+built at all — the other six are never even sent to the database.
 
 Two fields are computed once per row, not fabricated per entity: which
 statuses count as "done" (reused for both `open_only` filtering and
 is_overdue/is_due_soon, so the two concepts can't disagree), and a
-priority rank derived from whichever free-text priority/severity/impact
-column an entity actually has (risk/issue/action_item only — safety
-events, NCRs and purchase requests have no such field on their models,
-so their rank is always 0, not an invented value).
+priority rank derived from whichever free-text priority/severity/impact/
+risk_level column an entity actually has (risk/issue/action_item/
+approval only — safety events, NCRs and purchase requests have no such
+field on their models, so their rank is always 0, not an invented
+value).
+
+Sprint 5's "approval" branch is narrower than the other six: it only
+covers approvals ASSIGNED TO the caller as reviewer (the same
+single-owner-column contract every other branch already follows) — "my
+approval requests" (requested_by_user_id == caller) is a different
+ownership axis this feed intentionally does not distort itself to model;
+see GET /approvals?requested_by_me=true instead
+(app/api/v1/approvals.py). An approval's project_id can be NULL (a
+General Library document approval has no project at all), so
+project_id/project_code are the only two MyWorkItemOut fields that are
+genuinely optional — every other entity_type still always populates
+both.
 """
 from __future__ import annotations
 
@@ -29,6 +44,7 @@ from sqlalchemy.orm import Session
 
 from app.ai.entity_refs import build_action_url
 from app.ai.scope import AIAuthScope
+from app.models.approvals import ApprovalRequest
 from app.models.meetings import MeetingActionItem
 from app.models.procurement import PurchaseRequest
 from app.models.projects import Project, ProjectIssue, ProjectRisk
@@ -38,7 +54,9 @@ from app.models.safety import NCR, SafetyEvent
 # reasonable, documented default for a construction-ops work feed.
 DUE_SOON_WINDOW_DAYS = 7
 
-ENTITY_TYPES = ("project_risk", "project_issue", "action_item", "safety_event", "ncr", "purchase_request")
+ENTITY_TYPES = ("project_risk", "project_issue", "action_item", "safety_event", "ncr", "purchase_request", "approval")
+
+_APPROVAL_TERMINAL_STATUSES = ("Approved", "Rejected", "Cancelled")
 
 # One canonical "is this entity still open" status set per entity type —
 # reused for open_only filtering AND is_overdue/is_due_soon computation.
@@ -136,6 +154,69 @@ def _build_subquery(
     return q
 
 
+def _build_approval_subquery(
+    *, user_id: int, today: str, due_soon_cutoff: str,
+    project_id_filter: Optional[int], status_filter: Optional[str], open_only: bool,
+):
+    """Separate from _build_subquery (not one more entry in
+    _ENTITY_CONFIG) because approval_requests genuinely differs on three
+    axes the generic builder assumes are uniform across the six
+    ownership entities: it's owned via assigned_reviewer_id (not
+    owner_id), its project_id can be NULL (General Library document
+    approvals — needs a LEFT join, not an inner join), and its due
+    column (due_at) is a real DateTime, not the String(50) ISO-date
+    columns every other branch compares lexicographically. Keeping this
+    separate means the six already-shipped, already-tested branches are
+    untouched by Sprint 5."""
+    due_date_expr = sa.cast(sa.cast(ApprovalRequest.due_at, sa.Date), sa.String)
+    not_done = ApprovalRequest.status.notin_(_APPROVAL_TERMINAL_STATUSES)
+    is_overdue = sa.and_(ApprovalRequest.due_at.isnot(None), due_date_expr < today, not_done)
+    is_due_soon = sa.and_(ApprovalRequest.due_at.isnot(None), due_date_expr >= today, due_date_expr <= due_soon_cutoff, not_done)
+    title_expr = sa.func.concat(ApprovalRequest.entity_type, " #", sa.cast(ApprovalRequest.entity_id, sa.String))
+
+    q = (
+        sa.select(
+            sa.literal("approval").label("entity_type"),
+            ApprovalRequest.id.label("entity_id"),
+            ApprovalRequest.project_id.label("project_id"),
+            Project.project_code.label("project_code"),
+            title_expr.label("title"),
+            ApprovalRequest.status.label("status"),
+            ApprovalRequest.risk_level.label("priority"),
+            due_date_expr.label("due_date"),
+            is_overdue.label("is_overdue"),
+            is_due_soon.label("is_due_soon"),
+            _priority_rank(ApprovalRequest.risk_level).label("priority_rank"),
+            ApprovalRequest.updated_at.label("updated_at"),
+        )
+        .outerjoin(Project, Project.id == ApprovalRequest.project_id)
+        .where(ApprovalRequest.assigned_reviewer_id == user_id)
+    )
+    if project_id_filter is not None:
+        q = q.where(ApprovalRequest.project_id == project_id_filter)
+    if status_filter is not None:
+        q = q.where(ApprovalRequest.status == status_filter)
+    if open_only:
+        q = q.where(ApprovalRequest.status.notin_(_APPROVAL_TERMINAL_STATUSES))
+    return q
+
+
+def _build_any_subquery(
+    entity_type: str, *, user_id: int, today: str, due_soon_cutoff: str,
+    project_id_filter: Optional[int], status_filter: Optional[str], open_only: bool,
+):
+    if entity_type == "approval":
+        return _build_approval_subquery(
+            user_id=user_id, today=today, due_soon_cutoff=due_soon_cutoff,
+            project_id_filter=project_id_filter, status_filter=status_filter, open_only=open_only,
+        )
+    return _build_subquery(
+        entity_type=entity_type, user_id=user_id, today=today, due_soon_cutoff=due_soon_cutoff,
+        project_id_filter=project_id_filter, status_filter=status_filter, open_only=open_only,
+        **_ENTITY_CONFIG[entity_type],
+    )
+
+
 def get_my_work(
     db: Session, scope: AIAuthScope, *,
     entity_type: Optional[str] = None, project_id: Optional[int] = None, status: Optional[str] = None,
@@ -147,10 +228,9 @@ def get_my_work(
 
     types = [entity_type] if entity_type else list(ENTITY_TYPES)
     subqueries = [
-        _build_subquery(
-            entity_type=t, user_id=scope.user_id, today=today, due_soon_cutoff=due_soon_cutoff,
+        _build_any_subquery(
+            t, user_id=scope.user_id, today=today, due_soon_cutoff=due_soon_cutoff,
             project_id_filter=project_id, status_filter=status, open_only=open_only,
-            **_ENTITY_CONFIG[t],
         )
         for t in types
     ]

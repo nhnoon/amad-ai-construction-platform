@@ -1,5 +1,6 @@
-"""Unified My Work Feed API (Sprint 4 Part E) — see app/ai/my_work.py for
-the aggregation itself."""
+"""Unified My Work Feed API (Sprint 4 Part E, extended in Sprint 5 with
+the "approval" entity_type) — see app/ai/my_work.py for the aggregation
+itself."""
 from fastapi import APIRouter, Query, Response
 from typing import Literal, Optional
 
@@ -12,7 +13,7 @@ router = APIRouter(tags=["my-work"])
 # Kept as an explicit literal (not derived from app.ai.my_work.ENTITY_TYPES)
 # so FastAPI/Pydantic can build static OpenAPI enum documentation from it.
 _EntityTypeFilter = Literal[
-    "project_risk", "project_issue", "action_item", "safety_event", "ncr", "purchase_request",
+    "project_risk", "project_issue", "action_item", "safety_event", "ncr", "purchase_request", "approval",
 ]
 
 

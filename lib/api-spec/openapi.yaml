@@ -2,7 +2,7 @@ openapi: 3.1.0
 info:
   # Do not change the title, if the title changes, the import paths will be broken
   title: Api
-  version: 2.1.0
+  version: 2.2.0
   description: Construction AI Platform — Phase 2 API (routes match FastAPI backend exactly)
 servers:
   - url: /api
@@ -26,6 +26,20 @@ tags:
     description: Safety events and NCRs (project-scoped)
   - name: meetings
     description: Meetings and decisions (project-scoped)
+  - name: risks
+    description: Project risks and issues (Sprint 2/3 — workflow + ownership)
+  - name: notifications
+    description: Persistent in-app notifications (Sprint 4)
+  - name: myWork
+    description: Unified My Work feed (Sprint 4/5)
+  - name: approvals
+    description: Approval Engine (Sprint 5)
+  - name: documents
+    description: Document storage — versions, download, archive (Sprint 1/6)
+  - name: admin
+    description: Admin-only user management
+  - name: claims
+    description: Claims (read-only source-entity context for approvals)
 
 components:
   securitySchemes:
@@ -59,6 +73,9 @@ components:
         created_at:
           type: string
           format: date-time
+        must_change_password:
+          type: boolean
+          description: Phase 2 — Security & Authentication Hardening
 
     LoginInput:
       type: object
@@ -252,6 +269,20 @@ components:
           type: ["string", "null"]
         created_at:
           type: string
+        # Core Workflow Engine (Sprint 2)
+        updated_at:
+          type: ["string", "null"]
+          format: date-time
+        updated_by:
+          type: ["integer", "null"]
+        # Ownership Engine (Sprint 3)
+        owner_id:
+          type: ["integer", "null"]
+        assigned_by:
+          type: ["integer", "null"]
+        assigned_at:
+          type: ["string", "null"]
+          format: date-time
 
     PurchaseOrder:
       type: object
@@ -315,8 +346,25 @@ components:
           type: string
         corrective_action:
           type: string
+        # Core Workflow Engine (Sprint 2)
+        status:
+          type: string
+          default: Open
+        updated_at:
+          type: ["string", "null"]
+          format: date-time
+        updated_by:
+          type: ["integer", "null"]
+        # Ownership Engine (Sprint 3)
+        owner_id:
+          type: ["integer", "null"]
+        assigned_by:
+          type: ["integer", "null"]
+        assigned_at:
+          type: ["string", "null"]
+          format: date-time
 
-    NCR:
+    Ncr:
       type: object
       required: [id, project_id, ncr_type, description, root_cause, issue_date, status]
       properties:
@@ -338,6 +386,22 @@ components:
           type: string
         status:
           type: string
+        # Core Workflow Engine (Sprint 2)
+        corrective_action:
+          type: ["string", "null"]
+        updated_at:
+          type: ["string", "null"]
+          format: date-time
+        updated_by:
+          type: ["integer", "null"]
+        # Ownership Engine (Sprint 3)
+        owner_id:
+          type: ["integer", "null"]
+        assigned_by:
+          type: ["integer", "null"]
+        assigned_at:
+          type: ["string", "null"]
+          format: date-time
 
     Meeting:
       type: object
@@ -370,6 +434,619 @@ components:
           type: string
         owner:
           type: string
+
+    # ── Sprint 2/3 — Project Risks & Issues (new to the client) ─────────────
+    ProjectRisk:
+      type: object
+      required: [id, project_id, title, status]
+      properties:
+        id:
+          type: integer
+        project_id:
+          type: integer
+        title:
+          type: string
+        description:
+          type: ["string", "null"]
+        probability:
+          type: string
+          default: medium
+        impact:
+          type: string
+          default: medium
+        status:
+          type: string
+          default: open
+        owner:
+          type: ["string", "null"]
+        mitigation:
+          type: ["string", "null"]
+        updated_at:
+          type: ["string", "null"]
+          format: date-time
+        updated_by:
+          type: ["integer", "null"]
+        owner_id:
+          type: ["integer", "null"]
+        assigned_by:
+          type: ["integer", "null"]
+        assigned_at:
+          type: ["string", "null"]
+          format: date-time
+
+    ProjectRiskCreate:
+      type: object
+      required: [title]
+      properties:
+        title:
+          type: string
+        description:
+          type: ["string", "null"]
+        probability:
+          type: string
+          default: medium
+        impact:
+          type: string
+          default: medium
+        status:
+          type: string
+          default: open
+        owner:
+          type: ["string", "null"]
+        mitigation:
+          type: ["string", "null"]
+
+    ProjectRiskUpdate:
+      type: object
+      properties:
+        status:
+          type: ["string", "null"]
+        owner:
+          type: ["string", "null"]
+        mitigation:
+          type: ["string", "null"]
+        probability:
+          type: ["string", "null"]
+        impact:
+          type: ["string", "null"]
+        expected_updated_at:
+          type: ["string", "null"]
+          format: date-time
+
+    ProjectIssue:
+      type: object
+      required: [id, project_id, title, status]
+      properties:
+        id:
+          type: integer
+        project_id:
+          type: integer
+        title:
+          type: string
+        description:
+          type: ["string", "null"]
+        severity:
+          type: string
+          default: medium
+        status:
+          type: string
+          default: open
+        owner:
+          type: ["string", "null"]
+        resolution:
+          type: ["string", "null"]
+        resolved_at:
+          type: ["string", "null"]
+        updated_at:
+          type: ["string", "null"]
+          format: date-time
+        updated_by:
+          type: ["integer", "null"]
+        owner_id:
+          type: ["integer", "null"]
+        assigned_by:
+          type: ["integer", "null"]
+        assigned_at:
+          type: ["string", "null"]
+          format: date-time
+
+    ProjectIssueCreate:
+      type: object
+      required: [title]
+      properties:
+        title:
+          type: string
+        description:
+          type: ["string", "null"]
+        severity:
+          type: string
+          default: medium
+        status:
+          type: string
+          default: open
+        owner:
+          type: ["string", "null"]
+        resolution:
+          type: ["string", "null"]
+
+    ProjectIssueUpdate:
+      type: object
+      properties:
+        status:
+          type: ["string", "null"]
+        owner:
+          type: ["string", "null"]
+        resolution:
+          type: ["string", "null"]
+        resolved_at:
+          type: ["string", "null"]
+        severity:
+          type: ["string", "null"]
+        expected_updated_at:
+          type: ["string", "null"]
+          format: date-time
+
+    # ── Sprint 2/3 — Meeting Action Items (new to the client) ───────────────
+    MeetingActionItem:
+      type: object
+      required: [id, meeting_id, project_id, description, owner, status, priority, source]
+      properties:
+        id:
+          type: integer
+        meeting_id:
+          type: integer
+        project_id:
+          type: integer
+        description:
+          type: string
+        owner:
+          type: string
+        due_date:
+          type: ["string", "null"]
+        status:
+          type: string
+          default: open
+        priority:
+          type: string
+          default: medium
+        source:
+          type: string
+          default: manual
+        completed_at:
+          type: ["string", "null"]
+        updated_at:
+          type: ["string", "null"]
+          format: date-time
+        updated_by:
+          type: ["integer", "null"]
+        owner_id:
+          type: ["integer", "null"]
+        assigned_by:
+          type: ["integer", "null"]
+        assigned_at:
+          type: ["string", "null"]
+          format: date-time
+
+    MeetingActionItemUpdate:
+      type: object
+      properties:
+        status:
+          type: ["string", "null"]
+        owner:
+          type: ["string", "null"]
+        due_date:
+          type: ["string", "null"]
+        priority:
+          type: ["string", "null"]
+        completed_at:
+          type: ["string", "null"]
+        expected_updated_at:
+          type: ["string", "null"]
+          format: date-time
+
+    SafetyEventUpdate:
+      type: object
+      properties:
+        status:
+          type: ["string", "null"]
+        severity:
+          type: ["string", "null"]
+        corrective_action:
+          type: ["string", "null"]
+        expected_updated_at:
+          type: ["string", "null"]
+          format: date-time
+
+    NcrUpdate:
+      type: object
+      properties:
+        status:
+          type: ["string", "null"]
+        corrective_action:
+          type: ["string", "null"]
+        root_cause:
+          type: ["string", "null"]
+        expected_updated_at:
+          type: ["string", "null"]
+          format: date-time
+
+    PurchaseRequestUpdate:
+      type: object
+      properties:
+        status:
+          type: ["string", "null"]
+        rework_reason:
+          type: ["string", "null"]
+        expected_updated_at:
+          type: ["string", "null"]
+          format: date-time
+
+    # ── Sprint 3 — Ownership Engine (shared assign/unassign shape) ──────────
+    AssignRequest:
+      type: object
+      required: [user_id]
+      properties:
+        user_id:
+          type: integer
+        expected_updated_at:
+          type: ["string", "null"]
+          format: date-time
+
+    UnassignRequest:
+      type: object
+      properties:
+        expected_updated_at:
+          type: ["string", "null"]
+          format: date-time
+
+    # ── Sprint 4 — Notifications ─────────────────────────────────────────
+    Notification:
+      type: object
+      required: [id, organization_id, recipient_user_id, event_type, entity_type, entity_id,
+                 title, message, severity, is_read, created_at]
+      properties:
+        id:
+          type: integer
+        organization_id:
+          type: integer
+        recipient_user_id:
+          type: integer
+        actor_user_id:
+          type: ["integer", "null"]
+        project_id:
+          type: ["integer", "null"]
+        event_type:
+          type: string
+        entity_type:
+          type: string
+        entity_id:
+          type: integer
+        title:
+          type: string
+        message:
+          type: string
+        severity:
+          type: string
+        action_url:
+          type: ["string", "null"]
+        is_read:
+          type: boolean
+        read_at:
+          type: ["string", "null"]
+          format: date-time
+        created_at:
+          type: string
+          format: date-time
+
+    NotificationSummary:
+      type: object
+      required: [unread_count, total_count, unread_by_severity]
+      properties:
+        unread_count:
+          type: integer
+        total_count:
+          type: integer
+        unread_by_severity:
+          type: object
+          additionalProperties:
+            type: integer
+
+    MarkAllReadOut:
+      type: object
+      required: [updated_count]
+      properties:
+        updated_count:
+          type: integer
+
+    # ── Sprint 4/5 — Unified My Work Feed ────────────────────────────────
+    MyWorkItem:
+      type: object
+      required: [entity_type, entity_id, title, status, is_overdue, is_due_soon, updated_at, action_url]
+      properties:
+        entity_type:
+          type: string
+        entity_id:
+          type: integer
+        project_id:
+          type: ["integer", "null"]
+        project_code:
+          type: ["string", "null"]
+        title:
+          type: string
+        status:
+          type: string
+        priority:
+          type: ["string", "null"]
+        due_date:
+          type: ["string", "null"]
+        is_overdue:
+          type: boolean
+        is_due_soon:
+          type: boolean
+        updated_at:
+          type: string
+          format: date-time
+        action_url:
+          type: string
+
+    # ── Sprint 5 — Approval Engine ───────────────────────────────────────
+    ApprovalRequest:
+      type: object
+      required: [id, organization_id, entity_type, entity_id, status, risk_level, created_at, updated_at]
+      properties:
+        id:
+          type: integer
+        organization_id:
+          type: integer
+        project_id:
+          type: ["integer", "null"]
+        entity_type:
+          type: string
+        entity_id:
+          type: integer
+        requested_by_user_id:
+          type: ["integer", "null"]
+        assigned_reviewer_id:
+          type: ["integer", "null"]
+        status:
+          type: string
+          enum: [Pending, "Under Review", Approved, Rejected, Returned, Cancelled]
+        risk_level:
+          type: string
+        review_note:
+          type: ["string", "null"]
+        reviewed_by_user_id:
+          type: ["integer", "null"]
+        reviewed_at:
+          type: ["string", "null"]
+          format: date-time
+        due_at:
+          type: ["string", "null"]
+          format: date-time
+        target_version:
+          type: ["integer", "null"]
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+
+    ApprovalHistoryEntry:
+      type: object
+      required: [id, approval_request_id, new_status, created_at]
+      properties:
+        id:
+          type: integer
+        approval_request_id:
+          type: integer
+        previous_status:
+          type: ["string", "null"]
+        new_status:
+          type: string
+        actor_user_id:
+          type: ["integer", "null"]
+        note:
+          type: ["string", "null"]
+        created_at:
+          type: string
+          format: date-time
+
+    ApprovalSummary:
+      type: object
+      required: [by_status, overdue_count, due_soon_count]
+      properties:
+        by_status:
+          type: object
+          additionalProperties:
+            type: integer
+        overdue_count:
+          type: integer
+        due_soon_count:
+          type: integer
+
+    ApprovalCreateRequest:
+      type: object
+      required: [entity_type, entity_id]
+      properties:
+        entity_type:
+          type: string
+          enum: [purchase_request, change_order, claim, document]
+        entity_id:
+          type: integer
+        risk_level:
+          type: string
+          default: medium
+        review_note:
+          type: ["string", "null"]
+        assigned_reviewer_id:
+          type: ["integer", "null"]
+        due_at:
+          type: ["string", "null"]
+          format: date-time
+
+    ApprovalAssignRequest:
+      type: object
+      required: [reviewer_user_id]
+      properties:
+        reviewer_user_id:
+          type: integer
+        expected_updated_at:
+          type: ["string", "null"]
+          format: date-time
+
+    ApprovalActionRequest:
+      type: object
+      properties:
+        review_note:
+          type: ["string", "null"]
+        expected_updated_at:
+          type: ["string", "null"]
+          format: date-time
+
+    ApprovalReasonRequiredRequest:
+      type: object
+      required: [review_note]
+      properties:
+        review_note:
+          type: string
+        expected_updated_at:
+          type: ["string", "null"]
+          format: date-time
+
+    # ── Sprint 1/6 — Document storage (versions, download, archive) ─────
+    Document:
+      type: object
+      required: [id, doc_type, title, doc_date, content_summary, is_archived]
+      properties:
+        id:
+          type: integer
+        project_id:
+          type: ["integer", "null"]
+        organization_id:
+          type: ["integer", "null"]
+        doc_type:
+          type: string
+        title:
+          type: string
+        doc_date:
+          type: string
+        content_summary:
+          type: string
+        original_filename:
+          type: ["string", "null"]
+        mime_type:
+          type: ["string", "null"]
+        file_size:
+          type: ["integer", "null"]
+        checksum:
+          type: ["string", "null"]
+        uploaded_at:
+          type: ["string", "null"]
+          format: date-time
+        uploaded_by:
+          type: ["integer", "null"]
+        updated_at:
+          type: ["string", "null"]
+          format: date-time
+        version_number:
+          type: ["integer", "null"]
+        is_archived:
+          type: boolean
+
+    DocumentVersion:
+      type: object
+      required: [version_number, original_filename, mime_type, file_size, checksum, uploaded_at, is_current]
+      properties:
+        version_number:
+          type: integer
+        original_filename:
+          type: string
+        mime_type:
+          type: string
+        file_size:
+          type: integer
+        checksum:
+          type: string
+        uploaded_at:
+          type: string
+          format: date-time
+        uploaded_by:
+          type: ["integer", "null"]
+        is_current:
+          type: boolean
+
+    DocumentVersionUpload:
+      allOf:
+        - $ref: "#/components/schemas/DocumentVersion"
+        - type: object
+          required: [is_duplicate]
+          properties:
+            is_duplicate:
+              type: boolean
+
+    # ── Admin — user directory (existing, admin-role-only endpoint) ─────
+    AdminUserOut:
+      type: object
+      required: [id, email, role, is_active, created_at, must_change_password]
+      properties:
+        id:
+          type: integer
+        email:
+          type: string
+        full_name:
+          type: ["string", "null"]
+        role:
+          type: string
+        is_active:
+          type: boolean
+        organization_id:
+          type: ["integer", "null"]
+        created_at:
+          type: string
+          format: date-time
+        last_login:
+          type: ["string", "null"]
+          format: date-time
+        must_change_password:
+          type: boolean
+
+    Claim:
+      type: object
+      required: [id, project_id, claim_number, claim_type, amount, status, narrative]
+      properties:
+        id:
+          type: integer
+        project_id:
+          type: integer
+        claim_number:
+          type: string
+        claim_type:
+          type: string
+        amount:
+          type: number
+        status:
+          type: string
+        narrative:
+          type: string
+
+    ProjectMembership:
+      type: object
+      required: [id, user_id, project_id, role_on_project, is_active, created_at]
+      properties:
+        id:
+          type: integer
+        user_id:
+          type: integer
+        project_id:
+          type: integer
+        role_on_project:
+          type: string
+        is_active:
+          type: boolean
+        created_at:
+          type: string
+          format: date-time
 
 security:
   - bearerAuth: []
@@ -556,6 +1233,27 @@ paths:
         "404":
           description: Not found
 
+  /v1/projects/{project_id}/memberships:
+    get:
+      operationId: listProjectMemberships
+      tags: [projects]
+      summary: List project memberships (used to resolve assignable users)
+      parameters:
+        - name: project_id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: List of project memberships
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/ProjectMembership"
+
   /v1/suppliers:
     get:
       operationId: listSuppliers
@@ -629,6 +1327,20 @@ paths:
           in: query
           schema:
             type: string
+        - name: assigned_to_me
+          in: query
+          schema:
+            type: boolean
+            default: false
+        - name: assigned_to
+          in: query
+          schema:
+            type: integer
+        - name: unassigned
+          in: query
+          schema:
+            type: boolean
+            default: false
         - name: skip
           in: query
           schema:
@@ -648,6 +1360,114 @@ paths:
                 type: array
                 items:
                   $ref: "#/components/schemas/PurchaseRequest"
+
+  /v1/procurement/purchase-requests/{request_id}:
+    get:
+      operationId: getPurchaseRequest
+      tags: [procurement]
+      summary: Get a single purchase request by ID
+      parameters:
+        - name: request_id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Purchase request
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PurchaseRequest"
+        "404":
+          description: Not found
+    patch:
+      operationId: updatePurchaseRequest
+      tags: [procurement]
+      summary: Update a purchase request's workflow status (Sprint 2)
+      parameters:
+        - name: request_id
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PurchaseRequestUpdate"
+      responses:
+        "200":
+          description: Updated purchase request
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PurchaseRequest"
+        "404":
+          description: Not found
+        "409":
+          description: Invalid transition or stale concurrency token
+
+  /v1/procurement/purchase-requests/{request_id}/assign:
+    post:
+      operationId: assignPurchaseRequest
+      tags: [procurement]
+      summary: Assign/reassign the owner of a purchase request (Sprint 3)
+      parameters:
+        - name: request_id
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AssignRequest"
+      responses:
+        "200":
+          description: Updated purchase request
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PurchaseRequest"
+        "403":
+          description: Not authorized to assign to another user
+        "404":
+          description: Not found
+        "409":
+          description: Target user invalid or stale concurrency token
+
+  /v1/procurement/purchase-requests/{request_id}/unassign:
+    post:
+      operationId: unassignPurchaseRequest
+      tags: [procurement]
+      summary: Unassign the owner of a purchase request (Sprint 3)
+      parameters:
+        - name: request_id
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UnassignRequest"
+      responses:
+        "200":
+          description: Updated purchase request
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PurchaseRequest"
+        "403":
+          description: Not authorized
+        "404":
+          description: Not found
 
   /v1/procurement/purchase-orders:
     get:
@@ -733,6 +1553,20 @@ paths:
           in: query
           schema:
             type: string
+        - name: assigned_to_me
+          in: query
+          schema:
+            type: boolean
+            default: false
+        - name: assigned_to
+          in: query
+          schema:
+            type: integer
+        - name: unassigned
+          in: query
+          schema:
+            type: boolean
+            default: false
         - name: skip
           in: query
           schema:
@@ -753,6 +1587,110 @@ paths:
                 items:
                   $ref: "#/components/schemas/SafetyEvent"
 
+  /v1/projects/{project_id}/safety-events/{event_id}:
+    patch:
+      operationId: updateSafetyEvent
+      tags: [safety]
+      summary: Update a safety event's workflow status (Sprint 2)
+      parameters:
+        - name: project_id
+          in: path
+          required: true
+          schema:
+            type: integer
+        - name: event_id
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SafetyEventUpdate"
+      responses:
+        "200":
+          description: Updated safety event
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SafetyEvent"
+        "404":
+          description: Not found
+        "409":
+          description: Invalid transition or stale concurrency token
+
+  /v1/projects/{project_id}/safety-events/{event_id}/assign:
+    post:
+      operationId: assignSafetyEvent
+      tags: [safety]
+      summary: Assign/reassign the owner of a safety event (Sprint 3)
+      parameters:
+        - name: project_id
+          in: path
+          required: true
+          schema:
+            type: integer
+        - name: event_id
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AssignRequest"
+      responses:
+        "200":
+          description: Updated safety event
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SafetyEvent"
+        "403":
+          description: Not authorized
+        "404":
+          description: Not found
+        "409":
+          description: Target user invalid or stale concurrency token
+
+  /v1/projects/{project_id}/safety-events/{event_id}/unassign:
+    post:
+      operationId: unassignSafetyEvent
+      tags: [safety]
+      summary: Unassign the owner of a safety event (Sprint 3)
+      parameters:
+        - name: project_id
+          in: path
+          required: true
+          schema:
+            type: integer
+        - name: event_id
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UnassignRequest"
+      responses:
+        "200":
+          description: Updated safety event
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SafetyEvent"
+        "403":
+          description: Not authorized
+        "404":
+          description: Not found
+
   /v1/projects/{project_id}/ncrs:
     get:
       operationId: listProjectNcrs
@@ -772,6 +1710,20 @@ paths:
           in: query
           schema:
             type: string
+        - name: assigned_to_me
+          in: query
+          schema:
+            type: boolean
+            default: false
+        - name: assigned_to
+          in: query
+          schema:
+            type: integer
+        - name: unassigned
+          in: query
+          schema:
+            type: boolean
+            default: false
         - name: skip
           in: query
           schema:
@@ -790,7 +1742,111 @@ paths:
               schema:
                 type: array
                 items:
-                  $ref: "#/components/schemas/NCR"
+                  $ref: "#/components/schemas/Ncr"
+
+  /v1/projects/{project_id}/ncrs/{ncr_id}:
+    patch:
+      operationId: updateNcr
+      tags: [safety]
+      summary: Update an NCR's workflow status (Sprint 2)
+      parameters:
+        - name: project_id
+          in: path
+          required: true
+          schema:
+            type: integer
+        - name: ncr_id
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/NcrUpdate"
+      responses:
+        "200":
+          description: Updated NCR
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Ncr"
+        "404":
+          description: Not found
+        "409":
+          description: Invalid transition or stale concurrency token
+
+  /v1/projects/{project_id}/ncrs/{ncr_id}/assign:
+    post:
+      operationId: assignNcr
+      tags: [safety]
+      summary: Assign/reassign the owner of an NCR (Sprint 3)
+      parameters:
+        - name: project_id
+          in: path
+          required: true
+          schema:
+            type: integer
+        - name: ncr_id
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AssignRequest"
+      responses:
+        "200":
+          description: Updated NCR
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Ncr"
+        "403":
+          description: Not authorized
+        "404":
+          description: Not found
+        "409":
+          description: Target user invalid or stale concurrency token
+
+  /v1/projects/{project_id}/ncrs/{ncr_id}/unassign:
+    post:
+      operationId: unassignNcr
+      tags: [safety]
+      summary: Unassign the owner of an NCR (Sprint 3)
+      parameters:
+        - name: project_id
+          in: path
+          required: true
+          schema:
+            type: integer
+        - name: ncr_id
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UnassignRequest"
+      responses:
+        "200":
+          description: Updated NCR
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Ncr"
+        "403":
+          description: Not authorized
+        "404":
+          description: Not found
 
   /v1/projects/{project_id}/meetings:
     get:
@@ -857,3 +1913,1128 @@ paths:
                 type: array
                 items:
                   $ref: "#/components/schemas/ProjectDecision"
+
+  /v1/projects/{project_id}/action-items:
+    get:
+      operationId: listActionItems
+      tags: [meetings]
+      summary: List meeting action items for a project
+      parameters:
+        - name: project_id
+          in: path
+          required: true
+          schema:
+            type: integer
+        - name: meeting_id
+          in: query
+          schema:
+            type: integer
+        - name: status
+          in: query
+          schema:
+            type: string
+        - name: assigned_to_me
+          in: query
+          schema:
+            type: boolean
+            default: false
+        - name: assigned_to
+          in: query
+          schema:
+            type: integer
+        - name: unassigned
+          in: query
+          schema:
+            type: boolean
+            default: false
+        - name: overdue
+          in: query
+          schema:
+            type: boolean
+            default: false
+        - name: skip
+          in: query
+          schema:
+            type: integer
+            default: 0
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            default: 50
+      responses:
+        "200":
+          description: List of action items
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/MeetingActionItem"
+
+  /v1/projects/{project_id}/action-items/{action_item_id}:
+    patch:
+      operationId: updateActionItem
+      tags: [meetings]
+      summary: Update a meeting action item's workflow status (Sprint 2)
+      parameters:
+        - name: project_id
+          in: path
+          required: true
+          schema:
+            type: integer
+        - name: action_item_id
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/MeetingActionItemUpdate"
+      responses:
+        "200":
+          description: Updated action item
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MeetingActionItem"
+        "404":
+          description: Not found
+        "409":
+          description: Invalid transition or stale concurrency token
+
+  /v1/projects/{project_id}/action-items/{action_item_id}/assign:
+    post:
+      operationId: assignActionItem
+      tags: [meetings]
+      summary: Assign/reassign the owner of an action item (Sprint 3)
+      parameters:
+        - name: project_id
+          in: path
+          required: true
+          schema:
+            type: integer
+        - name: action_item_id
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AssignRequest"
+      responses:
+        "200":
+          description: Updated action item
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MeetingActionItem"
+        "403":
+          description: Not authorized
+        "404":
+          description: Not found
+        "409":
+          description: Target user invalid or stale concurrency token
+
+  /v1/projects/{project_id}/action-items/{action_item_id}/unassign:
+    post:
+      operationId: unassignActionItem
+      tags: [meetings]
+      summary: Unassign the owner of an action item (Sprint 3)
+      parameters:
+        - name: project_id
+          in: path
+          required: true
+          schema:
+            type: integer
+        - name: action_item_id
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UnassignRequest"
+      responses:
+        "200":
+          description: Updated action item
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MeetingActionItem"
+        "403":
+          description: Not authorized
+        "404":
+          description: Not found
+
+  # ── Sprint 2/3 — Project Risks ─────────────────────────────────────────
+  /v1/projects/{project_id}/risks:
+    get:
+      operationId: listProjectRisks
+      tags: [risks]
+      summary: List risks for a project
+      parameters:
+        - name: project_id
+          in: path
+          required: true
+          schema:
+            type: integer
+        - name: assigned_to_me
+          in: query
+          schema:
+            type: boolean
+            default: false
+        - name: assigned_to
+          in: query
+          schema:
+            type: integer
+        - name: unassigned
+          in: query
+          schema:
+            type: boolean
+            default: false
+      responses:
+        "200":
+          description: List of risks
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/ProjectRisk"
+    post:
+      operationId: createProjectRisk
+      tags: [risks]
+      summary: Create a new project risk
+      parameters:
+        - name: project_id
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ProjectRiskCreate"
+      responses:
+        "201":
+          description: Created risk
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProjectRisk"
+
+  /v1/projects/{project_id}/risks/{risk_id}:
+    patch:
+      operationId: updateProjectRisk
+      tags: [risks]
+      summary: Update a risk's workflow status (Sprint 2)
+      parameters:
+        - name: project_id
+          in: path
+          required: true
+          schema:
+            type: integer
+        - name: risk_id
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ProjectRiskUpdate"
+      responses:
+        "200":
+          description: Updated risk
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProjectRisk"
+        "404":
+          description: Not found
+        "409":
+          description: Invalid transition or stale concurrency token
+
+  /v1/projects/{project_id}/risks/{risk_id}/assign:
+    post:
+      operationId: assignProjectRisk
+      tags: [risks]
+      summary: Assign/reassign the owner of a risk (Sprint 3)
+      parameters:
+        - name: project_id
+          in: path
+          required: true
+          schema:
+            type: integer
+        - name: risk_id
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AssignRequest"
+      responses:
+        "200":
+          description: Updated risk
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProjectRisk"
+        "403":
+          description: Not authorized
+        "404":
+          description: Not found
+        "409":
+          description: Target user invalid or stale concurrency token
+
+  /v1/projects/{project_id}/risks/{risk_id}/unassign:
+    post:
+      operationId: unassignProjectRisk
+      tags: [risks]
+      summary: Unassign the owner of a risk (Sprint 3)
+      parameters:
+        - name: project_id
+          in: path
+          required: true
+          schema:
+            type: integer
+        - name: risk_id
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UnassignRequest"
+      responses:
+        "200":
+          description: Updated risk
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProjectRisk"
+        "403":
+          description: Not authorized
+        "404":
+          description: Not found
+
+  # ── Sprint 2/3 — Project Issues ─────────────────────────────────────────
+  /v1/projects/{project_id}/issues:
+    get:
+      operationId: listProjectIssues
+      tags: [risks]
+      summary: List issues for a project
+      parameters:
+        - name: project_id
+          in: path
+          required: true
+          schema:
+            type: integer
+        - name: assigned_to_me
+          in: query
+          schema:
+            type: boolean
+            default: false
+        - name: assigned_to
+          in: query
+          schema:
+            type: integer
+        - name: unassigned
+          in: query
+          schema:
+            type: boolean
+            default: false
+      responses:
+        "200":
+          description: List of issues
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/ProjectIssue"
+    post:
+      operationId: createProjectIssue
+      tags: [risks]
+      summary: Create a new project issue
+      parameters:
+        - name: project_id
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ProjectIssueCreate"
+      responses:
+        "201":
+          description: Created issue
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProjectIssue"
+
+  /v1/projects/{project_id}/issues/{issue_id}:
+    patch:
+      operationId: updateProjectIssue
+      tags: [risks]
+      summary: Update an issue's workflow status (Sprint 2)
+      parameters:
+        - name: project_id
+          in: path
+          required: true
+          schema:
+            type: integer
+        - name: issue_id
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ProjectIssueUpdate"
+      responses:
+        "200":
+          description: Updated issue
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProjectIssue"
+        "404":
+          description: Not found
+        "409":
+          description: Invalid transition or stale concurrency token
+
+  /v1/projects/{project_id}/issues/{issue_id}/assign:
+    post:
+      operationId: assignProjectIssue
+      tags: [risks]
+      summary: Assign/reassign the owner of an issue (Sprint 3)
+      parameters:
+        - name: project_id
+          in: path
+          required: true
+          schema:
+            type: integer
+        - name: issue_id
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AssignRequest"
+      responses:
+        "200":
+          description: Updated issue
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProjectIssue"
+        "403":
+          description: Not authorized
+        "404":
+          description: Not found
+        "409":
+          description: Target user invalid or stale concurrency token
+
+  /v1/projects/{project_id}/issues/{issue_id}/unassign:
+    post:
+      operationId: unassignProjectIssue
+      tags: [risks]
+      summary: Unassign the owner of an issue (Sprint 3)
+      parameters:
+        - name: project_id
+          in: path
+          required: true
+          schema:
+            type: integer
+        - name: issue_id
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UnassignRequest"
+      responses:
+        "200":
+          description: Updated issue
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProjectIssue"
+        "403":
+          description: Not authorized
+        "404":
+          description: Not found
+
+  # ── Sprint 4 — Notifications ─────────────────────────────────────────
+  /v1/notifications:
+    get:
+      operationId: listNotifications
+      tags: [notifications]
+      summary: List the caller's own notifications
+      parameters:
+        - name: unread_only
+          in: query
+          schema:
+            type: boolean
+            default: false
+        - name: event_type
+          in: query
+          schema:
+            type: string
+        - name: project_id
+          in: query
+          schema:
+            type: integer
+        - name: severity
+          in: query
+          schema:
+            type: string
+        - name: created_after
+          in: query
+          schema:
+            type: string
+            format: date-time
+        - name: created_before
+          in: query
+          schema:
+            type: string
+            format: date-time
+        - name: skip
+          in: query
+          schema:
+            type: integer
+            default: 0
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            default: 20
+      responses:
+        "200":
+          description: List of notifications
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Notification"
+
+  /v1/notifications/summary:
+    get:
+      operationId: getNotificationsSummary
+      tags: [notifications]
+      summary: Unread/total counts for the caller
+      responses:
+        "200":
+          description: Notification summary
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/NotificationSummary"
+
+  /v1/notifications/{notification_id}/read:
+    patch:
+      operationId: markNotificationRead
+      tags: [notifications]
+      summary: Mark a single notification read
+      parameters:
+        - name: notification_id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Updated notification
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Notification"
+        "404":
+          description: Not found
+
+  /v1/notifications/read-all:
+    post:
+      operationId: markAllNotificationsRead
+      tags: [notifications]
+      summary: Mark all of the caller's unread notifications read
+      responses:
+        "200":
+          description: Count of notifications updated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MarkAllReadOut"
+
+  # ── Sprint 4/5 — Unified My Work Feed ────────────────────────────────
+  /v1/my-work:
+    get:
+      operationId: listMyWork
+      tags: [myWork]
+      summary: Unified feed of work assigned to the caller
+      parameters:
+        - name: entity_type
+          in: query
+          schema:
+            type: string
+            enum: [project_risk, project_issue, action_item, safety_event, ncr, purchase_request, approval]
+        - name: project_id
+          in: query
+          schema:
+            type: integer
+        - name: status
+          in: query
+          schema:
+            type: string
+        - name: open_only
+          in: query
+          schema:
+            type: boolean
+            default: false
+        - name: overdue
+          in: query
+          schema:
+            type: boolean
+            default: false
+        - name: due_soon
+          in: query
+          schema:
+            type: boolean
+            default: false
+        - name: skip
+          in: query
+          schema:
+            type: integer
+            default: 0
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            default: 20
+      responses:
+        "200":
+          description: My Work items
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/MyWorkItem"
+
+  # ── Sprint 5 — Approval Engine ───────────────────────────────────────
+  /v1/approvals:
+    get:
+      operationId: listApprovals
+      tags: [approvals]
+      summary: List approval requests
+      parameters:
+        - name: status
+          in: query
+          schema:
+            type: string
+        - name: entity_type
+          in: query
+          schema:
+            type: string
+        - name: project_id
+          in: query
+          schema:
+            type: integer
+        - name: assigned_to_me
+          in: query
+          schema:
+            type: boolean
+            default: false
+        - name: requested_by_me
+          in: query
+          schema:
+            type: boolean
+            default: false
+        - name: overdue
+          in: query
+          schema:
+            type: boolean
+            default: false
+        - name: due_soon
+          in: query
+          schema:
+            type: boolean
+            default: false
+        - name: skip
+          in: query
+          schema:
+            type: integer
+            default: 0
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            default: 20
+      responses:
+        "200":
+          description: List of approval requests
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/ApprovalRequest"
+    post:
+      operationId: createApproval
+      tags: [approvals]
+      summary: Create a new approval request
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ApprovalCreateRequest"
+      responses:
+        "201":
+          description: Created approval request
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApprovalRequest"
+
+  /v1/approvals/summary:
+    get:
+      operationId: getApprovalsSummary
+      tags: [approvals]
+      summary: Approval counts for the caller (as reviewer or requester)
+      responses:
+        "200":
+          description: Approval summary
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApprovalSummary"
+
+  /v1/approvals/{approval_id}:
+    get:
+      operationId: getApproval
+      tags: [approvals]
+      summary: Get a single approval request
+      parameters:
+        - name: approval_id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Approval request
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApprovalRequest"
+        "404":
+          description: Not found
+
+  /v1/approvals/{approval_id}/history:
+    get:
+      operationId: getApprovalHistory
+      tags: [approvals]
+      summary: Append-only lifecycle history for an approval request
+      parameters:
+        - name: approval_id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Approval history entries, oldest first
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/ApprovalHistoryEntry"
+
+  /v1/approvals/{approval_id}/assign:
+    patch:
+      operationId: assignApprovalReviewer
+      tags: [approvals]
+      summary: Assign/reassign the reviewer (manager authority only)
+      parameters:
+        - name: approval_id
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ApprovalAssignRequest"
+      responses:
+        "200":
+          description: Updated approval request
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApprovalRequest"
+        "403":
+          description: Not authorized
+        "404":
+          description: Not found
+        "409":
+          description: Terminal status, invalid reviewer, or stale concurrency token
+
+  /v1/approvals/{approval_id}/start-review:
+    post:
+      operationId: startApprovalReview
+      tags: [approvals]
+      summary: Move an approval request into Under Review
+      parameters:
+        - name: approval_id
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ApprovalActionRequest"
+      responses:
+        "200":
+          description: Updated approval request
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApprovalRequest"
+        "403":
+          description: Not authorized
+        "404":
+          description: Not found
+        "409":
+          description: Invalid transition or stale concurrency token
+
+  /v1/approvals/{approval_id}/approve:
+    post:
+      operationId: approveApproval
+      tags: [approvals]
+      summary: Approve an approval request
+      parameters:
+        - name: approval_id
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ApprovalActionRequest"
+      responses:
+        "200":
+          description: Updated approval request
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApprovalRequest"
+        "403":
+          description: Not authorized
+        "404":
+          description: Not found
+        "409":
+          description: Invalid transition or stale concurrency token
+
+  /v1/approvals/{approval_id}/reject:
+    post:
+      operationId: rejectApproval
+      tags: [approvals]
+      summary: Reject an approval request (review_note required)
+      parameters:
+        - name: approval_id
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ApprovalReasonRequiredRequest"
+      responses:
+        "200":
+          description: Updated approval request
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApprovalRequest"
+        "403":
+          description: Not authorized
+        "404":
+          description: Not found
+        "409":
+          description: Invalid transition, missing reason, or stale concurrency token
+
+  /v1/approvals/{approval_id}/return:
+    post:
+      operationId: returnApproval
+      tags: [approvals]
+      summary: Return an approval request for changes (review_note required)
+      parameters:
+        - name: approval_id
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ApprovalReasonRequiredRequest"
+      responses:
+        "200":
+          description: Updated approval request
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApprovalRequest"
+        "403":
+          description: Not authorized
+        "404":
+          description: Not found
+        "409":
+          description: Invalid transition, missing reason, or stale concurrency token
+
+  /v1/approvals/{approval_id}/cancel:
+    post:
+      operationId: cancelApproval
+      tags: [approvals]
+      summary: Cancel an approval request (requester or manager only)
+      parameters:
+        - name: approval_id
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ApprovalActionRequest"
+      responses:
+        "200":
+          description: Updated approval request
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApprovalRequest"
+        "403":
+          description: Not authorized
+        "404":
+          description: Not found
+        "409":
+          description: Invalid transition or stale concurrency token
+
+  # ── Sprint 1/6 — Document versions, download, archive ────────────────
+  /v1/documents/{document_id}/versions:
+    get:
+      operationId: listDocumentVersions
+      tags: [documents]
+      summary: List a document's version history, newest first
+      parameters:
+        - name: document_id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Version history
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/DocumentVersion"
+        "404":
+          description: Not found
+    post:
+      operationId: uploadDocumentVersion
+      tags: [documents]
+      summary: Upload a new version of a document's file
+      parameters:
+        - name: document_id
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required: [file]
+              properties:
+                file:
+                  type: string
+                  format: binary
+      responses:
+        "201":
+          description: New (or, if byte-identical, existing) current version
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DocumentVersionUpload"
+        "404":
+          description: Not found
+
+  /v1/documents/{document_id}/download:
+    get:
+      operationId: downloadDocument
+      tags: [documents]
+      summary: Download the current (or a specific ?version=N) file
+      parameters:
+        - name: document_id
+          in: path
+          required: true
+          schema:
+            type: integer
+        - name: version
+          in: query
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: File bytes
+          content:
+            application/octet-stream:
+              schema:
+                type: string
+                format: binary
+        "404":
+          description: Not found
+
+  /v1/documents/{document_id}/archive:
+    post:
+      operationId: archiveDocument
+      tags: [documents]
+      summary: Soft-archive a document (nothing is ever permanently removed)
+      parameters:
+        - name: document_id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Updated document
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Document"
+        "404":
+          description: Not found
+
+  /v1/documents/{document_id}/unarchive:
+    post:
+      operationId: unarchiveDocument
+      tags: [documents]
+      summary: Unarchive a document
+      parameters:
+        - name: document_id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Updated document
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Document"
+        "404":
+          description: Not found
+
+  # ── Claims — read-only source-entity context for approvals ───────────
+  /v1/projects/{project_id}/claims/{claim_id}:
+    get:
+      operationId: getProjectClaim
+      tags: [claims]
+      summary: Get a single claim by ID
+      parameters:
+        - name: project_id
+          in: path
+          required: true
+          schema:
+            type: integer
+        - name: claim_id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Claim
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Claim"
+        "404":
+          description: Not found
+
+  # ── Admin — user directory (existing, admin-role-only) ────────────────
+  /v1/admin/users:
+    get:
+      operationId: listAdminUsers
+      tags: [admin]
+      summary: List all users in the caller's organization (admin role only)
+      responses:
+        "200":
+          description: List of users
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/AdminUserOut"
+        "403":
+          description: Caller is not an admin

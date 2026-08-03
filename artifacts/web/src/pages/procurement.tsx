@@ -1,5 +1,12 @@
 import { useState } from "react";
-import { useListPurchaseRequests, useListPurchaseOrders } from "@workspace/api-client-react";
+import { useQueryClient } from "@tanstack/react-query";
+import {
+  useListPurchaseRequests,
+  useListPurchaseOrders,
+  useUpdatePurchaseRequest,
+  useAssignPurchaseRequest,
+  useUnassignPurchaseRequest,
+} from "@workspace/api-client-react";
 import { useTranslation } from "react-i18next";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Input } from "@/components/ui/input";
@@ -9,20 +16,17 @@ import { PageTabs } from "@/components/page-tabs";
 import { EmptyState } from "@/components/ui/empty-state";
 import { ErrorState } from "@/components/ui/error-state";
 import { TableSkeletonRows } from "@/components/ui/table-skeleton";
+import { OwnershipControl } from "@/components/ownership-control";
+import { StatusTransitionControl } from "@/components/status-transition-control";
+import { useToast } from "@/hooks/use-toast";
+import { makeConflictAwareErrorHandler } from "@/lib/mutationFeedback";
 
 type Tab = "requests" | "orders";
 
-function prStatusBadge(status: string) {
-  const m: Record<string, string> = {
-    Approved:                "badge-success",
-    "Converted to PO":       "badge-info",
-    "Under Review":          "badge-warning",
-    "Pending Clarification": "badge-warning",
-    "Needs Rework":          "badge-danger",
-    "Returned to Requester": "badge-neutral",
-  };
-  return m[status] ?? "badge-neutral";
-}
+// Purchase request status is now rendered via StatusTransitionControl
+// (Sprint 6 Phase F), which sources its badge coloring from
+// lib/entityLinks.ts::genericStatusBadgeClass — prStatusBadge was this
+// page's own local copy of that mapping and is no longer needed.
 
 function poStatusBadge(status: string) {
   const m: Record<string, string> = {
@@ -39,11 +43,25 @@ const PAGE_LIMIT = 100;
 
 export default function Procurement() {
   const { t } = useTranslation();
+  const { toast } = useToast();
+  const qc = useQueryClient();
   const [tab, setTab] = useState<Tab>("requests");
   const [search, setSearch] = useState("");
 
-  const { data: prs, isLoading: prsLoading, isError: prsError } = useListPurchaseRequests({ limit: PAGE_LIMIT });
+  const { data: prs, isLoading: prsLoading, isError: prsError } = useListPurchaseRequests(
+    { limit: PAGE_LIMIT },
+    { query: { queryKey: ["purchase-requests-list"] } }
+  );
   const { data: pos, isLoading: posLoading, isError: posError } = useListPurchaseOrders({ limit: PAGE_LIMIT });
+
+  const onMutationError = makeConflictAwareErrorHandler(toast, qc, [["purchase-requests-list"]]);
+  const onMutationSuccess = (label: string) => () => {
+    toast({ title: label, variant: "success" });
+    qc.invalidateQueries({ queryKey: ["purchase-requests-list"] });
+  };
+  const updatePr = useUpdatePurchaseRequest({ mutation: { onSuccess: onMutationSuccess("Purchase request updated"), onError: onMutationError } });
+  const assignPr = useAssignPurchaseRequest({ mutation: { onSuccess: onMutationSuccess("Owner updated"), onError: onMutationError } });
+  const unassignPr = useUnassignPurchaseRequest({ mutation: { onSuccess: onMutationSuccess("Unassigned"), onError: onMutationError } });
 
   const filteredPrs = prs?.filter(
     (pr) =>
@@ -120,16 +138,17 @@ export default function Procurement() {
                   <th>{t("Category")}</th>
                   <th>{t("Specification")}</th>
                   <th>{t("Status")}</th>
+                  <th>{t("Owner")}</th>
                   <th>{t("Delivery Date")}</th>
                   <th>{t("Issue Date")}</th>
                 </tr>
               </thead>
               <tbody>
                 {prsLoading ? (
-                  <TableSkeletonRows rows={6} cols={6} />
+                  <TableSkeletonRows rows={6} cols={7} />
                 ) : !filteredPrs?.length ? (
                   <tr>
-                    <td colSpan={6}>
+                    <td colSpan={7}>
                       <EmptyState
                         icon={ClipboardList}
                         title={search ? "No purchase requests match your search" : "No purchase requests yet"}
@@ -145,7 +164,31 @@ export default function Procurement() {
                       <td className="max-w-xs truncate text-muted-foreground text-xs">
                         {pr.specification ?? "—"}
                       </td>
-                      <td><span className={`badge ${prStatusBadge(pr.status)}`}>{pr.status}</span></td>
+                      <td>
+                        <StatusTransitionControl
+                          entity="purchase_request"
+                          entityLabel="purchase request"
+                          currentStatus={pr.status}
+                          disabled={updatePr.isPending}
+                          onTransition={(target, closeOutValue) =>
+                            updatePr.mutate({
+                              requestId: pr.id,
+                              data: { status: target, rework_reason: closeOutValue, expected_updated_at: pr.updated_at ?? undefined },
+                            })
+                          }
+                        />
+                      </td>
+                      <td>
+                        <OwnershipControl
+                          projectId={pr.project_id}
+                          ownerId={pr.owner_id}
+                          disabled={assignPr.isPending || unassignPr.isPending}
+                          onAssign={(userId) =>
+                            assignPr.mutate({ requestId: pr.id, data: { user_id: userId, expected_updated_at: pr.updated_at ?? undefined } })
+                          }
+                          onUnassign={() => unassignPr.mutate({ requestId: pr.id, data: { expected_updated_at: pr.updated_at ?? undefined } })}
+                        />
+                      </td>
                       <td className="text-muted-foreground text-sm whitespace-nowrap">{pr.required_delivery_date ?? "—"}</td>
                       <td className="text-muted-foreground text-sm whitespace-nowrap">{pr.created_at}</td>
                     </tr>

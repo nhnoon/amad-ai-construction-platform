@@ -2,13 +2,28 @@ import { useRef, useState, type ReactNode } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   FileUp, FileText, Loader2, ScanText, Sparkles, AlertTriangle, CalendarDays, Tag,
-  X, ClipboardList, ShieldAlert, FileSearch,
+  X, ClipboardList, ShieldAlert, FileSearch, History, Download, Archive, ArchiveRestore,
+  MoreVertical, CheckCircle2,
 } from "lucide-react";
+import {
+  useListDocumentVersions,
+  useUploadDocumentVersion,
+  useArchiveDocument,
+  useUnarchiveDocument,
+  useListApprovals,
+  downloadDocument,
+} from "@workspace/api-client-react";
 import { Button } from "@/components/ui/button";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { EmptyState } from "@/components/ui/empty-state";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Skeleton } from "@/components/ui/skeleton";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { cn } from "@/lib/utils";
 import {
   AICenterApiError,
@@ -25,6 +40,9 @@ import { OcrReadyBadge, ScopeBadge, StatusBadge, ValidatedExtractionBadge } from
 import SectionHeading from "./SectionHeading";
 import { useRegisterCurrentEntity } from "@/context/CurrentEntityContext";
 import { CurrentlyAnalyzing } from "@/components/CurrentlyAnalyzing";
+import { useToast } from "@/hooks/use-toast";
+import { useUserDirectory } from "@/lib/useUserDirectory";
+import { apiErrorDetail } from "@/lib/apiErrors";
 
 // Document workspace: preview, OCR, and contract analysis for ONE document.
 // Presentation-only refinement — same endpoints, same request shapes, same
@@ -118,9 +136,81 @@ export default function DocumentDetailPanel({
 }) {
   const documentId = document.id;
   const queryClient = useQueryClient();
+  const { toast } = useToast();
+  const { resolveUserName } = useUserDirectory();
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [fileError, setFileError] = useState<string | null>(null);
   const [isDragOver, setIsDragOver] = useState(false);
+  const versionFileInputRef = useRef<HTMLInputElement>(null);
+  const [downloadingVersion, setDownloadingVersion] = useState<number | null>(null);
+
+  // ── Document Storage System (Sprint 1, activated Sprint 6) ────────────
+  const versionsQuery = useListDocumentVersions(documentId, {
+    query: { queryKey: ["document-versions", documentId] },
+  });
+  const uploadVersionMutation = useUploadDocumentVersion({
+    mutation: {
+      onSuccess: (result) => {
+        queryClient.invalidateQueries({ queryKey: ["document-versions", documentId] });
+        queryClient.invalidateQueries({ queryKey: ["ai-center-documents-list"] });
+        toast({
+          title: result.is_duplicate ? "Identical to current version" : "New version uploaded",
+          description: result.is_duplicate ? "This file matches the current version — nothing changed." : `Version ${result.version_number} is now current.`,
+          variant: "success",
+        });
+      },
+      onError: (err) => toast({ title: "Upload failed", description: apiErrorDetail(err), variant: "destructive" }),
+    },
+  });
+  const archiveMutation = useArchiveDocument({
+    mutation: {
+      onSuccess: () => {
+        queryClient.invalidateQueries({ queryKey: ["ai-center-documents-list"] });
+        toast({ title: "Document archived", variant: "success" });
+      },
+      onError: (err) => toast({ title: "Archive failed", description: apiErrorDetail(err), variant: "destructive" }),
+    },
+  });
+  const unarchiveMutation = useUnarchiveDocument({
+    mutation: {
+      onSuccess: () => {
+        queryClient.invalidateQueries({ queryKey: ["ai-center-documents-list"] });
+        toast({ title: "Document unarchived", variant: "success" });
+      },
+      onError: (err) => toast({ title: "Unarchive failed", description: apiErrorDetail(err), variant: "destructive" }),
+    },
+  });
+
+  // Read-only "approved version" context (Sprint 5 Approval Engine) — never
+  // implies this page can settle/mutate anything beyond the approval record.
+  const { data: documentApprovals } = useListApprovals(
+    { entity_type: "document", project_id: document.project_id ?? undefined, status: "Approved" },
+    { query: { queryKey: ["document-approvals", documentId], enabled: true } }
+  );
+  const approvedVersion = documentApprovals?.find((a) => a.entity_id === documentId)?.target_version ?? null;
+
+  async function handleDownload(version?: number) {
+    setDownloadingVersion(version ?? document.version_number ?? 0);
+    try {
+      const blob = await downloadDocument(documentId, version != null ? { version } : undefined);
+      const url = URL.createObjectURL(blob);
+      const a = window.document.createElement("a");
+      a.href = url;
+      a.download = document.title || `document-${documentId}`;
+      a.click();
+      URL.revokeObjectURL(url);
+    } catch (err) {
+      toast({ title: "Download failed", description: apiErrorDetail(err), variant: "destructive" });
+    } finally {
+      setDownloadingVersion(null);
+    }
+  }
+
+  function handleVersionFileSelect(file: File | null) {
+    if (!file) return;
+    uploadVersionMutation.mutate({ documentId, data: { file } });
+    if (versionFileInputRef.current) versionFileInputRef.current.value = "";
+  }
 
   const ocrQuery = useQuery<DocumentOCRResult | typeof NOT_PROCESSED, AICenterApiError>({
     queryKey: ["ai-center-ocr", documentId],
@@ -199,13 +289,41 @@ export default function DocumentDetailPanel({
               <p className="panel-title flex items-center gap-2">
                 <FileText className="w-4 h-4 text-primary shrink-0" />
                 {document.title}
+                {document.is_archived && <span className="badge badge-neutral">Archived</span>}
               </p>
               <div className="flex items-center gap-3 mt-1.5 flex-wrap text-xs text-muted-foreground">
                 <span className="inline-flex items-center gap-1"><Tag className="w-3 h-3" />{document.doc_type}</span>
                 <span className="inline-flex items-center gap-1"><CalendarDays className="w-3 h-3" />{document.doc_date}</span>
                 <ScopeBadge isGeneral={document.project_id == null} />
+                {document.version_number != null && (
+                  <span className="inline-flex items-center gap-1">
+                    <CheckCircle2 className="w-3 h-3 text-emerald-600 dark:text-emerald-400" />
+                    Current: v{document.version_number}
+                  </span>
+                )}
               </div>
             </div>
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button variant="ghost" size="icon" className="shrink-0" aria-label="Document actions">
+                  <MoreVertical className="w-4 h-4" />
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end">
+                <DropdownMenuItem onClick={() => handleDownload()} disabled={!document.version_number || downloadingVersion != null}>
+                  <Download className="w-4 h-4 me-2" /> Download current version
+                </DropdownMenuItem>
+                {document.is_archived ? (
+                  <DropdownMenuItem onClick={() => unarchiveMutation.mutate({ documentId })} disabled={unarchiveMutation.isPending}>
+                    <ArchiveRestore className="w-4 h-4 me-2" /> Unarchive
+                  </DropdownMenuItem>
+                ) : (
+                  <DropdownMenuItem onClick={() => archiveMutation.mutate({ documentId })} disabled={archiveMutation.isPending}>
+                    <Archive className="w-4 h-4 me-2" /> Archive
+                  </DropdownMenuItem>
+                )}
+              </DropdownMenuContent>
+            </DropdownMenu>
           </div>
           <div className="panel-body space-y-4">
             <div>
@@ -287,6 +405,85 @@ export default function DocumentDetailPanel({
                 </Alert>
               )}
             </div>
+          </div>
+        </div>
+      </section>
+
+      {/* ── Version History (Sprint 1 storage, activated Sprint 6) ──────── */}
+      <section>
+        <SectionHeading icon={History} title="Version History" description="Every uploaded file for this document, newest first" />
+        <div className="panel">
+          <div className="panel-header items-center justify-between">
+            <p className="panel-title sr-only">Version History</p>
+            <input
+              ref={versionFileInputRef}
+              type="file"
+              accept={ACCEPTED_EXTENSIONS}
+              className="hidden"
+              onChange={(e) => handleVersionFileSelect(e.target.files?.[0] ?? null)}
+            />
+            <Button
+              size="sm"
+              variant="outline"
+              className="gap-1.5"
+              onClick={() => versionFileInputRef.current?.click()}
+              disabled={uploadVersionMutation.isPending}
+            >
+              {uploadVersionMutation.isPending ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <FileUp className="w-3.5 h-3.5" />}
+              Upload new version
+            </Button>
+          </div>
+          <div className="panel-body">
+            {approvedVersion != null && (
+              <p className="text-xs text-muted-foreground mb-3 flex items-center gap-1.5">
+                <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400 shrink-0" />
+                Version {approvedVersion} was approved.
+                {document.version_number != null && approvedVersion !== document.version_number && (
+                  <span className="text-amber-600 dark:text-amber-400">
+                    {" "}The current version (v{document.version_number}) is newer and does not inherit that approval.
+                  </span>
+                )}
+              </p>
+            )}
+            {versionsQuery.isLoading ? (
+              <div className="space-y-2">
+                {[0, 1].map((i) => <Skeleton key={i} className="h-12 w-full rounded-lg" />)}
+              </div>
+            ) : versionsQuery.isError ? (
+              <Alert variant="destructive">
+                <AlertTriangle className="h-4 w-4" />
+                <AlertDescription>Unable to load version history right now.</AlertDescription>
+              </Alert>
+            ) : !versionsQuery.data?.length ? (
+              <EmptyState icon={History} title="No versions uploaded yet" description="Upload a file above to start this document's version history." className="py-6" />
+            ) : (
+              <ul className="divide-y divide-border">
+                {versionsQuery.data.map((v) => (
+                  <li key={v.version_number} className="flex items-center justify-between gap-3 py-2.5 first:pt-0 last:pb-0">
+                    <div className="min-w-0">
+                      <p className="text-sm text-foreground flex items-center gap-2">
+                        <span className="font-medium">v{v.version_number}</span>
+                        {v.is_current && <span className="badge badge-success text-[10px]">Current</span>}
+                        <span className="truncate text-muted-foreground text-xs">{v.original_filename}</span>
+                      </p>
+                      <p className="text-[11px] text-muted-foreground mt-0.5">
+                        {formatFileSize(v.file_size)} · {resolveUserName(v.uploaded_by) ?? "Unknown"} · {new Date(v.uploaded_at).toLocaleString()}
+                      </p>
+                    </div>
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      className="shrink-0 gap-1.5"
+                      onClick={() => handleDownload(v.version_number)}
+                      disabled={downloadingVersion != null}
+                    >
+                      {downloadingVersion === v.version_number ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Download className="w-3.5 h-3.5" />}
+                      Download
+                    </Button>
+                  </li>
+                ))}
+              </ul>
+            )}
           </div>
         </div>
       </section>

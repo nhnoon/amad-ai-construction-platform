@@ -40,20 +40,3 @@ class AIAuditLog(Base):
     approved_by = Column(String(255), nullable=True)
     approval_status = Column(String(50), nullable=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
-
-
-class ApprovalRequest(Base):
-    __tablename__ = "approval_requests"
-
-    id = Column(Integer, primary_key=True, autoincrement=True)
-    project_id = Column(Integer, ForeignKey("projects.id"), nullable=True)
-    action_type = Column(String(100), nullable=False)
-    action_description = Column(Text, nullable=False)
-    payload = Column(JSONB, nullable=True)
-    risk_level = Column(String(20), nullable=False, default="medium")
-    status = Column(String(50), nullable=False, default="pending")
-    requested_by = Column(String(100), nullable=False, default="ai_agent")
-    reviewed_by = Column(String(255), nullable=True)
-    review_note = Column(Text, nullable=True)
-    created_at = Column(DateTime(timezone=True), server_default=func.now())
-    reviewed_at = Column(DateTime(timezone=True), nullable=True)

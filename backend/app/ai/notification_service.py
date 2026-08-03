@@ -270,3 +270,125 @@ def notify_purchase_request_status(
         )
     except Exception:
         logger.exception("notify_purchase_request_status_failed entity_id=%s", getattr(pr, "id", None))
+
+
+# ─────────────────────────────────────────────────────────────────────────
+# Sprint 5 — Approval Engine notifications. Called from
+# app/ai/approval_engine.py after each lifecycle action's own db.commit().
+# Dedup keys are timestamp-free, built from (approval id, recipient, event
+# type, resulting status/reviewer) — same documented trade-off as the
+# Part B/C keys above.
+# ─────────────────────────────────────────────────────────────────────────
+EVENT_APPROVAL_REQUESTED = "approval_requested"
+EVENT_APPROVAL_REVIEWER_ASSIGNED = "approval_reviewer_assigned"
+EVENT_APPROVAL_REVIEWER_REASSIGNED = "approval_reviewer_reassigned"
+EVENT_APPROVAL_REVIEW_STARTED = "approval_review_started"
+EVENT_APPROVAL_APPROVED = "approval_approved"
+EVENT_APPROVAL_REJECTED = "approval_rejected"
+EVENT_APPROVAL_RETURNED = "approval_returned"
+EVENT_APPROVAL_CANCELLED = "approval_cancelled"
+
+_APPROVAL_DECISION_EVENTS = {
+    "Approved": (EVENT_APPROVAL_APPROVED, SEVERITY_INFO),
+    "Rejected": (EVENT_APPROVAL_REJECTED, SEVERITY_WARNING),
+    "Returned": (EVENT_APPROVAL_RETURNED, SEVERITY_WARNING),
+}
+
+
+def _approval_action_url(approval) -> str:
+    return f"/approvals/{approval.id}"
+
+
+def notify_approval_requested(db: Session, *, approval, actor_user_id: int, entity_label: str) -> None:
+    try:
+        if approval.assigned_reviewer_id is None:
+            return
+        severity = SEVERITY_CRITICAL if approval.risk_level in ("high", "critical") else SEVERITY_INFO
+        notify(
+            db, organization_id=approval.organization_id, recipient_user_id=approval.assigned_reviewer_id,
+            actor_user_id=actor_user_id, project_id=approval.project_id,
+            event_type=EVENT_APPROVAL_REQUESTED, entity_type="approval", entity_id=approval.id,
+            title=f"Approval requested: {entity_label}",
+            message=f"{entity_label} needs your review.",
+            severity=severity, action_url=_approval_action_url(approval),
+            deduplication_key=f"approval:{approval.id}:{approval.assigned_reviewer_id}:{EVENT_APPROVAL_REQUESTED}",
+        )
+    except Exception:
+        logger.exception("notify_approval_requested_failed approval_id=%s", getattr(approval, "id", None))
+
+
+def notify_approval_assigned(db: Session, *, approval, actor_user_id: int, previous_reviewer_id: Optional[int], entity_label: str) -> None:
+    try:
+        event_type = EVENT_APPROVAL_REVIEWER_REASSIGNED if previous_reviewer_id is not None else EVENT_APPROVAL_REVIEWER_ASSIGNED
+        notify(
+            db, organization_id=approval.organization_id, recipient_user_id=approval.assigned_reviewer_id,
+            actor_user_id=actor_user_id, project_id=approval.project_id,
+            event_type=event_type, entity_type="approval", entity_id=approval.id,
+            title=f"Assigned to review: {entity_label}",
+            message=f"You were assigned to review {entity_label}.",
+            severity=SEVERITY_INFO, action_url=_approval_action_url(approval),
+            deduplication_key=f"approval:{approval.id}:{approval.assigned_reviewer_id}:{event_type}",
+        )
+        if previous_reviewer_id is not None and previous_reviewer_id != approval.assigned_reviewer_id:
+            notify(
+                db, organization_id=approval.organization_id, recipient_user_id=previous_reviewer_id,
+                actor_user_id=actor_user_id, project_id=approval.project_id,
+                event_type=EVENT_APPROVAL_REVIEWER_REASSIGNED, entity_type="approval", entity_id=approval.id,
+                title=f"Reassigned: {entity_label}",
+                message=f"{entity_label} was reassigned to another reviewer.",
+                severity=SEVERITY_INFO, action_url=_approval_action_url(approval),
+                deduplication_key=f"approval:{approval.id}:{previous_reviewer_id}:reassigned_away:{approval.assigned_reviewer_id}",
+            )
+    except Exception:
+        logger.exception("notify_approval_assigned_failed approval_id=%s", getattr(approval, "id", None))
+
+
+def notify_approval_review_started(db: Session, *, approval, actor_user_id: int, entity_label: str) -> None:
+    try:
+        notify(
+            db, organization_id=approval.organization_id, recipient_user_id=approval.requested_by_user_id,
+            actor_user_id=actor_user_id, project_id=approval.project_id,
+            event_type=EVENT_APPROVAL_REVIEW_STARTED, entity_type="approval", entity_id=approval.id,
+            title=f"Review started: {entity_label}",
+            message=f"Review has started on {entity_label}.",
+            severity=SEVERITY_INFO, action_url=_approval_action_url(approval),
+            deduplication_key=f"approval:{approval.id}:{approval.requested_by_user_id}:{EVENT_APPROVAL_REVIEW_STARTED}",
+        )
+    except Exception:
+        logger.exception("notify_approval_review_started_failed approval_id=%s", getattr(approval, "id", None))
+
+
+def notify_approval_decided(db: Session, *, approval, actor_user_id: int, entity_label: str) -> None:
+    try:
+        mapped = _APPROVAL_DECISION_EVENTS.get(approval.status)
+        if mapped is None:
+            return
+        event_type, severity = mapped
+        notify(
+            db, organization_id=approval.organization_id, recipient_user_id=approval.requested_by_user_id,
+            actor_user_id=actor_user_id, project_id=approval.project_id,
+            event_type=event_type, entity_type="approval", entity_id=approval.id,
+            title=f"{approval.status}: {entity_label}",
+            message=f"{entity_label} was {approval.status.lower()}.",
+            severity=severity, action_url=_approval_action_url(approval),
+            deduplication_key=f"approval:{approval.id}:{approval.requested_by_user_id}:{event_type}",
+        )
+    except Exception:
+        logger.exception("notify_approval_decided_failed approval_id=%s", getattr(approval, "id", None))
+
+
+def notify_approval_cancelled(db: Session, *, approval, actor_user_id: int, entity_label: str) -> None:
+    try:
+        if approval.assigned_reviewer_id is None:
+            return
+        notify(
+            db, organization_id=approval.organization_id, recipient_user_id=approval.assigned_reviewer_id,
+            actor_user_id=actor_user_id, project_id=approval.project_id,
+            event_type=EVENT_APPROVAL_CANCELLED, entity_type="approval", entity_id=approval.id,
+            title=f"Cancelled: {entity_label}",
+            message=f"{entity_label} was cancelled.",
+            severity=SEVERITY_INFO, action_url=_approval_action_url(approval),
+            deduplication_key=f"approval:{approval.id}:{approval.assigned_reviewer_id}:{EVENT_APPROVAL_CANCELLED}",
+        )
+    except Exception:
+        logger.exception("notify_approval_cancelled_failed approval_id=%s", getattr(approval, "id", None))

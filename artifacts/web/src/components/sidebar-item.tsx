@@ -23,6 +23,8 @@ type SidebarItemBaseProps = {
   /** Child row nested under an expanded group — same row, extra start padding. */
   indent?: boolean;
   testId?: string;
+  /** Unread-style count badge (e.g. Notifications). Omitted/0 renders nothing. */
+  badgeCount?: number;
 };
 
 type SidebarItemProps =
@@ -39,8 +41,9 @@ type SidebarItemProps =
     });
 
 export function SidebarItem(props: SidebarItemProps) {
-  const { icon: Icon, label, active = false, collapsed = false, indent = false, testId } = props;
+  const { icon: Icon, label, active = false, collapsed = false, indent = false, testId, badgeCount } = props;
   const isGroupHeader = props.expanded !== undefined;
+  const hasBadge = !!badgeCount && badgeCount > 0;
 
   const rowClass = `group relative w-full flex items-center gap-2.5 h-9 rounded-md
     text-[13px] font-medium transition-colors duration-150
@@ -60,12 +63,25 @@ export function SidebarItem(props: SidebarItemProps) {
           aria-hidden="true"
         />
       )}
-      <Icon
-        className={`w-4 h-4 shrink-0 ${
-          active ? "text-sidebar-primary" : "text-sidebar-foreground/50 group-hover:text-sidebar-accent-foreground"
-        }`}
-      />
+      <span className="relative shrink-0">
+        <Icon
+          className={`w-4 h-4 ${
+            active ? "text-sidebar-primary" : "text-sidebar-foreground/50 group-hover:text-sidebar-accent-foreground"
+          }`}
+        />
+        {hasBadge && collapsed && (
+          <span
+            className="hidden md:block absolute -top-1 -end-1 w-1.5 h-1.5 rounded-full bg-destructive"
+            aria-hidden="true"
+          />
+        )}
+      </span>
       <span className={collapsed ? "md:hidden" : "flex-1 truncate text-start"}>{label}</span>
+      {hasBadge && !collapsed && (
+        <span className="shrink-0 min-w-[18px] h-[18px] px-1 rounded-full bg-destructive text-destructive-foreground text-[10px] font-semibold flex items-center justify-center">
+          {badgeCount! > 99 ? "99+" : badgeCount}
+        </span>
+      )}
       {isGroupHeader && !collapsed && (
         <ChevronRight
           className={`w-3.5 h-3.5 shrink-0 transition-transform duration-200 ease-out ${

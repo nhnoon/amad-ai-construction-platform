@@ -3,9 +3,16 @@ import {
   useListProjects,
   useListProjectSafetyEvents,
   useListProjectNcrs,
+  useUpdateSafetyEvent,
+  useAssignSafetyEvent,
+  useUnassignSafetyEvent,
+  useUpdateNcr,
+  useAssignNcr,
+  useUnassignNcr,
 } from "@workspace/api-client-react";
 import { Link } from "wouter";
 import { useTranslation } from "react-i18next";
+import { useQueryClient } from "@tanstack/react-query";
 import {
   ShieldAlert, AlertOctagon, AlertTriangle, ClipboardCheck, Activity,
   FileStack, Clock, Sparkles, Info, Building2, ListChecks,
@@ -19,17 +26,22 @@ import { StatTile } from "@/components/stat-tile";
 import { WorkspaceQuickLink } from "@/components/WorkspaceQuickLink";
 import { InsightPanel } from "@/components/InsightPanel";
 import { AIActionPanel } from "@/components/AIActionPanel";
+import { OwnershipControl } from "@/components/ownership-control";
+import { StatusTransitionControl } from "@/components/status-transition-control";
+import { useToast } from "@/hooks/use-toast";
+import { makeConflictAwareErrorHandler } from "@/lib/mutationFeedback";
 
-// ── Safety — operational safety workspace (Phase 2) ─────────────────────────
+// ── Safety — operational safety workspace (Phase 2, ownership/workflow
+// activated in Sprint 6) ─────────────────────────────────────────────────
 // Every number and card here comes straight from the existing project-scoped
-// GET .../safety-events and GET .../ncrs lists — the only safety/quality
-// reads the backend exposes (see backend/app/api/v1/safety.py). There is no
-// portfolio-wide safety feed, no subcontractor/supplier name resolution on
-// either record (both are raw foreign keys — see schemas/safety.py), no
-// investigation/assignee/resolution-owner field on either table, and no
-// POST endpoint to log a new event or NCR, and no per-record detail route.
-// Rather than invent any of that, this page says so wherever the design
-// calls for it instead of rendering a fabricated value or a dead link.
+// GET .../safety-events and GET .../ncrs lists (see
+// backend/app/api/v1/safety.py). Sprint 3/2 added real ownership (owner_id)
+// and status workflow to both tables — assign/reassign/unassign and status
+// transitions are wired below via OwnershipControl/StatusTransitionControl.
+// Still missing on the backend: subcontractor/supplier name resolution
+// (both are raw foreign keys), a POST endpoint to log a new event or NCR,
+// and a per-record detail route — this page still says so rather than
+// fabricating any of that.
 
 type Tab = "events" | "ncrs";
 
@@ -61,12 +73,28 @@ const RECENT_PREVIEW_COUNT = 6;
 
 export default function Safety() {
   const { t } = useTranslation();
+  const { toast } = useToast();
+  const qc = useQueryClient();
   const [tab, setTab] = useState<Tab>("events");
   const [selectedProjectId, setSelectedProjectId] = useState<number | null>(null);
   const [showAllEvents, setShowAllEvents] = useState(false);
   const [showAllNcrs, setShowAllNcrs] = useState(false);
 
   const { data: projects } = useListProjects({ limit: 60 });
+
+  const refreshKeys = [["safety-events", selectedProjectId], ["ncrs", selectedProjectId]];
+  const onMutationError = makeConflictAwareErrorHandler(toast, qc, refreshKeys);
+  const onMutationSuccess = (label: string) => () => {
+    toast({ title: label, variant: "success" });
+    refreshKeys.forEach((key) => qc.invalidateQueries({ queryKey: key }));
+  };
+
+  const updateSafetyEvent = useUpdateSafetyEvent({ mutation: { onSuccess: onMutationSuccess("Safety event updated"), onError: onMutationError } });
+  const assignSafetyEvent = useAssignSafetyEvent({ mutation: { onSuccess: onMutationSuccess("Owner updated"), onError: onMutationError } });
+  const unassignSafetyEvent = useUnassignSafetyEvent({ mutation: { onSuccess: onMutationSuccess("Unassigned"), onError: onMutationError } });
+  const updateNcr = useUpdateNcr({ mutation: { onSuccess: onMutationSuccess("NCR updated"), onError: onMutationError } });
+  const assignNcr = useAssignNcr({ mutation: { onSuccess: onMutationSuccess("Owner updated"), onError: onMutationError } });
+  const unassignNcr = useUnassignNcr({ mutation: { onSuccess: onMutationSuccess("Unassigned"), onError: onMutationError } });
 
   useEffect(() => {
     if (projects && projects.length > 0 && !selectedProjectId) {
@@ -326,6 +354,32 @@ export default function Safety() {
                         <p className="text-xs text-muted-foreground line-clamp-2 mt-auto pt-2 border-t border-border/50">
                           <span className="font-semibold text-foreground">Corrective action:</span> {e.corrective_action}
                         </p>
+                        <div className="mt-2 pt-2 border-t border-border/50 flex items-center justify-between gap-2">
+                          <StatusTransitionControl
+                            entity="safety_event"
+                            entityLabel="safety event"
+                            currentStatus={e.status ?? "Open"}
+                            disabled={updateSafetyEvent.isPending}
+                            onTransition={(target, closeOutValue) =>
+                              updateSafetyEvent.mutate({
+                                projectId: selectedProjectId!,
+                                eventId: e.id,
+                                data: { status: target, corrective_action: closeOutValue, expected_updated_at: e.updated_at ?? undefined },
+                              })
+                            }
+                          />
+                          <OwnershipControl
+                            projectId={selectedProjectId!}
+                            ownerId={e.owner_id}
+                            disabled={assignSafetyEvent.isPending || unassignSafetyEvent.isPending}
+                            onAssign={(userId) =>
+                              assignSafetyEvent.mutate({ projectId: selectedProjectId!, eventId: e.id, data: { user_id: userId, expected_updated_at: e.updated_at ?? undefined } })
+                            }
+                            onUnassign={() =>
+                              unassignSafetyEvent.mutate({ projectId: selectedProjectId!, eventId: e.id, data: { expected_updated_at: e.updated_at ?? undefined } })
+                            }
+                          />
+                        </div>
                       </article>
                     ))}
                   </div>
@@ -354,6 +408,32 @@ export default function Safety() {
                       <p className="text-xs text-muted-foreground line-clamp-2 mt-auto pt-2 border-t border-border/50">
                         <span className="font-semibold text-foreground">Root cause:</span> {n.root_cause}
                       </p>
+                      <div className="mt-2 pt-2 border-t border-border/50 flex items-center justify-between gap-2">
+                        <StatusTransitionControl
+                          entity="ncr"
+                          entityLabel="NCR"
+                          currentStatus={n.status}
+                          disabled={updateNcr.isPending}
+                          onTransition={(target, closeOutValue) =>
+                            updateNcr.mutate({
+                              projectId: selectedProjectId!,
+                              ncrId: n.id,
+                              data: { status: target, corrective_action: closeOutValue, expected_updated_at: n.updated_at ?? undefined },
+                            })
+                          }
+                        />
+                        <OwnershipControl
+                          projectId={selectedProjectId!}
+                          ownerId={n.owner_id}
+                          disabled={assignNcr.isPending || unassignNcr.isPending}
+                          onAssign={(userId) =>
+                            assignNcr.mutate({ projectId: selectedProjectId!, ncrId: n.id, data: { user_id: userId, expected_updated_at: n.updated_at ?? undefined } })
+                          }
+                          onUnassign={() =>
+                            unassignNcr.mutate({ projectId: selectedProjectId!, ncrId: n.id, data: { expected_updated_at: n.updated_at ?? undefined } })
+                          }
+                        />
+                      </div>
                     </article>
                   ))}
                 </div>

@@ -25,6 +25,9 @@ _ACTION_URL_PATH = {
     # app/ai/ownership_engine.py::_get_purchase_request_and_project's own
     # note on why this one entity's routes differ from the other five).
     "purchase_request": "/procurement/purchase-requests/{entity_id}",
+    # Sprint 5 — Approval Engine. Flat route (an approval isn't nested
+    # under its target entity's own path).
+    "approval": "/approvals/{entity_id}",
 }
 
 

@@ -4,7 +4,7 @@ from . import (
     site_reports, documents, claims, safety,
     subcontractors, auth, dashboard, memberships,
     ai_copilot, alerts, executive, reports,
-    notifications, my_work,
+    notifications, my_work, approvals,
 )
 from .admin import users as admin_users
 from .admin import organizations as admin_orgs
@@ -82,3 +82,8 @@ router.include_router(reports.router, dependencies=_any_auth)
 # Notifications & Unified My Work Feed (Sprint 4) — all authenticated users
 router.include_router(notifications.router, dependencies=_any_auth)
 router.include_router(my_work.router, dependencies=_any_auth)
+
+# Approval Engine (Sprint 5) — all authenticated users; per-action
+# authorization (requester/reviewer/manager) is enforced inside
+# app/ai/approval_engine.py itself, not via a role gate here.
+router.include_router(approvals.router, dependencies=_any_auth)

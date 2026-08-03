@@ -6,8 +6,12 @@ from typing import Optional
 class MyWorkItemOut(BaseModel):
     entity_type: str
     entity_id: int
-    project_id: int
-    project_code: str
+    # Optional (Sprint 5): the "approval" entity_type can target an
+    # organization-scoped General Library document, which has no
+    # project_id at all — every other entity_type still always
+    # populates both fields.
+    project_id: Optional[int] = None
+    project_code: Optional[str] = None
     title: str
     status: str
     priority: Optional[str] = None
