@@ -19,14 +19,34 @@ async def lifespan(app: FastAPI):
     logger.info("Shutting down")
 
 
+def _docs_urls(environment: str) -> dict[str, str | None]:
+    """RC1 Phase 0 — Security Remediation (Finding 5): interactive API docs
+    (Swagger UI, ReDoc) and the raw OpenAPI schema are only served outside
+    production. Passing None for docs_url/redoc_url/openapi_url means
+    FastAPI never registers those routes at all — a request to any of them
+    404s exactly like any other undefined route, rather than merely being
+    unlinked from a UI while still reachable directly.
+
+    Factored out as a pure function (same reasoning as
+    app/core/cors.py::resolve_cors_settings) so this policy is
+    unit-testable without booting the whole ASGI app with a different
+    ENVIRONMENT.
+    """
+    if environment == "production":
+        return {"docs_url": None, "redoc_url": None, "openapi_url": None}
+    return {
+        "docs_url": "/api/docs",
+        "redoc_url": "/api/redoc",
+        "openapi_url": "/api/openapi.json",
+    }
+
+
 app = FastAPI(
     title=settings.APP_NAME,
     version=settings.APP_VERSION,
     description="AI-Powered Construction Operations Intelligence Platform",
-    docs_url="/api/docs",
-    redoc_url="/api/redoc",
-    openapi_url="/api/openapi.json",
     lifespan=lifespan,
+    **_docs_urls(settings.ENVIRONMENT),
 )
 
 # Phase 2 — Security & Authentication Hardening: enforces "must change

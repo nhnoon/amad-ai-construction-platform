@@ -160,3 +160,34 @@ def get_project_or_404(db: Session, scope: AIAuthScope, project_id: int) -> Proj
             detail="Access denied to this project",
         )
     return project
+
+
+def get_same_org_active_user_or_404(db: Session, scope: AIAuthScope, user_id: int) -> UserAccount:
+    """Fetch a user applying the same existence/tenant-hiding policy as
+    ``get_project_or_404``: a user that doesn't exist and a user that
+    exists in another organization are both reported as 404, so a
+    cross-tenant user id never leaks existence or organization membership.
+    An existing, same-organization but inactive user is reported as 409 —
+    mirroring ``app/ai/ownership_engine.py::_resolve_target_user``'s
+    established "cannot act on an inactive user" policy — rather than
+    silently succeeding.
+
+    RC1 Phase 0 — Security Remediation (Finding 4): factored out so every
+    call site that must resolve "some other user I'm about to grant
+    project access to" enforces the identical tenant-isolation rule
+    instead of drifting independently. ``app/api/v1/memberships.py`` uses
+    this directly; ``app/ai/ownership_engine.py::_resolve_target_user``
+    keeps its own inline check (unchanged, out of scope for this fix) since
+    it additionally verifies existing project access as part of assignment
+    — a different, ownership-specific rule this helper deliberately does
+    not fold in.
+    """
+    user = db.query(UserAccount).filter(UserAccount.id == user_id).first()
+    if user is None or user.organization_id != scope.organization_id:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
+    if not user.is_active:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=f"{user.email} is inactive and cannot be added to a project.",
+        )
+    return user

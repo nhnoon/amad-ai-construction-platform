@@ -17,17 +17,45 @@ class Settings(BaseSettings):
     APP_NAME: str = "Construction AI Platform"
     APP_VERSION: str = "1.0.0"
     ENVIRONMENT: str = "development"
-    DEBUG: bool = True
+    # RC1 Phase 0 — Security Remediation (Finding 8): defaults to False (was
+    # True). DEBUG is not read anywhere in the running application today —
+    # FastAPI's own debug= flag is never wired to it — so this value is
+    # currently inert either way. It is hardened regardless: see
+    # resolve_debug_setting() below and its call site at the bottom of this
+    # file, which refuses to start with DEBUG=true outside development, so
+    # a future change that *does* wire this in can never silently leak
+    # tracebacks in production.
+    DEBUG: bool = False
 
     API_V1_PREFIX: str = "/api/v1"
 
-    DATABASE_URL: str = "postgresql://user:password@localhost:5432/construction"
+    # RC1 Phase 0 — Security Remediation (Finding 7): must be set via the
+    # DATABASE_URL environment variable — no hardcoded fallback. This used
+    # to default to "postgresql://user:password@localhost:5432/construction",
+    # which meant a deployment that forgot to set DATABASE_URL would
+    # silently attempt to connect to a generic local placeholder instead of
+    # failing fast with a clear error. Mirrors the existing SESSION_SECRET
+    # pattern immediately below.
+    DATABASE_URL: str
 
     REDIS_URL: str = "redis://localhost:6379/0"
 
     # Must be set via SESSION_SECRET environment variable — no hardcoded fallback.
     SESSION_SECRET: str
     ALGORITHM: str = "HS256"
+
+    @field_validator("DATABASE_URL")
+    @classmethod
+    def database_url_must_not_be_empty(cls, v: str) -> str:
+        if not v or v.strip() == "":
+            # Deliberately does not echo `v` back — even an empty/whitespace
+            # value is rejected without ever including database connection
+            # details (host/user/password) in an error message or log line.
+            raise ValueError(
+                "DATABASE_URL environment variable must be set to a non-empty value. "
+                "See backend/.env.example for the expected format."
+            )
+        return v
 
     @field_validator("SESSION_SECRET")
     @classmethod
@@ -187,4 +215,31 @@ class Settings(BaseSettings):
     MULTI_DOMAIN_HERMES_TIMEOUT_SECONDS: int = 400
 
 
+def resolve_debug_setting(debug: bool, environment: str) -> bool:
+    """Validate the DEBUG flag against the running environment.
+
+    RC1 Phase 0 — Security Remediation (Finding 8): DEBUG is not currently
+    read anywhere in the running application — FastAPI's own `debug=` flag
+    is never wired to it — so today's behavior is safe regardless of this
+    value. It is hardened anyway: the day someone wires
+    `FastAPI(debug=settings.DEBUG)` as an apparently-harmless fix for "why
+    doesn't DEBUG do anything", a forgotten `DEBUG=true` left over from
+    local development would leak full tracebacks (file paths, source
+    lines, possibly database connection details via SQLAlchemy exceptions)
+    to every API client in that environment.
+
+    Mirrors the identical ALLOWED_ORIGINS-wildcard guard in
+    app/core/cors.py::resolve_cors_settings — same "refuse to boot outside
+    development" policy, factored out as a pure function for the same
+    reason: unit-testable without booting Settings/the ASGI app.
+    """
+    if debug and environment != "development":
+        raise RuntimeError(
+            "DEBUG=true is not allowed outside ENVIRONMENT=development — "
+            "set DEBUG=false (or unset it) for this environment."
+        )
+    return debug
+
+
 settings = Settings()
+resolve_debug_setting(settings.DEBUG, settings.ENVIRONMENT)

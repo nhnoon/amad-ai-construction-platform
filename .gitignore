@@ -77,6 +77,10 @@ backend/data/ocr_uploads/
 backend/data/document_storage/
 backups/
 
+# Generated temporary-credential output — scripts/seed_users.py (RC1 Phase 0
+# — Security Remediation, Finding 3). Never commit generated passwords.
+backend/data/*.local.txt
+
 # Local database files
 *.db
 *.sqlite3
