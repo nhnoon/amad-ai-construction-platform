@@ -11,6 +11,7 @@ from fastapi import APIRouter, HTTPException, Query, Response
 from sqlalchemy import func
 from typing import Optional
 
+from ...core.audit_log import AuditAction, AuditEntityType, AuditResult, record_audit_event
 from ...core.deps import CurrentScope, DbSession
 from ...models.notifications import Notification
 from ...schemas.notifications import MarkAllReadOut, NotificationOut, NotificationSummaryOut
@@ -89,6 +90,12 @@ def mark_notification_read(notification_id: int, db: DbSession, scope: CurrentSc
         notification.read_at = datetime.now(timezone.utc)
         db.commit()
         db.refresh(notification)
+        record_audit_event(
+            entity_type=AuditEntityType.NOTIFICATION, entity_id=notification.id,
+            action=AuditAction.NOTIFICATION_READ, result=AuditResult.SUCCESS,
+            organization_id=scope.organization_id, actor_user_id=scope.user_id,
+            project_id=notification.project_id,
+        )
     return notification
 
 
@@ -101,4 +108,12 @@ def mark_all_notifications_read(db: DbSession, scope: CurrentScope):
         .update({"is_read": True, "read_at": now}, synchronize_session=False)
     )
     db.commit()
+    # Bulk update — no per-row entity_id available (see docstring on the
+    # module survey this sprint), so this is deliberately one summary
+    # audit row rather than `updated` individual ones.
+    record_audit_event(
+        entity_type=AuditEntityType.NOTIFICATION, action=AuditAction.NOTIFICATION_READ_ALL,
+        result=AuditResult.SUCCESS, organization_id=scope.organization_id, actor_user_id=scope.user_id,
+        after_state={"updated_count": updated},
+    )
     return MarkAllReadOut(updated_count=updated)

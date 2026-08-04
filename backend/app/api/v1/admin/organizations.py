@@ -1,5 +1,6 @@
 from fastapi import APIRouter, HTTPException, status
 
+from ....core.audit_log import AuditAction, AuditEntityType, AuditResult, record_audit_event
 from ....core.deps import CurrentScope, DbSession
 from ....models.organizations import Organization
 from ....schemas.organizations import OrganizationUpdate, OrganizationOut
@@ -68,8 +69,15 @@ def update_organization(org_id: int, body: OrganizationUpdate, db: DbSession, sc
         ).first()
         if clash:
             raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Slug already in use")
-    for field, value in body.model_dump(exclude_unset=True).items():
+    changes = body.model_dump(exclude_unset=True)
+    before_state = {field: getattr(org, field) for field in changes}
+    for field, value in changes.items():
         setattr(org, field, value)
     db.commit()
     db.refresh(org)
+    record_audit_event(
+        entity_type=AuditEntityType.ORGANIZATION, entity_id=org.id, action=AuditAction.ORGANIZATION_UPDATE,
+        result=AuditResult.SUCCESS, organization_id=org.id, actor_user_id=scope.user_id,
+        before_state=before_state, after_state=changes,
+    )
     return org

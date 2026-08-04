@@ -1,6 +1,6 @@
 from .base import Base
 from .organizations import Organization, ProjectMembership
-from .auth import UserAccount
+from .auth import UserAccount, RefreshToken
 from .projects import Project, ProjectPhase, ProjectMilestone, ProjectRisk, ProjectIssue
 from .procurement import PurchaseRequest, PurchaseOrder, Supplier
 from .meetings import Meeting, ProjectDecision, MeetingAttendee, MeetingActionItem
@@ -16,11 +16,12 @@ from .ai import AIMemory, AIAuditLog
 from .ai_copilot import AIConversation, AIMessage, AICitation, CopilotAuditLog
 from .copilot_memory import AIUserProfileMemory, AIMemoryNote
 from .executive import PortfolioScoreSnapshot
+from .audit import AuditLog
 
 __all__ = [
     "Base",
     "Organization", "ProjectMembership",
-    "UserAccount",
+    "UserAccount", "RefreshToken",
     "Project", "ProjectPhase", "ProjectMilestone", "ProjectRisk", "ProjectIssue",
     "PurchaseRequest", "PurchaseOrder", "Supplier",
     "Meeting", "ProjectDecision", "MeetingAttendee", "MeetingActionItem",
@@ -36,4 +37,5 @@ __all__ = [
     "AIConversation", "AIMessage", "AICitation", "CopilotAuditLog",
     "AIUserProfileMemory", "AIMemoryNote",
     "PortfolioScoreSnapshot",
+    "AuditLog",
 ]

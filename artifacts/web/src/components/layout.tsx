@@ -55,6 +55,7 @@ import {
   Boxes,
   BookOpen,
   Crown,
+  KeyRound,
 } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { useQuery } from "@tanstack/react-query";
@@ -113,6 +114,11 @@ const NAV_SECTIONS: NavSection[] = [
       // it, making it unreachable from navigation.
       { key: "Alerts", href: "/alerts", icon: Bell, label: "Alerts" },
       { key: "Notifications", href: "/notifications", icon: BellRing, label: "Notifications" },
+      // RC1 Phase 1 Sprint 2 — Frontend Session Integration: personal
+      // session management (GET /auth/sessions, logout-all). A per-user
+      // account page, not an org-admin one, so it lives here rather than
+      // under "Administration" below.
+      { key: "Security", href: "/security", icon: KeyRound, label: "Security" },
     ],
   },
   {

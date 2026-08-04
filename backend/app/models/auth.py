@@ -30,7 +30,53 @@ class UserAccount(Base):
 
     organization = relationship("Organization", back_populates="users")
     memberships = relationship("ProjectMembership", back_populates="user")
+    refresh_tokens = relationship(
+        "RefreshToken", back_populates="user", cascade="all, delete-orphan"
+    )
 
     __table_args__ = (
         Index("ix_user_accounts_org_id", "organization_id"),
+    )
+
+
+class RefreshToken(Base):
+    """RC1 Phase 1 Sprint 1 — Identity & Session Security.
+
+    One row per issued refresh token; also doubles as this app's session
+    record (GET /auth/sessions lists the currently-active rows verbatim).
+    Rotation-on-use: a successful POST /auth/refresh revokes this row
+    (revoked_at) and inserts a new row sharing the same family_id — see
+    app/core/session_security.py for the rotation/reuse-detection logic
+    that owns every write to this table. token_hash stores SHA-256 of the
+    opaque random token, never the raw token itself, so a database
+    compromise alone cannot be used to mint requests as a live session.
+    """
+
+    __tablename__ = "refresh_tokens"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    user_id = Column(
+        Integer,
+        ForeignKey("user_accounts.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    token_hash = Column(String(64), nullable=False)
+    # Shared by every token in one rotation chain — the stable identifier
+    # for "one logical session" across however many times it has rotated.
+    family_id = Column(String(32), nullable=False)
+    remember_me = Column(Boolean, nullable=False, default=False)
+    device = Column(String(255), nullable=True)
+    ip_address = Column(String(64), nullable=True)
+    user_agent = Column(String(512), nullable=True)
+    created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    last_used_at = Column(DateTime(timezone=True), nullable=True)
+    expires_at = Column(DateTime(timezone=True), nullable=False)
+    revoked_at = Column(DateTime(timezone=True), nullable=True)
+
+    user = relationship("UserAccount", back_populates="refresh_tokens")
+
+    __table_args__ = (
+        Index("ix_refresh_tokens_user_id", "user_id"),
+        Index("ix_refresh_tokens_token_hash", "token_hash", unique=True),
+        Index("ix_refresh_tokens_family_id", "family_id"),
     )

@@ -55,6 +55,7 @@ from app.ai.notification_service import (
     notify_status_change,
 )
 from app.ai.scope import AIAuthScope, get_project_or_404
+from app.core.audit_log import AuditAction, AuditEntityType, AuditResult, record_audit_event
 from app.models.meetings import MeetingActionItem
 from app.models.procurement import PurchaseRequest
 from app.models.projects import Project, ProjectIssue, ProjectRisk
@@ -191,6 +192,11 @@ def update_project_risk(db: Session, scope: AIAuthScope, project_id: int, risk_i
             db, scope=scope, row=risk, entity_type="project_risk", entity_label_text=risk.title,
             project_id=project_id, old_status=old_status, new_status=risk.status,
         )
+        record_audit_event(
+            entity_type=AuditEntityType.PROJECT_RISK, entity_id=risk.id, action=AuditAction.STATUS_CHANGE,
+            result=AuditResult.SUCCESS, organization_id=scope.organization_id, actor_user_id=scope.user_id,
+            project_id=project_id, before_state={"status": old_status}, after_state={"status": risk.status},
+        )
     return risk
 
 
@@ -244,6 +250,11 @@ def update_project_issue(db: Session, scope: AIAuthScope, project_id: int, issue
         notify_status_change(
             db, scope=scope, row=issue, entity_type="project_issue", entity_label_text=issue.title,
             project_id=project_id, old_status=old_status, new_status=issue.status,
+        )
+        record_audit_event(
+            entity_type=AuditEntityType.PROJECT_ISSUE, entity_id=issue.id, action=AuditAction.STATUS_CHANGE,
+            result=AuditResult.SUCCESS, organization_id=scope.organization_id, actor_user_id=scope.user_id,
+            project_id=project_id, before_state={"status": old_status}, after_state={"status": issue.status},
         )
     return issue
 
@@ -301,6 +312,11 @@ def update_action_item(db: Session, scope: AIAuthScope, project_id: int, action_
             db, scope=scope, row=item, entity_type="action_item", entity_label_text=(item.description or "Action item")[:80],
             project_id=project_id, old_status=old_status, new_status=item.status,
         )
+        record_audit_event(
+            entity_type=AuditEntityType.MEETING_ACTION_ITEM, entity_id=item.id, action=AuditAction.STATUS_CHANGE,
+            result=AuditResult.SUCCESS, organization_id=scope.organization_id, actor_user_id=scope.user_id,
+            project_id=project_id, before_state={"status": old_status}, after_state={"status": item.status},
+        )
     if patch.due_date is not None:
         notify_action_item_due_date_changed(
             db, scope=scope, item=item, project_id=project_id, old_due_date=old_due_date, new_due_date=item.due_date,
@@ -348,6 +364,11 @@ def update_safety_event(db: Session, scope: AIAuthScope, project_id: int, event_
             db, scope=scope, row=event, entity_type="safety_event", entity_label_text=f"Safety event ({event.severity})",
             project_id=project_id, old_status=old_status, new_status=event.status,
         )
+        record_audit_event(
+            entity_type=AuditEntityType.SAFETY_EVENT, entity_id=event.id, action=AuditAction.STATUS_CHANGE,
+            result=AuditResult.SUCCESS, organization_id=scope.organization_id, actor_user_id=scope.user_id,
+            project_id=project_id, before_state={"status": old_status}, after_state={"status": event.status},
+        )
     return event
 
 
@@ -393,6 +414,11 @@ def update_ncr(db: Session, scope: AIAuthScope, project_id: int, ncr_id: int, pa
         notify_status_change(
             db, scope=scope, row=ncr, entity_type="ncr", entity_label_text=f"NCR ({ncr.ncr_type})",
             project_id=project_id, old_status=old_status, new_status=ncr.status,
+        )
+        record_audit_event(
+            entity_type=AuditEntityType.NCR, entity_id=ncr.id, action=AuditAction.STATUS_CHANGE,
+            result=AuditResult.SUCCESS, organization_id=scope.organization_id, actor_user_id=scope.user_id,
+            project_id=project_id, before_state={"status": old_status}, after_state={"status": ncr.status},
         )
     return ncr
 
@@ -453,5 +479,10 @@ def update_purchase_request(db: Session, scope: AIAuthScope, request_id: int, pa
     if status_changed:
         notify_purchase_request_status(
             db, scope=scope, pr=pr, project_id=project.id, old_status=old_status, new_status=pr.status,
+        )
+        record_audit_event(
+            entity_type=AuditEntityType.PURCHASE_REQUEST, entity_id=pr.id, action=AuditAction.STATUS_CHANGE,
+            result=AuditResult.SUCCESS, organization_id=scope.organization_id, actor_user_id=scope.user_id,
+            project_id=project.id, before_state={"status": old_status}, after_state={"status": pr.status},
         )
     return pr

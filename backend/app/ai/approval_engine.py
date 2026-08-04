@@ -59,6 +59,7 @@ from app.ai.notification_service import (
 )
 from app.ai.scope import AIAuthScope, get_project_or_404
 from app.ai.workflow_engine import update_purchase_request, validate_transition
+from app.core.audit_log import AuditAction, AuditEntityType, AuditResult, record_audit_event
 from app.models.approvals import ApprovalHistory, ApprovalRequest
 from app.models.auth import UserAccount
 from app.models.claims import ChangeOrder, Claim
@@ -305,6 +306,13 @@ def assign_reviewer(db: Session, scope: AIAuthScope, approval_id: int, reviewer_
         db, approval=approval, actor_user_id=scope.user_id,
         previous_reviewer_id=previous_reviewer_id, entity_label=_entity_label(approval.entity_type, approval.entity_id),
     )
+    record_audit_event(
+        entity_type=AuditEntityType.APPROVAL_REQUEST, entity_id=approval.id, action=AuditAction.REVIEWER_ASSIGN,
+        result=AuditResult.SUCCESS, organization_id=approval.organization_id, actor_user_id=scope.user_id,
+        project_id=approval.project_id,
+        before_state={"assigned_reviewer_id": previous_reviewer_id},
+        after_state={"assigned_reviewer_id": reviewer_user_id},
+    )
     return approval
 
 
@@ -369,6 +377,12 @@ def approve(db: Session, scope: AIAuthScope, approval_id: int, review_note: Opti
     db.refresh(approval)
 
     notify_approval_decided(db, approval=approval, actor_user_id=scope.user_id, entity_label=_entity_label(approval.entity_type, approval.entity_id))
+    record_audit_event(
+        entity_type=AuditEntityType.APPROVAL_REQUEST, entity_id=approval.id, action=AuditAction.APPROVE,
+        result=AuditResult.SUCCESS, organization_id=approval.organization_id, actor_user_id=scope.user_id,
+        project_id=approval.project_id, before_state={"status": old_status}, after_state={"status": approval.status},
+        reason=review_note,
+    )
     return approval
 
 
@@ -392,6 +406,12 @@ def reject(db: Session, scope: AIAuthScope, approval_id: int, review_note: str, 
     db.refresh(approval)
 
     notify_approval_decided(db, approval=approval, actor_user_id=scope.user_id, entity_label=_entity_label(approval.entity_type, approval.entity_id))
+    record_audit_event(
+        entity_type=AuditEntityType.APPROVAL_REQUEST, entity_id=approval.id, action=AuditAction.REJECT,
+        result=AuditResult.SUCCESS, organization_id=approval.organization_id, actor_user_id=scope.user_id,
+        project_id=approval.project_id, before_state={"status": old_status}, after_state={"status": approval.status},
+        reason=review_note,
+    )
     return approval
 
 
@@ -413,6 +433,12 @@ def return_for_changes(db: Session, scope: AIAuthScope, approval_id: int, review
     db.refresh(approval)
 
     notify_approval_decided(db, approval=approval, actor_user_id=scope.user_id, entity_label=_entity_label(approval.entity_type, approval.entity_id))
+    record_audit_event(
+        entity_type=AuditEntityType.APPROVAL_REQUEST, entity_id=approval.id, action=AuditAction.RETURN,
+        result=AuditResult.SUCCESS, organization_id=approval.organization_id, actor_user_id=scope.user_id,
+        project_id=approval.project_id, before_state={"status": old_status}, after_state={"status": approval.status},
+        reason=review_note,
+    )
     return approval
 
 
@@ -433,6 +459,12 @@ def cancel(db: Session, scope: AIAuthScope, approval_id: int, review_note: Optio
     db.refresh(approval)
 
     notify_approval_cancelled(db, approval=approval, actor_user_id=scope.user_id, entity_label=_entity_label(approval.entity_type, approval.entity_id))
+    record_audit_event(
+        entity_type=AuditEntityType.APPROVAL_REQUEST, entity_id=approval.id, action=AuditAction.CANCEL,
+        result=AuditResult.SUCCESS, organization_id=approval.organization_id, actor_user_id=scope.user_id,
+        project_id=approval.project_id, before_state={"status": old_status}, after_state={"status": approval.status},
+        reason=review_note,
+    )
     return approval
 
 

@@ -1,5 +1,6 @@
 from fastapi import APIRouter, HTTPException, status
 
+from ....core.audit_log import AuditAction, AuditEntityType, AuditResult, record_audit_event
 from ....core.deps import CurrentScope, DbSession
 from ....core.security import generate_temporary_password, hash_password
 from ....models.auth import UserAccount
@@ -75,6 +76,11 @@ def create_user(body: AdminUserCreate, db: DbSession, scope: CurrentScope):
     db.add(user)
     db.commit()
     db.refresh(user)
+    record_audit_event(
+        entity_type=AuditEntityType.USER_ACCOUNT, entity_id=user.id, action=AuditAction.USER_CREATE,
+        result=AuditResult.SUCCESS, organization_id=scope.organization_id, actor_user_id=scope.user_id,
+        after_state={"email": user.email, "role": user.role},
+    )
     return AdminUserCreateResponse(user=user, temporary_password=temporary_password)
 
 
@@ -86,7 +92,10 @@ def get_user(user_id: int, db: DbSession, scope: CurrentScope):
 @router.patch("/{user_id}", response_model=AdminUserOut)
 def update_user(user_id: int, body: AdminUserUpdate, db: DbSession, scope: CurrentScope):
     user = _get_user_or_404(db, scope, user_id)
-    for field, value in body.model_dump(exclude_unset=True).items():
+    changes = body.model_dump(exclude_unset=True)
+    before_state = {field: getattr(user, field) for field in changes if field != "organization_id"}
+    was_active = user.is_active
+    for field, value in changes.items():
         if field == "organization_id":
             # Never allow reassigning a user out of the admin's own
             # organization via this endpoint — same rule as creation.
@@ -94,6 +103,21 @@ def update_user(user_id: int, body: AdminUserUpdate, db: DbSession, scope: Curre
         setattr(user, field, value)
     db.commit()
     db.refresh(user)
+    # A distinct "user_disable" action for the specific is_active
+    # True -> False transition (Sprint 4's explicit "User disable" entity
+    # to audit); any other field change on the same generic PATCH
+    # endpoint is still recorded, just tagged as the broader "user_update".
+    action = (
+        AuditAction.USER_DISABLE
+        if was_active and changes.get("is_active") is False
+        else AuditAction.USER_UPDATE
+    )
+    after_state = {field: getattr(user, field) for field in changes if field != "organization_id"}
+    record_audit_event(
+        entity_type=AuditEntityType.USER_ACCOUNT, entity_id=user.id, action=action, result=AuditResult.SUCCESS,
+        organization_id=scope.organization_id, actor_user_id=scope.user_id,
+        before_state=before_state, after_state=after_state,
+    )
     return user
 
 

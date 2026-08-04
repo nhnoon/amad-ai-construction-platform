@@ -71,7 +71,15 @@ class Settings(BaseSettings):
     def SECRET_KEY(self) -> str:
         return self.SESSION_SECRET
 
-    ACCESS_TOKEN_EXPIRE_MINUTES: int = 480
+    # RC1 Phase 1 Sprint 2 — Frontend Session Integration: reduced from 480
+    # (8 hours) now that the frontend transparently refreshes access tokens
+    # on a 401 (silent refresh — see custom-fetch.ts's setRefreshHandler
+    # wiring in artifacts/web/src/lib/auth.ts, verified end to end before
+    # this default changed). A stolen/leaked access token is now usable
+    # for at most 30 minutes regardless of the refresh token's own state,
+    # instead of up to 8 hours. Still fully overridable via the
+    # ACCESS_TOKEN_EXPIRE_MINUTES environment variable.
+    ACCESS_TOKEN_EXPIRE_MINUTES: int = 30
 
     # ── Login brute-force protection (Phase 2 — Security & Authentication
     # Hardening) ────────────────────────────────────────────────────────
@@ -85,6 +93,21 @@ class Settings(BaseSettings):
     # app/api/v1/auth.py::login).
     LOGIN_MAX_FAILED_ATTEMPTS: int = 5
     LOGIN_LOCKOUT_MINUTES: int = 15
+
+    # ── Refresh Token & Session Security (RC1 Phase 1 Sprint 1) ─────────
+    # Refresh tokens are opaque, server-side, rotated-on-use identifiers
+    # (see app/core/session_security.py) — deliberately NOT JWTs like the
+    # stateless access token above, because they must be individually
+    # revocable (logout / logout-all) and enumerable (GET /auth/sessions).
+    # Sliding expiry: every successful rotation resets a token's
+    # expires_at to now + one of the two windows below, so an
+    # actively-used session never expires mid-use while an abandoned one
+    # still expires on schedule.
+    REFRESH_TOKEN_EXPIRE_DAYS: int = 7
+    # "Remember me" (opt-in per login via UserLogin.remember_me) — a
+    # longer sliding window for a user who explicitly asked to stay
+    # signed in on a trusted device. Never the default.
+    REFRESH_TOKEN_REMEMBER_ME_EXPIRE_DAYS: int = 30
 
     LLM_PROVIDER: str = "mock"
     LLM_MODEL: str = "mock-model"
@@ -213,6 +236,132 @@ class Settings(BaseSettings):
     # timeout for multi-domain generation only, so single-domain Copilot
     # questions keep their existing fast timeout unchanged.
     MULTI_DOMAIN_HERMES_TIMEOUT_SECONDS: int = 400
+
+    # ── Security Headers (RC1 Phase 1 Sprint 3 — API Protection & HTTP
+    # Security) ───────────────────────────────────────────────────────
+    # Master switch. Each header below also has its own switch, so a
+    # deployment behind a reverse proxy/CDN that already emits SOME of
+    # these (common for HSTS/COOP at the edge) can disable just those
+    # without losing the rest — see app/core/security_headers.py.
+    SECURITY_HEADERS_ENABLED: bool = True
+
+    HSTS_ENABLED: bool = True
+    HSTS_MAX_AGE_SECONDS: int = 31_536_000  # 1 year — standard preload-eligible duration
+    HSTS_INCLUDE_SUBDOMAINS: bool = True
+    # Submitting to the browser HSTS preload list is a one-way, hard-to-
+    # reverse operational decision (removal takes months) — never inferred
+    # from other settings, always an explicit opt-in.
+    HSTS_PRELOAD: bool = False
+
+    X_FRAME_OPTIONS_ENABLED: bool = True
+    X_FRAME_OPTIONS: str = "DENY"
+
+    X_CONTENT_TYPE_OPTIONS_ENABLED: bool = True
+
+    REFERRER_POLICY_ENABLED: bool = True
+    REFERRER_POLICY: str = "strict-origin-when-cross-origin"
+
+    PERMISSIONS_POLICY_ENABLED: bool = True
+    # This API serves no browser feature that needs any of these — every
+    # directive denied to every origin (an explicit empty allowlist, not
+    # just the browser default).
+    PERMISSIONS_POLICY: str = "camera=(), microphone=(), geolocation=(), payment=(), usb=(), interest-cohort=()"
+
+    CROSS_ORIGIN_OPENER_POLICY_ENABLED: bool = True
+    CROSS_ORIGIN_OPENER_POLICY: str = "same-origin"
+
+    CROSS_ORIGIN_RESOURCE_POLICY_ENABLED: bool = True
+    CROSS_ORIGIN_RESOURCE_POLICY: str = "same-origin"
+
+    # Cross-Origin-Embedder-Policy — the one header Sprint 3 says to add
+    # "only if compatible". COEP:require-corp blocks loading ANY
+    # cross-origin resource that doesn't itself opt in via CORP/CORS,
+    # which would break the dev-only Swagger/ReDoc UIs' CDN-hosted JS/CSS/
+    # fonts (see CSP_* below). Off by default for exactly that reason; an
+    # operator running this API with no cross-origin dependents at all
+    # (e.g. production, where /docs and /redoc are disabled entirely) can
+    # opt in.
+    CROSS_ORIGIN_EMBEDDER_POLICY_ENABLED: bool = False
+    CROSS_ORIGIN_EMBEDDER_POLICY: str = "require-corp"
+
+    # ── Content Security Policy ──────────────────────────────────────
+    # See app/core/security_headers.py::build_csp for the actual policy
+    # construction (different in development vs production — Part B).
+    CSP_ENABLED: bool = True
+    # Report-only mode: sends Content-Security-Policy-Report-Only instead
+    # of the enforcing header, so a policy change can be observed via
+    # browser devtools/violation reports before it can block anything.
+    CSP_REPORT_ONLY: bool = False
+    # Origins the stock (un-self-hosted) FastAPI Swagger/ReDoc HTML loads
+    # from — dev-only allowances, never present in the production policy
+    # (docs are disabled entirely in production; see app/main.py).
+    CSP_SWAGGER_CDN_ORIGIN: str = "https://cdn.jsdelivr.net"
+    CSP_SWAGGER_FAVICON_ORIGIN: str = "https://fastapi.tiangolo.com"
+    CSP_REDOC_FONTS_CSS_ORIGIN: str = "https://fonts.googleapis.com"
+    CSP_REDOC_FONTS_ORIGIN: str = "https://fonts.gstatic.com"
+
+    # ── Global API Rate Limiting (Part C) ────────────────────────────
+    # In-memory sliding-window counters — same trade-off/precedent as the
+    # existing per-IP login throttle (app/core/login_security.py) and the
+    # AI Copilot rate limiter (app/ai/ratelimit.py): resets on restart,
+    # acceptable for a request-rate cap (unlike DB-persisted account
+    # lockout, this doesn't need to survive restarts). See
+    # app/core/rate_limit.py's RateLimitStore abstraction — a future
+    # RedisRateLimitStore can satisfy the same interface without any
+    # caller changing. Independent of, and in addition to, the existing
+    # Sprint 1/2 login IP throttle + per-account DB lockout — this sprint
+    # must not modify that behavior (see login_security.py), so the
+    # "login" scope below is a second, separate layer using its own
+    # counters/keys.
+    RATE_LIMIT_ENABLED: bool = True
+
+    RATE_LIMIT_ANONYMOUS_MAX_REQUESTS: int = 60
+    RATE_LIMIT_ANONYMOUS_WINDOW_SECONDS: int = 60
+
+    RATE_LIMIT_AUTHENTICATED_MAX_REQUESTS: int = 300
+    RATE_LIMIT_AUTHENTICATED_WINDOW_SECONDS: int = 60
+
+    RATE_LIMIT_LOGIN_MAX_REQUESTS: int = 10
+    RATE_LIMIT_LOGIN_WINDOW_SECONDS: int = 60
+
+    RATE_LIMIT_REFRESH_MAX_REQUESTS: int = 30
+    RATE_LIMIT_REFRESH_WINDOW_SECONDS: int = 60
+
+    RATE_LIMIT_UPLOAD_MAX_REQUESTS: int = 20
+    RATE_LIMIT_UPLOAD_WINDOW_SECONDS: int = 60
+
+    # ── Request Protection (Part D/E) ────────────────────────────────
+    # See app/core/request_protection.py — a pure-ASGI middleware
+    # (deliberately not BaseHTTPMiddleware, which fully buffers the body
+    # before application code ever sees it, defeating the point of a
+    # size cap meant to bound memory use for an oversized request).
+    REQUEST_PROTECTION_ENABLED: bool = True
+    # Cap for ordinary (non-multipart) bodies — JSON payloads, form
+    # posts, etc. Generous relative to every real payload this API
+    # accepts today while still bounding worst-case abuse.
+    REQUEST_MAX_BODY_SIZE_BYTES: int = 2 * 1024 * 1024  # 2 MB
+    # Cap for multipart/form-data (upload) requests specifically —
+    # deliberately ABOVE the largest existing application-layer cap
+    # (DOCUMENT_MAX_FILE_SIZE_BYTES = 50 MB) so this can never reject an
+    # upload the application would otherwise accept; it exists purely as
+    # an outer safety net against a request the application-layer check
+    # would never even get to see (e.g. a deliberately unbounded
+    # multipart stream the app-layer .read() would otherwise buffer in
+    # full before checking its length).
+    REQUEST_MAX_UPLOAD_SIZE_BYTES: int = 60 * 1024 * 1024  # 60 MB
+    # Ceiling on how long it may take to fully RECEIVE the request body
+    # (slow-loris protection) — deliberately NOT a ceiling on how long the
+    # application then takes to process an already-fully-received request
+    # (see app/core/request_protection.py's module docstring for why: the
+    # AI Copilot's LLM-backed responses legitimately take 60-150s+ and
+    # already have their own considered timeout budgets elsewhere —
+    # HERMES_TIMEOUT_SECONDS and friends — a generic HTTP-layer request
+    # size/slowness guard has no business overriding those). Uploads get
+    # a longer allowance (a legitimate slow connection uploading tens of
+    # MB takes real time to arrive); an ordinary request's body should
+    # never legitimately take anywhere near this long to arrive.
+    REQUEST_TIMEOUT_SECONDS: int = 30
+    REQUEST_UPLOAD_TIMEOUT_SECONDS: int = 120
 
 
 def resolve_debug_setting(debug: bool, environment: str) -> bool:

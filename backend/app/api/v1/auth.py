@@ -4,6 +4,7 @@ from fastapi import APIRouter, HTTPException, Request, status
 from sqlalchemy.sql import func
 
 from ...config import settings
+from ...core.audit_log import AuditAction, AuditEntityType, AuditResult, record_audit_event
 from ...core.deps import DbSession, RawCurrentUser, require_roles
 from ...core.login_security import client_ip_from_request, login_ip_rate_limiter
 from ...core.security import (
@@ -11,8 +12,28 @@ from ...core.security import (
     hash_password,
     verify_password,
 )
+from ...core.session_security import (
+    RefreshOutcome,
+    create_session,
+    get_active_sessions,
+    revoke_all_for_user,
+    revoke_token,
+    rotate_refresh_token,
+)
 from ...models.auth import UserAccount
-from ...schemas.auth import ChangePasswordRequest, UserRegister, UserLogin, UserOut, TokenResponse
+from ...schemas.auth import (
+    ChangePasswordRequest,
+    LoginResponse,
+    LogoutAllResponse,
+    LogoutRequest,
+    LogoutResponse,
+    RefreshRequest,
+    SessionOut,
+    UserRegister,
+    UserLogin,
+    UserOut,
+    TokenResponse,
+)
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 
@@ -74,7 +95,7 @@ def register(
     return user
 
 
-@router.post("/login", response_model=TokenResponse)
+@router.post("/login", response_model=LoginResponse)
 def login(body: UserLogin, db: DbSession, request: Request):
     # Phase 2 — Security & Authentication Hardening.
     # Layer 1: per-IP sliding-window throttle, checked before any database
@@ -95,6 +116,11 @@ def login(body: UserLogin, db: DbSession, request: Request):
     # correct, and continued hammering never extends the lockout window;
     # it always expires on its own after LOGIN_LOCKOUT_MINUTES.
     if user is not None and user.locked_until is not None and user.locked_until > datetime.now(timezone.utc):
+        record_audit_event(
+            entity_type=AuditEntityType.USER_ACCOUNT, entity_id=user.id, action=AuditAction.LOGIN,
+            result=AuditResult.DENIED, organization_id=user.organization_id, actor_user_id=user.id,
+            reason="account_locked",
+        )
         raise HTTPException(
             status_code=status.HTTP_423_LOCKED,
             detail="Account temporarily locked due to too many failed login attempts. Try again later.",
@@ -108,11 +134,22 @@ def login(body: UserLogin, db: DbSession, request: Request):
                     minutes=settings.LOGIN_LOCKOUT_MINUTES
                 )
             db.commit()
+        record_audit_event(
+            entity_type=AuditEntityType.USER_ACCOUNT, entity_id=user.id if user else None,
+            action=AuditAction.LOGIN, result=AuditResult.FAILURE,
+            organization_id=user.organization_id if user else None, actor_user_id=user.id if user else None,
+            reason="incorrect_credentials",
+        )
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Incorrect email or password",
         )
     if not user.is_active:
+        record_audit_event(
+            entity_type=AuditEntityType.USER_ACCOUNT, entity_id=user.id, action=AuditAction.LOGIN,
+            result=AuditResult.DENIED, organization_id=user.organization_id, actor_user_id=user.id,
+            reason="account_disabled",
+        )
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Account is disabled",
@@ -123,8 +160,22 @@ def login(body: UserLogin, db: DbSession, request: Request):
     user.last_login = func.now()
     db.commit()
     db.refresh(user)
-    token = create_access_token(subject=user.email)
-    return TokenResponse(access_token=token, user=UserOut.model_validate(user))
+    access_token = create_access_token(subject=user.email)
+    # RC1 Phase 1 Sprint 1 — Identity & Session Security: every login
+    # starts a brand-new session (refresh-token family), independent of
+    # any other sessions the user already has open elsewhere — concurrent
+    # devices are first-class, not something that requires special-casing.
+    refresh_token, _session = create_session(
+        db, user, request, remember_me=body.remember_me, device=body.device,
+    )
+    record_audit_event(
+        entity_type=AuditEntityType.USER_ACCOUNT, entity_id=user.id, action=AuditAction.LOGIN,
+        result=AuditResult.SUCCESS, organization_id=user.organization_id, actor_user_id=user.id,
+        project_id=None,
+    )
+    return LoginResponse(
+        access_token=access_token, refresh_token=refresh_token, user=UserOut.model_validate(user),
+    )
 
 
 @router.get("/me", response_model=UserOut)
@@ -151,6 +202,12 @@ def change_password(
     and any lockout state, and issues a fresh token so the client doesn't
     need a second login."""
     if not verify_password(body.current_password, current_user.hashed_password):
+        record_audit_event(
+            entity_type=AuditEntityType.USER_ACCOUNT, entity_id=current_user.id,
+            action=AuditAction.PASSWORD_CHANGE, result=AuditResult.FAILURE,
+            organization_id=current_user.organization_id, actor_user_id=current_user.id,
+            reason="incorrect_current_password",
+        )
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Current password is incorrect",
@@ -162,4 +219,96 @@ def change_password(
     db.commit()
     db.refresh(current_user)
     token = create_access_token(subject=current_user.email)
+    record_audit_event(
+        entity_type=AuditEntityType.USER_ACCOUNT, entity_id=current_user.id,
+        action=AuditAction.PASSWORD_CHANGE, result=AuditResult.SUCCESS,
+        organization_id=current_user.organization_id, actor_user_id=current_user.id,
+    )
     return TokenResponse(access_token=token, user=UserOut.model_validate(current_user))
+
+
+@router.post("/refresh", response_model=LoginResponse)
+def refresh(body: RefreshRequest, db: DbSession, request: Request):
+    """RC1 Phase 1 Sprint 1 — Identity & Session Security. Rotates the
+    presented refresh token: the old one is revoked and a new one is
+    issued in the same session (family), alongside a fresh short-lived
+    access token. See app/core/session_security.py::rotate_refresh_token
+    for reuse detection — a token presented a second time (already
+    rotated or already logged out) revokes its whole session instead of
+    silently failing, since that pattern only happens on replay/theft."""
+    result = rotate_refresh_token(db, body.refresh_token, request, device=body.device)
+    if result.outcome == RefreshOutcome.REUSED:
+        actor_id = result.row.user_id if result.row else None
+        record_audit_event(
+            entity_type=AuditEntityType.SESSION, entity_id=result.row.id if result.row else None,
+            action=AuditAction.REFRESH, result=AuditResult.DENIED, actor_user_id=actor_id,
+            reason="refresh_token_reused",
+        )
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Refresh token already used; session revoked. Please log in again.",
+        )
+    if result.outcome in (RefreshOutcome.INVALID, RefreshOutcome.EXPIRED):
+        actor_id = result.row.user_id if result.row else None
+        record_audit_event(
+            entity_type=AuditEntityType.SESSION, entity_id=result.row.id if result.row else None,
+            action=AuditAction.REFRESH, result=AuditResult.FAILURE, actor_user_id=actor_id,
+            reason=result.outcome.value,
+        )
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid or expired refresh token",
+        )
+    access_token = create_access_token(subject=result.user.email)
+    record_audit_event(
+        entity_type=AuditEntityType.SESSION, entity_id=result.row.id if result.row else None,
+        action=AuditAction.REFRESH, result=AuditResult.SUCCESS,
+        organization_id=result.user.organization_id, actor_user_id=result.user.id,
+    )
+    return LoginResponse(
+        access_token=access_token, refresh_token=result.raw_token, user=UserOut.model_validate(result.user),
+    )
+
+
+@router.post("/logout", response_model=LogoutResponse)
+def logout(body: LogoutRequest, db: DbSession):
+    """Revokes the session (refresh-token family) the presented token
+    belongs to — independent logout per device, since each login/refresh
+    chain has its own family. Deliberately does not require a valid
+    access token: possessing the refresh token is itself sufficient proof
+    of the session being logged out, and the response is identical
+    whether the token was live, already revoked, or never existed, so
+    this endpoint never becomes an oracle for refresh-token validity."""
+    revoked_user_id = revoke_token(db, body.refresh_token)
+    # Idempotent by design (see docstring above) — audit both outcomes,
+    # since "someone tried to log out with an unknown/already-dead
+    # token" is itself worth a record, just with no identifiable actor.
+    record_audit_event(
+        entity_type=AuditEntityType.SESSION, action=AuditAction.LOGOUT,
+        result=AuditResult.SUCCESS if revoked_user_id else AuditResult.FAILURE,
+        actor_user_id=revoked_user_id,
+    )
+    return LogoutResponse(message="Logged out")
+
+
+@router.post("/logout-all", response_model=LogoutAllResponse)
+def logout_all(db: DbSession, current_user: RawCurrentUser):
+    """Revokes every live session for the authenticated caller across all
+    devices. Always scoped to the caller's own identity (current_user.id)
+    — there is no parameter for a target user, so this can never be used
+    for cross-user session control, admin or otherwise."""
+    count = revoke_all_for_user(db, current_user.id)
+    record_audit_event(
+        entity_type=AuditEntityType.SESSION, action=AuditAction.LOGOUT_ALL, result=AuditResult.SUCCESS,
+        organization_id=current_user.organization_id, actor_user_id=current_user.id,
+        after_state={"revoked_count": count},
+    )
+    return LogoutAllResponse(message="All sessions revoked", revoked_count=count)
+
+
+@router.get("/sessions", response_model=list[SessionOut])
+def list_sessions(db: DbSession, current_user: RawCurrentUser):
+    """Lists the authenticated caller's own active sessions only — same
+    strict self-scoping as logout-all above. No admin or cross-user
+    variant exists in this sprint."""
+    return get_active_sessions(db, current_user.id)

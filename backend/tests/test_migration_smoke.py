@@ -85,7 +85,7 @@ class TestFreshDatabaseMigratesToHead:
             cur = conn.cursor()
             cur.execute("SELECT version_num FROM alembic_version")
             (head,) = cur.fetchone()
-            assert head == "0019"
+            assert head == "0021"
 
             # The exact bug this migration chain fixes: user_accounts must
             # exist exactly once (0001 used to create it, then 0002 created

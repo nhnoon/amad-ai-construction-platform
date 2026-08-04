@@ -53,6 +53,10 @@ import type {
   ListPurchaseRequestsParams,
   ListSuppliersParams,
   LoginInput,
+  LoginResponse,
+  LogoutAllResponse,
+  LogoutInput,
+  LogoutResponse,
   MarkAllReadOut,
   Meeting,
   MeetingActionItem,
@@ -74,12 +78,13 @@ import type {
   PurchaseOrder,
   PurchaseRequest,
   PurchaseRequestUpdate,
+  RefreshInput,
   RegisterInput,
   SafetyEvent,
   SafetyEventUpdate,
+  SessionOut,
   SiteReport,
   Supplier,
-  TokenResponse,
   UnassignRequest,
   UploadDocumentVersionBody,
   UserOut
@@ -200,9 +205,9 @@ export const getLoginUrl = () => {
 /**
  * @summary Login and get JWT token
  */
-export const login = async (loginInput: LoginInput, options?: RequestInit): Promise<TokenResponse> => {
+export const login = async (loginInput: LoginInput, options?: RequestInit): Promise<LoginResponse> => {
 
-  return customFetch<TokenResponse>(getLoginUrl(),
+  return customFetch<LoginResponse>(getLoginUrl(),
   {
     ...options,
     method: 'POST',
@@ -258,6 +263,295 @@ export const useLogin = <TError = ErrorType<void>,
       > => {
       return useMutation(getLoginMutationOptions(options));
     }
+
+export const getRefreshTokenUrl = () => {
+
+
+
+
+  return `/api/v1/auth/refresh`
+}
+
+/**
+ * Authenticates via the refresh_token in the request body, not a bearer access token — public like /auth/login. Reusing an already-rotated or already-revoked refresh token revokes its whole session (see backend app/core/session_security.py) and returns 401.
+ * @summary Rotate a refresh token and mint a new access token
+ */
+export const refreshToken = async (refreshInput: RefreshInput, options?: RequestInit): Promise<LoginResponse> => {
+
+  return customFetch<LoginResponse>(getRefreshTokenUrl(),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(refreshInput)
+  }
+);}
+
+
+
+
+export const getRefreshTokenMutationOptions = <TError = ErrorType<void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof refreshToken>>, TError,{data: BodyType<RefreshInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof refreshToken>>, TError,{data: BodyType<RefreshInput>}, TContext> => {
+
+const mutationKey = ['refreshToken'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof refreshToken>>, {data: BodyType<RefreshInput>}> = (props) => {
+          const {data} = props ?? {};
+
+          return  refreshToken(data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type RefreshTokenMutationResult = NonNullable<Awaited<ReturnType<typeof refreshToken>>>
+    export type RefreshTokenMutationBody = BodyType<RefreshInput>
+    export type RefreshTokenMutationError = ErrorType<void>
+
+    /**
+ * @summary Rotate a refresh token and mint a new access token
+ */
+export const useRefreshToken = <TError = ErrorType<void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof refreshToken>>, TError,{data: BodyType<RefreshInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof refreshToken>>,
+        TError,
+        {data: BodyType<RefreshInput>},
+        TContext
+      > => {
+      return useMutation(getRefreshTokenMutationOptions(options));
+    }
+
+export const getLogoutUrl = () => {
+
+
+
+
+  return `/api/v1/auth/logout`
+}
+
+/**
+ * Authenticates via the refresh_token in the request body. Idempotent by design — always returns 200, even for an unknown or already-revoked token, so it never leaks token validity.
+ * @summary Revoke the session the given refresh token belongs to
+ */
+export const logout = async (logoutInput: LogoutInput, options?: RequestInit): Promise<LogoutResponse> => {
+
+  return customFetch<LogoutResponse>(getLogoutUrl(),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(logoutInput)
+  }
+);}
+
+
+
+
+export const getLogoutMutationOptions = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof logout>>, TError,{data: BodyType<LogoutInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof logout>>, TError,{data: BodyType<LogoutInput>}, TContext> => {
+
+const mutationKey = ['logout'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof logout>>, {data: BodyType<LogoutInput>}> = (props) => {
+          const {data} = props ?? {};
+
+          return  logout(data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type LogoutMutationResult = NonNullable<Awaited<ReturnType<typeof logout>>>
+    export type LogoutMutationBody = BodyType<LogoutInput>
+    export type LogoutMutationError = ErrorType<unknown>
+
+    /**
+ * @summary Revoke the session the given refresh token belongs to
+ */
+export const useLogout = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof logout>>, TError,{data: BodyType<LogoutInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof logout>>,
+        TError,
+        {data: BodyType<LogoutInput>},
+        TContext
+      > => {
+      return useMutation(getLogoutMutationOptions(options));
+    }
+
+export const getLogoutAllSessionsUrl = () => {
+
+
+
+
+  return `/api/v1/auth/logout-all`
+}
+
+/**
+ * @summary Revoke every session for the authenticated caller
+ */
+export const logoutAllSessions = async ( options?: RequestInit): Promise<LogoutAllResponse> => {
+
+  return customFetch<LogoutAllResponse>(getLogoutAllSessionsUrl(),
+  {
+    ...options,
+    method: 'POST'
+
+
+  }
+);}
+
+
+
+
+export const getLogoutAllSessionsMutationOptions = <TError = ErrorType<void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof logoutAllSessions>>, TError,void, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof logoutAllSessions>>, TError,void, TContext> => {
+
+const mutationKey = ['logoutAllSessions'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof logoutAllSessions>>, void> = () => {
+
+
+          return  logoutAllSessions(requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type LogoutAllSessionsMutationResult = NonNullable<Awaited<ReturnType<typeof logoutAllSessions>>>
+
+    export type LogoutAllSessionsMutationError = ErrorType<void>
+
+    /**
+ * @summary Revoke every session for the authenticated caller
+ */
+export const useLogoutAllSessions = <TError = ErrorType<void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof logoutAllSessions>>, TError,void, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof logoutAllSessions>>,
+        TError,
+        void,
+        TContext
+      > => {
+      return useMutation(getLogoutAllSessionsMutationOptions(options));
+    }
+
+export const getListSessionsUrl = () => {
+
+
+
+
+  return `/api/v1/auth/sessions`
+}
+
+/**
+ * @summary List the authenticated caller's own active sessions
+ */
+export const listSessions = async ( options?: RequestInit): Promise<SessionOut[]> => {
+
+  return customFetch<SessionOut[]>(getListSessionsUrl(),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getListSessionsQueryKey = () => {
+    return [
+    `/api/v1/auth/sessions`
+    ] as const;
+    }
+
+
+export const getListSessionsQueryOptions = <TData = Awaited<ReturnType<typeof listSessions>>, TError = ErrorType<void>>( options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listSessions>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getListSessionsQueryKey();
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof listSessions>>> = ({ signal }) => listSessions({ signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof listSessions>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type ListSessionsQueryResult = NonNullable<Awaited<ReturnType<typeof listSessions>>>
+export type ListSessionsQueryError = ErrorType<void>
+
+
+/**
+ * @summary List the authenticated caller's own active sessions
+ */
+
+export function useListSessions<TData = Awaited<ReturnType<typeof listSessions>>, TError = ErrorType<void>>(
+  options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listSessions>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getListSessionsQueryOptions(options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
 
 export const getRegisterUrl = () => {
 

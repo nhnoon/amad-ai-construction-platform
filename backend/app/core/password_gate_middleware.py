@@ -30,6 +30,17 @@ _EXEMPT_PATHS = frozenset({
     "/api/v1/auth/register",
     "/api/v1/auth/me",
     "/api/v1/auth/change-password",
+    # RC1 Phase 1 Sprint 1 — Identity & Session Security: self-service
+    # session controls, not general application access. A user who still
+    # owes a first-login/reset password change must still be able to see
+    # and revoke their own sessions (e.g. after realizing a device was
+    # compromised) without being forced through change-password first.
+    # /auth/refresh and /auth/logout need no exemption — neither is ever
+    # called with an Authorization header (they authenticate via the
+    # refresh token in the body instead), so this middleware never
+    # inspects them regardless.
+    "/api/v1/auth/logout-all",
+    "/api/v1/auth/sessions",
     "/api/docs",
     "/api/redoc",
     "/api/openapi.json",

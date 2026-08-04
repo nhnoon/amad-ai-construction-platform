@@ -1,6 +1,7 @@
 from fastapi import APIRouter, HTTPException, status
 
 from ...ai.scope import get_project_or_404, get_same_org_active_user_or_404
+from ...core.audit_log import AuditAction, AuditEntityType, AuditResult, record_audit_event
 from ...core.deps import CurrentScope, DbSession
 from ...models.organizations import ProjectMembership
 from ...schemas.admin import ProjectMembershipCreate, ProjectMembershipOut
@@ -47,6 +48,12 @@ def add_membership(project_id: int, body: ProjectMembershipCreate, db: DbSession
     db.add(membership)
     db.commit()
     db.refresh(membership)
+    record_audit_event(
+        entity_type=AuditEntityType.PROJECT_MEMBERSHIP, entity_id=membership.id,
+        action=AuditAction.MEMBERSHIP_CREATE, result=AuditResult.SUCCESS,
+        organization_id=scope.organization_id, actor_user_id=scope.user_id, project_id=project_id,
+        after_state={"user_id": user.id, "role_on_project": membership.role_on_project},
+    )
     return membership
 
 
@@ -59,5 +66,13 @@ def remove_membership(project_id: int, user_id: int, db: DbSession, scope: Curre
     ).first()
     if not membership:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Membership not found")
+    membership_id = membership.id
+    role_on_project = membership.role_on_project
     db.delete(membership)
     db.commit()
+    record_audit_event(
+        entity_type=AuditEntityType.PROJECT_MEMBERSHIP, entity_id=membership_id,
+        action=AuditAction.MEMBERSHIP_REMOVE, result=AuditResult.SUCCESS,
+        organization_id=scope.organization_id, actor_user_id=scope.user_id, project_id=project_id,
+        before_state={"user_id": user_id, "role_on_project": role_on_project},
+    )

@@ -4,7 +4,7 @@ from . import (
     site_reports, documents, claims, safety,
     subcontractors, auth, dashboard, memberships,
     ai_copilot, alerts, executive, reports,
-    notifications, my_work, approvals,
+    notifications, my_work, approvals, audit,
 )
 from .admin import users as admin_users
 from .admin import organizations as admin_orgs
@@ -87,3 +87,9 @@ router.include_router(my_work.router, dependencies=_any_auth)
 # authorization (requester/reviewer/manager) is enforced inside
 # app/ai/approval_engine.py itself, not via a role gate here.
 router.include_router(approvals.router, dependencies=_any_auth)
+
+# Audit Log query API (RC1 Phase 1 Sprint 4) — all authenticated users;
+# organization-scoping and manager-vs-self-only authorization enforced
+# inside app/api/v1/audit.py itself, same "per-action, not a role gate
+# here" pattern as approvals above.
+router.include_router(audit.router, dependencies=_any_auth)

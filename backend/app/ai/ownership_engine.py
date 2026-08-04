@@ -42,6 +42,7 @@ from sqlalchemy.orm import Query, Session
 from app.ai.entity_refs import entity_label as _entity_label
 from app.ai.notification_service import notify_assignment
 from app.ai.scope import AIAuthScope, get_project_or_404
+from app.core.audit_log import AuditAction, AuditResult, record_audit_event
 from app.models.auth import UserAccount
 from app.models.meetings import MeetingActionItem
 from app.models.organizations import ProjectMembership
@@ -202,6 +203,16 @@ def _do_assign(
         previous_owner_id=previous_owner_id, new_owner_id=target_user_id,
         assigned_by=scope.user_id, assigned_at=now,
     ))
+    # RC1 Phase 1 Sprint 4 — Enterprise Audit Logging: one hook here
+    # covers assign/reassign for all six workflow entities (see module
+    # docstring — this shared core is the only place any of them mutate
+    # ownership), instead of duplicating a call into each of the six
+    # per-entity wrapper functions below.
+    record_audit_event(
+        entity_type=entity_type, entity_id=row.id, action=AuditAction.ASSIGN, result=AuditResult.SUCCESS,
+        organization_id=project.organization_id, actor_user_id=scope.user_id, project_id=project.id,
+        before_state={"owner_id": previous_owner_id}, after_state={"owner_id": target_user_id},
+    )
     return row
 
 
@@ -240,6 +251,11 @@ def _do_unassign(
         previous_owner_id=previous_owner_id, new_owner_id=None,
         assigned_by=scope.user_id, assigned_at=now,
     ))
+    record_audit_event(
+        entity_type=entity_type, entity_id=row.id, action=AuditAction.UNASSIGN, result=AuditResult.SUCCESS,
+        organization_id=project.organization_id, actor_user_id=scope.user_id, project_id=project.id,
+        before_state={"owner_id": previous_owner_id}, after_state={"owner_id": None},
+    )
     return row
 
 

@@ -4,11 +4,14 @@ import { useLocation } from "wouter";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Checkbox } from "@/components/ui/checkbox";
 import { LogoMark } from "../components/LogoMark";
+import { getDeviceLabel } from "../lib/deviceLabel";
 
 export default function Login() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [rememberMe, setRememberMe] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const { login } = useAuth();
@@ -19,7 +22,7 @@ export default function Login() {
     setError(null);
     setLoading(true);
     try {
-      await login({ email, password });
+      await login({ email, password, remember_me: rememberMe, device: getDeviceLabel() });
       setLocation("/");
     } catch {
       setError("Invalid email or password. Please try again.");
@@ -119,6 +122,17 @@ export default function Login() {
                 required
                 className="h-11"
               />
+            </div>
+
+            <div className="flex items-center gap-2">
+              <Checkbox
+                id="remember-me"
+                checked={rememberMe}
+                onCheckedChange={(checked) => setRememberMe(checked === true)}
+              />
+              <Label htmlFor="remember-me" className="text-sm font-normal text-muted-foreground cursor-pointer">
+                Remember me on this device
+              </Label>
             </div>
 
             {error && (

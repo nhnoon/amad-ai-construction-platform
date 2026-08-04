@@ -19,9 +19,13 @@ export const HealthCheckResponse = zod.object({
 /**
  * @summary Login and get JWT token
  */
+export const loginBodyRememberMeDefault = false;
+
 export const LoginBody = zod.object({
   "email": zod.string(),
-  "password": zod.string()
+  "password": zod.string(),
+  "remember_me": zod.boolean().default(loginBodyRememberMeDefault).describe('RC1 Phase 1 Sprint 1 — opt-in longer refresh-token sliding window for a trusted device (see RefreshTokenPolicy on the backend). Defaults to false.'),
+  "device": zod.string().nullish().describe('Optional client-supplied device label, recorded on the session.')
 })
 
 export const LoginResponse = zod.object({
@@ -36,7 +40,73 @@ export const LoginResponse = zod.object({
   "created_at": zod.coerce.date(),
   "must_change_password": zod.boolean().optional().describe('Phase 2 — Security & Authentication Hardening')
 })
+}).and(zod.object({
+  "refresh_token": zod.string()
+})).describe('RC1 Phase 1 Sprint 1 — response of POST \/auth\/login and POST \/auth\/refresh, both of which start\/rotate a refresh-token session. NOT used by POST \/auth\/change-password, which still returns plain TokenResponse (it reissues an access token but never touches a session).')
+
+
+/**
+ * Authenticates via the refresh_token in the request body, not a bearer access token — public like /auth/login. Reusing an already-rotated or already-revoked refresh token revokes its whole session (see backend app/core/session_security.py) and returns 401.
+ * @summary Rotate a refresh token and mint a new access token
+ */
+export const RefreshTokenBody = zod.object({
+  "refresh_token": zod.string(),
+  "device": zod.string().nullish()
 })
+
+export const RefreshTokenResponse = zod.object({
+  "access_token": zod.string(),
+  "token_type": zod.string(),
+  "user": zod.object({
+  "id": zod.number(),
+  "email": zod.string(),
+  "full_name": zod.string().nullish(),
+  "role": zod.string(),
+  "is_active": zod.boolean(),
+  "created_at": zod.coerce.date(),
+  "must_change_password": zod.boolean().optional().describe('Phase 2 — Security & Authentication Hardening')
+})
+}).and(zod.object({
+  "refresh_token": zod.string()
+})).describe('RC1 Phase 1 Sprint 1 — response of POST \/auth\/login and POST \/auth\/refresh, both of which start\/rotate a refresh-token session. NOT used by POST \/auth\/change-password, which still returns plain TokenResponse (it reissues an access token but never touches a session).')
+
+
+/**
+ * Authenticates via the refresh_token in the request body. Idempotent by design — always returns 200, even for an unknown or already-revoked token, so it never leaks token validity.
+ * @summary Revoke the session the given refresh token belongs to
+ */
+export const LogoutBody = zod.object({
+  "refresh_token": zod.string()
+})
+
+export const LogoutResponse = zod.object({
+  "message": zod.string()
+})
+
+
+/**
+ * @summary Revoke every session for the authenticated caller
+ */
+export const LogoutAllSessionsResponse = zod.object({
+  "message": zod.string(),
+  "revoked_count": zod.number()
+})
+
+
+/**
+ * @summary List the authenticated caller's own active sessions
+ */
+export const ListSessionsResponseItem = zod.object({
+  "id": zod.number(),
+  "created_at": zod.coerce.date(),
+  "last_used_at": zod.coerce.date().nullish(),
+  "expires_at": zod.coerce.date(),
+  "device": zod.string().nullish(),
+  "ip_address": zod.string().nullish(),
+  "user_agent": zod.string().nullish(),
+  "remember_me": zod.boolean()
+})
+export const ListSessionsResponse = zod.array(ListSessionsResponseItem)
 
 
 /**

@@ -24,6 +24,13 @@ export interface UserOut {
 export interface LoginInput {
   email: string;
   password: string;
+  /** RC1 Phase 1 Sprint 1 — opt-in longer refresh-token sliding window for a trusted device (see RefreshTokenPolicy on the backend). Defaults to false. */
+  remember_me?: boolean;
+  /**
+     * Optional client-supplied device label, recorded on the session.
+     * @nullable
+     */
+  device?: string | null;
 }
 
 export interface RegisterInput {
@@ -38,6 +45,47 @@ export interface TokenResponse {
   access_token: string;
   token_type: string;
   user: UserOut;
+}
+
+/**
+ * RC1 Phase 1 Sprint 1 — response of POST /auth/login and POST /auth/refresh, both of which start/rotate a refresh-token session. NOT used by POST /auth/change-password, which still returns plain TokenResponse (it reissues an access token but never touches a session).
+ */
+export type LoginResponse = TokenResponse & {
+  refresh_token: string;
+};
+
+export interface RefreshInput {
+  refresh_token: string;
+  /** @nullable */
+  device?: string | null;
+}
+
+export interface LogoutInput {
+  refresh_token: string;
+}
+
+export interface LogoutResponse {
+  message: string;
+}
+
+export interface LogoutAllResponse {
+  message: string;
+  revoked_count: number;
+}
+
+export interface SessionOut {
+  id: number;
+  created_at: string;
+  /** @nullable */
+  last_used_at?: string | null;
+  expires_at: string;
+  /** @nullable */
+  device?: string | null;
+  /** @nullable */
+  ip_address?: string | null;
+  /** @nullable */
+  user_agent?: string | null;
+  remember_me: boolean;
 }
 
 export interface DashboardSummary {

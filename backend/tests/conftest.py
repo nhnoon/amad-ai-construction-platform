@@ -134,6 +134,18 @@ def reset_login_rate_limiter_global():
     yield
 
 
+@pytest.fixture(autouse=True)
+def reset_global_rate_limiter():
+    """RC1 Phase 1 Sprint 3 — API Protection & HTTP Security: reset the
+    global (anonymous/authenticated/login/refresh/upload scoped) rate
+    limiter before every test — same reasoning as
+    reset_login_rate_limiter_global above, and entirely independent of
+    it (see app/core/rate_limit.py's module docstring)."""
+    from app.core.rate_limit import get_default_rate_limit_store
+    get_default_rate_limit_store().reset_all()
+    yield
+
+
 @pytest.fixture(scope="session", autouse=True)
 def cleanup_test_data():
     """Watermark-based cleanup: record max IDs before tests, delete higher IDs after.
@@ -150,11 +162,13 @@ def cleanup_test_data():
     max_msg_id = db.execute(sa_text("SELECT COALESCE(MAX(id), 0) FROM ai_messages")).scalar()
     max_cit_id = db.execute(sa_text("SELECT COALESCE(MAX(id), 0) FROM ai_citations")).scalar()
     max_audit_id = db.execute(sa_text("SELECT COALESCE(MAX(id), 0) FROM copilot_audit_logs")).scalar()
+    max_refresh_token_id = db.execute(sa_text("SELECT COALESCE(MAX(id), 0) FROM refresh_tokens")).scalar()
     db.close()
 
     yield
 
     db = TestingSessionLocal()
+    db.execute(sa_text(f"DELETE FROM refresh_tokens WHERE id > {max_refresh_token_id}"))
     db.execute(sa_text(f"DELETE FROM ai_citations WHERE id > {max_cit_id}"))
     db.execute(sa_text(f"DELETE FROM ai_messages WHERE id > {max_msg_id}"))
     db.execute(sa_text(f"DELETE FROM ai_conversations WHERE id > {max_conv_id}"))

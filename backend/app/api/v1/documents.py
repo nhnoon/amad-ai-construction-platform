@@ -13,6 +13,7 @@ from ...ai.document_storage import (
 )
 from ...ai.scope import build_ai_scope
 from ...config import settings
+from ...core.audit_log import AuditAction, AuditEntityType, AuditResult, record_audit_event
 from ...core.deps import CurrentScope, CurrentUser, DbSession
 from ...models.documents import Document, GeneratedDocument, Correspondence
 from ...models.document_ocr import DocumentOCRResult
@@ -94,6 +95,11 @@ def create_document_route(
     doc = create_document(
         db=db, scope=scope, project_id=body.project_id,
         title=body.title, doc_type=body.doc_type,
+    )
+    record_audit_event(
+        entity_type=AuditEntityType.DOCUMENT, entity_id=doc.id, action=AuditAction.DOCUMENT_UPLOAD,
+        result=AuditResult.SUCCESS, organization_id=doc.organization_id, actor_user_id=current_user.id,
+        project_id=doc.project_id, after_state={"title": doc.title, "doc_type": doc.doc_type},
     )
     return doc
 
@@ -239,6 +245,14 @@ async def upload_document_version_unified(
     file_bytes = await file.read()
     result = save_document_version(db, scope, document_id, file_bytes, file.filename or "upload")
     out = _to_version_out(result.version, is_current=True)
+    record_audit_event(
+        entity_type=AuditEntityType.DOCUMENT, entity_id=document_id, action=AuditAction.DOCUMENT_NEW_VERSION,
+        result=AuditResult.SUCCESS, organization_id=scope.organization_id, actor_user_id=current_user.id,
+        after_state={
+            "version_number": result.version.version_number, "is_duplicate": result.is_duplicate,
+            "filename": result.version.original_filename, "file_size": result.version.file_size,
+        },
+    )
     return DocumentVersionUploadOut(**out.model_dump(), is_duplicate=result.is_duplicate)
 
 
@@ -260,6 +274,11 @@ def download_document_unified(
     version via ?version=N — every previous version remains retrievable."""
     scope = build_ai_scope(current_user, db)
     result = get_document_file(db, scope, document_id, version_number=version)
+    record_audit_event(
+        entity_type=AuditEntityType.DOCUMENT, entity_id=document_id, action=AuditAction.DOCUMENT_DOWNLOAD,
+        result=AuditResult.SUCCESS, organization_id=scope.organization_id, actor_user_id=current_user.id,
+        after_state={"version_number": result.version_number, "filename": result.filename},
+    )
     return _download_response(result)
 
 
@@ -268,13 +287,25 @@ def archive_document_unified(document_id: int, current_user: CurrentUser, db: Db
     """Soft delete only — nothing is ever permanently removed. See
     archive_document() for what this does and does not do."""
     scope = build_ai_scope(current_user, db)
-    return archive_document(db, scope, document_id)
+    doc = archive_document(db, scope, document_id)
+    record_audit_event(
+        entity_type=AuditEntityType.DOCUMENT, entity_id=doc.id, action=AuditAction.DOCUMENT_ARCHIVE,
+        result=AuditResult.SUCCESS, organization_id=doc.organization_id, actor_user_id=current_user.id,
+        project_id=doc.project_id, after_state={"is_archived": True},
+    )
+    return doc
 
 
 @router.post("/documents/{document_id}/unarchive", response_model=DocumentOut)
 def unarchive_document_unified(document_id: int, current_user: CurrentUser, db: DbSession):
     scope = build_ai_scope(current_user, db)
-    return unarchive_document(db, scope, document_id)
+    doc = unarchive_document(db, scope, document_id)
+    record_audit_event(
+        entity_type=AuditEntityType.DOCUMENT, entity_id=doc.id, action=AuditAction.DOCUMENT_RESTORE,
+        result=AuditResult.SUCCESS, organization_id=doc.organization_id, actor_user_id=current_user.id,
+        project_id=doc.project_id, after_state={"is_archived": False},
+    )
+    return doc
 
 
 @router.get("/projects/{project_id}/documents", response_model=list[DocumentOut])
@@ -337,6 +368,15 @@ async def upload_document_version(
     file_bytes = await file.read()
     result = save_document_version(db, scope, doc_id, file_bytes, file.filename or "upload")
     out = _to_version_out(result.version, is_current=True)
+    record_audit_event(
+        entity_type=AuditEntityType.DOCUMENT, entity_id=doc_id, action=AuditAction.DOCUMENT_NEW_VERSION,
+        result=AuditResult.SUCCESS, organization_id=scope.organization_id, actor_user_id=current_user.id,
+        project_id=project_id,
+        after_state={
+            "version_number": result.version.version_number, "is_duplicate": result.is_duplicate,
+            "filename": result.version.original_filename, "file_size": result.version.file_size,
+        },
+    )
     return DocumentVersionUploadOut(**out.model_dump(), is_duplicate=result.is_duplicate)
 
 
@@ -362,6 +402,11 @@ def download_document(
     _get_project_document_or_404(db, project_id, doc_id)
     scope = build_ai_scope(current_user, db)
     result = get_document_file(db, scope, doc_id, version_number=version)
+    record_audit_event(
+        entity_type=AuditEntityType.DOCUMENT, entity_id=doc_id, action=AuditAction.DOCUMENT_DOWNLOAD,
+        result=AuditResult.SUCCESS, organization_id=scope.organization_id, actor_user_id=current_user.id,
+        project_id=project_id, after_state={"version_number": result.version_number, "filename": result.filename},
+    )
     return _download_response(result)
 
 
@@ -369,14 +414,26 @@ def download_document(
 def archive_document_route(project_id: int, doc_id: int, current_user: CurrentUser, db: DbSession):
     _get_project_document_or_404(db, project_id, doc_id)
     scope = build_ai_scope(current_user, db)
-    return archive_document(db, scope, doc_id)
+    doc = archive_document(db, scope, doc_id)
+    record_audit_event(
+        entity_type=AuditEntityType.DOCUMENT, entity_id=doc_id, action=AuditAction.DOCUMENT_ARCHIVE,
+        result=AuditResult.SUCCESS, organization_id=doc.organization_id, actor_user_id=current_user.id,
+        project_id=project_id, after_state={"is_archived": True},
+    )
+    return doc
 
 
 @router.post("/projects/{project_id}/documents/{doc_id}/unarchive", response_model=DocumentOut)
 def unarchive_document_route(project_id: int, doc_id: int, current_user: CurrentUser, db: DbSession):
     _get_project_document_or_404(db, project_id, doc_id)
     scope = build_ai_scope(current_user, db)
-    return unarchive_document(db, scope, doc_id)
+    doc = unarchive_document(db, scope, doc_id)
+    record_audit_event(
+        entity_type=AuditEntityType.DOCUMENT, entity_id=doc_id, action=AuditAction.DOCUMENT_RESTORE,
+        result=AuditResult.SUCCESS, organization_id=doc.organization_id, actor_user_id=current_user.id,
+        project_id=project_id, after_state={"is_archived": False},
+    )
+    return doc
 
 
 @router.post(

@@ -8,8 +8,32 @@ export type BodyType<T> = T;
 
 export type AuthTokenGetter = () => Promise<string | null> | string | null;
 
+/**
+ * RC1 Phase 1 Sprint 2 — Frontend Session Integration.
+ *
+ * Called at most once per concurrent burst of 401s (see `getOrStartRefresh`
+ * below) to attempt a single silent refresh. Must resolve to the new
+ * access token on success, or `null` on any failure — never throw (a throw
+ * is treated the same as `null`, so implementations don't need their own
+ * try/catch).
+ */
+export type RefreshHandler = () => Promise<string | null>;
+
+/** Called once a refresh attempt has definitively failed, so the caller
+ * (the web app) can clear stored credentials and redirect to login. Never
+ * called for a 401 that isn't refresh-eligible (e.g. a bad-credentials
+ * 401 from /auth/login itself). */
+export type AuthFailureHandler = () => void;
+
 const NO_BODY_STATUS = new Set([204, 205, 304]);
 const DEFAULT_JSON_ACCEPT = "application/json, application/problem+json";
+
+// Endpoints that must never trigger — or themselves be retried by — the
+// silent-refresh flow. /auth/refresh is excluded so a failing refresh can
+// never recursively trigger another refresh; /auth/login and /auth/register
+// are excluded because a 401 there means bad credentials, not an expired
+// session, so attempting a token refresh would be meaningless.
+const REFRESH_EXEMPT_URL_PATTERNS = ["/auth/refresh", "/auth/login", "/auth/register"];
 
 // ---------------------------------------------------------------------------
 // Module-level configuration
@@ -17,6 +41,9 @@ const DEFAULT_JSON_ACCEPT = "application/json, application/problem+json";
 
 let _baseUrl: string | null = null;
 let _authTokenGetter: AuthTokenGetter | null = null;
+let _refreshHandler: RefreshHandler | null = null;
+let _onAuthFailure: AuthFailureHandler | null = null;
+let _refreshInFlight: Promise<string | null> | null = null;
 
 /**
  * Set a base URL that is prepended to every relative request URL
@@ -42,6 +69,45 @@ export function setBaseUrl(url: string | null): void {
  */
 export function setAuthTokenGetter(getter: AuthTokenGetter | null): void {
   _authTokenGetter = getter;
+}
+
+/**
+ * Register the silent-refresh handler (see `RefreshHandler` above). When
+ * set, a 401 on any non-exempt request triggers at most one refresh
+ * attempt — concurrent 401s share that single in-flight attempt (see
+ * `getOrStartRefresh`) — and the original request is retried exactly once
+ * with the freshly-minted token. Pass `null` to disable silent refresh
+ * entirely (the default — a 401 is thrown immediately, same as before this
+ * hook existed).
+ */
+export function setRefreshHandler(handler: RefreshHandler | null): void {
+  _refreshHandler = handler;
+}
+
+/** Register the callback fired once a refresh attempt has definitively
+ * failed. Pass `null` to clear it. */
+export function setOnAuthFailure(handler: AuthFailureHandler | null): void {
+  _onAuthFailure = handler;
+}
+
+function isRefreshExemptUrl(url: string): boolean {
+  return REFRESH_EXEMPT_URL_PATTERNS.some((pattern) => url.includes(pattern));
+}
+
+/** Single-flight refresh: every 401 that arrives while a refresh is
+ * already in progress awaits the SAME promise instead of starting its own
+ * — this is what makes concurrent 401s share one refresh operation. Once
+ * settled (success or failure), the in-flight slot is cleared so the next
+ * independent 401 (e.g. minutes later) can start a fresh attempt. */
+function getOrStartRefresh(): Promise<string | null> {
+  if (!_refreshInFlight) {
+    _refreshInFlight = (_refreshHandler ? _refreshHandler() : Promise.resolve(null))
+      .catch(() => null)
+      .finally(() => {
+        _refreshInFlight = null;
+      });
+  }
+  return _refreshInFlight;
 }
 
 function isRequest(input: RequestInfo | URL): input is Request {
@@ -326,16 +392,24 @@ export async function customFetch<T = unknown>(
   input: RequestInfo | URL,
   options: CustomFetchOptions = {},
 ): Promise<T> {
-  input = applyBaseUrl(input);
+  return performFetch<T>(input, options, /* allowRefreshRetry */ true);
+}
+
+async function performFetch<T>(
+  input: RequestInfo | URL,
+  options: CustomFetchOptions,
+  allowRefreshRetry: boolean,
+): Promise<T> {
+  const appliedInput = applyBaseUrl(input);
   const { responseType = "auto", headers: headersInit, ...init } = options;
 
-  const method = resolveMethod(input, init.method);
+  const method = resolveMethod(appliedInput, init.method);
 
   if (init.body != null && (method === "GET" || method === "HEAD")) {
     throw new TypeError(`customFetch: ${method} requests cannot have a body.`);
   }
 
-  const headers = mergeHeaders(isRequest(input) ? input.headers : undefined, headersInit);
+  const headers = mergeHeaders(isRequest(appliedInput) ? appliedInput.headers : undefined, headersInit);
 
   if (
     typeof init.body === "string" &&
@@ -358,11 +432,28 @@ export async function customFetch<T = unknown>(
     }
   }
 
-  const requestInfo = { method, url: resolveUrl(input) };
+  const url = resolveUrl(appliedInput);
+  const requestInfo = { method, url };
 
-  const response = await fetch(input, { ...init, method, headers });
+  const response = await fetch(appliedInput, { ...init, method, headers });
 
   if (!response.ok) {
+    // Silent refresh: exactly one retry, only for a 401 on a non-exempt
+    // endpoint, only when a refresh handler is registered (web apps that
+    // never call setRefreshHandler get the old throw-immediately behavior
+    // unchanged). `allowRefreshRetry` is false on the retried call itself,
+    // so a 401 on the retry is never eligible for a second refresh —
+    // this is what makes the loop bounded to a single retry.
+    if (response.status === 401 && allowRefreshRetry && _refreshHandler && !isRefreshExemptUrl(url)) {
+      const newToken = await getOrStartRefresh();
+      if (newToken) {
+        const retryHeaders = mergeHeaders(headers);
+        retryHeaders.set("authorization", `Bearer ${newToken}`);
+        return performFetch<T>(input, { ...options, headers: retryHeaders }, false);
+      }
+      _onAuthFailure?.();
+    }
+
     const errorData = await parseErrorBody(response, method);
     throw new ApiError(response, errorData, requestInfo);
   }

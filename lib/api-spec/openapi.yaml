@@ -85,6 +85,16 @@ components:
           type: string
         password:
           type: string
+        remember_me:
+          type: boolean
+          default: false
+          description: >-
+            RC1 Phase 1 Sprint 1 — opt-in longer refresh-token sliding
+            window for a trusted device (see RefreshTokenPolicy on the
+            backend). Defaults to false.
+        device:
+          type: ["string", "null"]
+          description: Optional client-supplied device label, recorded on the session.
 
     RegisterInput:
       type: object
@@ -110,6 +120,77 @@ components:
           type: string
         user:
           $ref: "#/components/schemas/UserOut"
+
+    LoginResponse:
+      description: >-
+        RC1 Phase 1 Sprint 1 — response of POST /auth/login and POST
+        /auth/refresh, both of which start/rotate a refresh-token session.
+        NOT used by POST /auth/change-password, which still returns plain
+        TokenResponse (it reissues an access token but never touches a
+        session).
+      allOf:
+        - $ref: "#/components/schemas/TokenResponse"
+        - type: object
+          required: [refresh_token]
+          properties:
+            refresh_token:
+              type: string
+
+    RefreshInput:
+      type: object
+      required: [refresh_token]
+      properties:
+        refresh_token:
+          type: string
+        device:
+          type: ["string", "null"]
+
+    LogoutInput:
+      type: object
+      required: [refresh_token]
+      properties:
+        refresh_token:
+          type: string
+
+    LogoutResponse:
+      type: object
+      required: [message]
+      properties:
+        message:
+          type: string
+
+    LogoutAllResponse:
+      type: object
+      required: [message, revoked_count]
+      properties:
+        message:
+          type: string
+        revoked_count:
+          type: integer
+
+    SessionOut:
+      type: object
+      required: [id, created_at, expires_at, remember_me]
+      properties:
+        id:
+          type: integer
+        created_at:
+          type: string
+          format: date-time
+        last_used_at:
+          type: ["string", "null"]
+          format: date-time
+        expires_at:
+          type: string
+          format: date-time
+        device:
+          type: ["string", "null"]
+        ip_address:
+          type: ["string", "null"]
+        user_agent:
+          type: ["string", "null"]
+        remember_me:
+          type: boolean
 
     DashboardSummary:
       type: object
@@ -1084,9 +1165,92 @@ paths:
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/TokenResponse"
+                $ref: "#/components/schemas/LoginResponse"
         "401":
           description: Invalid credentials
+
+  /v1/auth/refresh:
+    post:
+      operationId: refreshToken
+      tags: [auth]
+      summary: Rotate a refresh token and mint a new access token
+      description: >-
+        Authenticates via the refresh_token in the request body, not a
+        bearer access token — public like /auth/login. Reusing an
+        already-rotated or already-revoked refresh token revokes its whole
+        session (see backend app/core/session_security.py) and returns 401.
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RefreshInput"
+      responses:
+        "200":
+          description: Refresh successful — new access + refresh token pair
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/LoginResponse"
+        "401":
+          description: Invalid, expired, or already-used (replayed) refresh token
+
+  /v1/auth/logout:
+    post:
+      operationId: logout
+      tags: [auth]
+      summary: Revoke the session the given refresh token belongs to
+      description: >-
+        Authenticates via the refresh_token in the request body. Idempotent
+        by design — always returns 200, even for an unknown or
+        already-revoked token, so it never leaks token validity.
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/LogoutInput"
+      responses:
+        "200":
+          description: Logged out (always, regardless of prior token state)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/LogoutResponse"
+
+  /v1/auth/logout-all:
+    post:
+      operationId: logoutAllSessions
+      tags: [auth]
+      summary: Revoke every session for the authenticated caller
+      responses:
+        "200":
+          description: All sessions revoked
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/LogoutAllResponse"
+        "401":
+          description: Unauthorized
+
+  /v1/auth/sessions:
+    get:
+      operationId: listSessions
+      tags: [auth]
+      summary: List the authenticated caller's own active sessions
+      responses:
+        "200":
+          description: Active sessions for the caller only — never cross-user
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/SessionOut"
+        "401":
+          description: Unauthorized
 
   /v1/auth/register:
     post:

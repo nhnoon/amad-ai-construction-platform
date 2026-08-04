@@ -9,8 +9,10 @@ import { ThemeProvider } from "./context/ThemeContext";
 import { CurrentEntityProvider } from "./context/CurrentEntityContext";
 import { Layout } from "./components/layout";
 import { ErrorBoundary } from "./components/ErrorBoundary";
-import { setAuthTokenGetter } from "@workspace/api-client-react";
-import { getToken } from "./lib/auth";
+// Registers the auth token getter + silent-refresh/auth-failure hooks as
+// a side effect of import — single registration site (see lib/auth.ts),
+// consolidated here from a previously-duplicated call in this file.
+import "./lib/auth";
 
 import Login from "./pages/login";
 import ChangePassword from "./pages/change-password";
@@ -49,12 +51,11 @@ const AdminBilling = lazy(() => import("./pages/admin-billing"));
 const ClientPortalOverview = lazy(() => import("./pages/client-portal/index"));
 const ClientPortalRequests = lazy(() => import("./pages/client-portal/requests"));
 const ClientPortalDocuments = lazy(() => import("./pages/client-portal/documents"));
+const Security = lazy(() => import("./pages/security"));
 
 import "./lib/i18n";
 
 const queryClient = new QueryClient();
-
-setAuthTokenGetter(() => getToken());
 
 function RouteFallback() {
   return (
@@ -204,6 +205,7 @@ function Router() {
       <Route path="/requests" component={() => <ProtectedRoute component={Requests} />} />
       <Route path="/risks" component={() => <ProtectedRoute component={Risks} />} />
       <Route path="/notifications" component={() => <ProtectedRoute component={Notifications} />} />
+      <Route path="/security" component={() => <ProtectedRoute component={Security} />} />
       <Route path="/client-portal" component={() => <ProtectedRoute component={ClientPortalOverview} />} />
       <Route path="/client-portal/requests" component={() => <ProtectedRoute component={ClientPortalRequests} />} />
       <Route path="/client-portal/documents" component={() => <ProtectedRoute component={ClientPortalDocuments} />} />
